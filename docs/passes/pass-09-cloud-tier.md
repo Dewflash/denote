@@ -54,6 +54,13 @@ The `claude-api` skill / current Anthropic docs — model IDs, Batch API, prompt
 - Respect rejection memory (D10) when assembling the corpus: don't pay to re-ask rejected
   questions.
 
+## Owner input
+This pass needs the owner's Anthropic API key for final verification — entered BY THE OWNER
+in Settings → AI (Keychain); never request it in chat, never place it in files or env vars
+committed anywhere. Build and test everything against the mock first; when only key-gated
+verification remains, mark `awaiting-owner` in PROGRESS (Owner inputs) with the exact steps
+the owner should run, and finish the rest of the pass.
+
 ## Definition of Done
 With a real key on a test vault: deep-organize estimates → confirms → runs under cap →
 theme topic spanning two folders appears with cited reasons; spend ledger matches response

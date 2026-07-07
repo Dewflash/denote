@@ -40,6 +40,13 @@ decisions were made up front by the architect. Your job is to execute a pass, no
   new decision in `docs/DECISIONS.md` with rationale.
 - Do not renumber or delete existing decisions. Append.
 
+## Owner inputs
+
+Some steps need things only the owner can provide (see PROGRESS.md → Owner inputs). When you
+hit one that's missing: mark it `awaiting-owner` there with exact instructions for the
+owner, skip that step, and complete everything independent of it. Never ask the owner for
+secrets in chat — keys are entered by the owner directly into the app (Keychain).
+
 ## If a pass brief conflicts with reality
 
 Small deviation (API renamed, library minor-version drift): proceed sensibly, record the

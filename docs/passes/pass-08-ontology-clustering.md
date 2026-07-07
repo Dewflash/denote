@@ -40,9 +40,26 @@ written — D37), **S26** (note created/edited date precedence for the insights 
 - Vault-level "Organize vault" command: batch job — re-enrich stale notes, run
   canonicalization sweep (merge topics whose centroids ≥0.92 + LLM confirms), prune empty
   topics. On-device tier; progress UI; cancellable.
+- **Folder profiles (owner requirement — folders get their own classification):** for each
+  folder with ≥3 notes, the on-device model generates a one-paragraph profile ("mostly
+  Japanese monetary policy and travel logs") from member summaries + dominant topics, stored
+  in `topics.json` under `folderProfiles` (keyed folder path, with the member-hash-set hash
+  so it regenerates only when membership/content changes). Shown in the folder's inspector/
+  insights view. **Misfit detection:** a note whose topic profile is distant from its
+  folder's profile (dominant-topic overlap = 0 AND embedding-to-folder-centroid cosine
+  < 0.45) yields a SUGGESTION "may belong in {folder}" — rendered in the suggestions panel;
+  never an automatic move. Cross-vault misfit hints are allowed (on-device processing —
+  D18 restricts network backends only) but phrased as observations, and suppressed entirely
+  if either vault is localOnly and the user disabled cross-vault hints in settings.
+- **Resurfacing (accepted owner feature):** an insights-side "Worth revisiting" card — notes
+  older than 90 days (edited-date, S26 precedence) that share a topic or high similarity
+  with content the user edited this week, ranked by (similarity × age), max 5, dismissible
+  per note (dismissals persisted, re-eligible after 90 more days). Pure local computation —
+  embeddings + timestamps; no LLM call.
 - **Insights panel v1** (topic/tag/folder node click): member timeline (created/edited
   histogram), top co-occurring topics, recent notes, unresolved ghosts under this topic,
-  topic description. No LLM synthesis yet (pass 9) — layout leaves an "Analysis" slot.
+  folder profile (for folders), the resurfacing card, topic description. No LLM synthesis
+  yet (pass 9) — layout leaves an "Analysis" slot.
 - Topic management UI: rename (becomes alias), merge, re-parent, delete (memberships →
   suggestions), mark topic as user-owned.
 

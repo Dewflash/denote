@@ -21,6 +21,19 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 Statuses: `pending` → `next` → `in-progress` → `done` (or `blocked` with a Blocked section
 below explaining exactly what and why).
 
+## Owner inputs required
+
+Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing
+input, the agent STOPS that step, marks it here as `awaiting-owner`, tells the owner exactly
+what is needed and why, and continues with the rest of the pass if independent.
+
+| Input | Needed by | Status | Notes |
+|-------|-----------|--------|-------|
+| LICENSE choice for the repo | any time (repo is public with no license = all rights reserved) | awaiting-owner | agent adds the file once told |
+| App icon / final branding | pass 10 (build polish) | awaiting-owner | default Tauri icon until then |
+| Anthropic API key | pass 09 (entered by owner in Settings → AI, stored in Keychain — never give it to an agent in chat) | awaiting-owner | pass 09 dev/tests use mock until owner enters key and runs verification |
+| Apple Intelligence enabled on the Mac | pass 07 (sidecar `capabilities()` will report it) | awaiting-owner | if disabled, pass 07 completes with backend marked unavailable + a note here |
+
 ## Deviations log
 
 (append entries: date, pass, what deviated from the brief, why)

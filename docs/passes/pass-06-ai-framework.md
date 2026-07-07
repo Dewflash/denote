@@ -43,6 +43,9 @@ implement the dirty-buffer deferral and op-log; this is where the typing race li
 - Settings → AI & Models page v1: routing table UI (backends: Mock, Apple [disabled,
   "pass 7"], Anthropic [disabled, "pass 9"]), takeover threshold slider, per-vault localOnly
   toggles surfaced here too.
+- Command palette entries: "Enrich this note now" (bypasses debounce, respects gates) and
+  "Suggest links for this note" (link-kind-only enrichment) — the AI must be summonable, not
+  only ambient.
 
 ## Pitfalls
 - **R1 lives here.** Prove with an integration test: enrichment → takeover writes `ai:` block
