@@ -4,6 +4,11 @@
 The free tier becomes real: Rust embeddings + Apple Foundation Models sidecar power
 enrichment, similarity edges, and paste-summarize — fully offline, $0.
 
+## Normative specs for this pass
+SPECS **S13** (sidecar NDJSON protocol: methods, timeouts, restart policy, repair-retry),
+**S14** (embeddings binary format, free-list, compaction, L2-normalize-at-write),
+**S15** (similarity thresholds, pair dedup, vacuity denylist), **S16** (token budgeting).
+
 ## Deliverables
 - **Embeddings (D24):** `fastembed` in `src-tauri` (bge-small class). Model files downloaded
   on first use to app support with progress UI + retry; never bundled in the binary.

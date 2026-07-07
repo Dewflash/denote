@@ -5,6 +5,11 @@ The flagship: a persistent, canonicalized topic layer that connects notes to con
 user never wrote (Japan-note-about-banking → Finance → Banking → Interest Rates), semantic
 clusters as the graph's default view, and the first insights panel.
 
+## Normative specs for this pass
+SPECS **S17** (topic centroid definition, membership weight formula, dominant-topic tie
+break, deterministic coloring, staleness), **S18** (`_topics` template — byte-stable, no
+timestamps — and the generated_hash freeze mechanism).
+
 ## Deliverables
 - `domain/ontology.ts` (pure) + `services/topicStore.ts` (`.denote/ai/topics.json`, D14).
 - **Canonicalization procedure (D14, R3) — the load-bearing step.** When enrichment proposes

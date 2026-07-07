@@ -5,6 +5,10 @@ The paid 15%: BYO-key Anthropic backend, a monthly (or on-demand) deep-organize 
 that does the reasoning the on-device model can't, and LLM-synthesized insights — all under a
 hard, code-enforced budget cap.
 
+## Normative specs for this pass
+SPECS **S19** (single pricing module, verifiedAt, 1.2× safety margin), **S20** (error kinds
+`budget-exceeded`, `local-only-blocked`).
+
 ## Read first
 The `claude-api` skill / current Anthropic docs — model IDs, Batch API, prompt caching, and
 `count_tokens` shapes drift; verify against live docs, do not code from memory.

@@ -4,6 +4,11 @@
 Open/create real vaults on disk; the repository becomes the only mutation path; indexes stay
 live under external edits; rename/move handled per D4/D4a.
 
+## Normative specs for this pass
+SPECS **S7** (atomic writes, per-note mutex, ordering — D29), **S8** (app-write tagging
+protocol, exact signature/window semantics), **S9** (rename/move/retitle rules — note the
+three distinct cases and the move re-key list).
+
 ## Deliverables
 - Rust commands (`src-tauri`): `read_note`, `write_note`, `list_vault_files` (respecting
   ignore rules: `.denote/`, dotfiles), `create/rename/delete/move`, and a `notify`-based

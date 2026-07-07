@@ -5,6 +5,11 @@ The complete AI plumbing and UX with a MOCK backend only. When this pass ends, t
 suggestion → accept/reject → promotion/demotion loop works end-to-end with fake AI; passes
 7–9 only swap in real intelligence.
 
+## Normative specs for this pass
+SPECS **S10** (`ai:` frontmatter schema + takeover/demotion state machine — includes the
+non-obvious rule that accepting one suggestion demotes the rest, D30), **S11** (rejection
+fingerprint formula), **S12** (queue semantics + persistence), **S20** (error taxonomy).
+
 ## Deliverables
 - `services/aiClient/` — the `AiClient` interface exactly as MASTERPLAN §6, plus:
   - `router.ts`: per-task routing table (from settings) + **D18 enforcement**: if the note's

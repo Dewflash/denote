@@ -102,7 +102,7 @@ interface ParsedNote {
   links: WikiLink[];                        // outbound only
   tags: string[];
 }
-interface WikiLink { targetTitle: string; alias?: string; embed: boolean; offsetStart: number; offsetEnd: number }
+interface WikiLink { targetTitle: string; heading?: string; alias?: string; embed: boolean; offsetStart: number; offsetEnd: number }  // grammar: SPECS S2
 
 // Backlinks: NEVER stored. Map<relPath, {fromPath, link}[]> computed from the link index.
 

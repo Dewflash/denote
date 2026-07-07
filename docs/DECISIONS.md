@@ -137,3 +137,19 @@ from the same model version.
 **D27. Quick capture:** global hotkey opens a floating capture window; grabs current
 selection (clipboard/AX) + source URL/title when available; on-device title/tag suggestion;
 files into a chosen vault via the repository API.
+
+**D28. `ai` is a reserved top-level frontmatter key**, owned by the app. Never merged with
+user data; stripped from hashing (S1); imports warn when incoming files already carry it.
+
+**D29. Concurrency: per-note write mutex in the repository; one pipeline instance per
+vault.** User saves, takeover writes, and suggestion-accept writes all serialize on the same
+per-relPath lock (S7). No component may write vault files outside the repository.
+
+**D30. Accepting a suggestion counts as user structure** and therefore triggers D9 demotion
+of the note's remaining provisional entries back to suggestions. Intentional: once the user
+curates a note, AI structure retreats to advisory. (S10 state machine is normative.)
+
+**D31. `docs/SPECS.md` is normative.** Where a pass brief or MASTERPLAN summary and SPECS
+disagree, SPECS wins. Its algorithms were executed and verified by the architect
+(2026-07-07: S1 hash algorithm and S3 tag grammar — 20/20 test vectors green); its test
+vectors are mandatory test cases, not examples.

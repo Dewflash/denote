@@ -8,9 +8,14 @@ decisions were made up front by the architect. Your job is to execute a pass, no
 
 1. Read `docs/MASTERPLAN.md` — architecture, data model, on-disk formats.
 2. Read `docs/DECISIONS.md` — the binding decision ledger (D-numbers). These are law.
-3. Read `docs/PROGRESS.md` — find the pass marked `next`.
-4. Read that pass's brief in `docs/passes/`. Work only within its scope.
-5. When the pass's Definition of Done is fully met, update `docs/PROGRESS.md` (status, date,
+3. Read `docs/SPECS.md` — normative algorithms, grammars, formats, protocols (S-numbers).
+   Where anything else disagrees with SPECS, SPECS wins (D31). Its test vectors are
+   mandatory test cases. Do not "improve" a specified algorithm — several were chosen to
+   avoid non-obvious failure modes (e.g. S1 is textual on purpose: YAML round-tripping is
+   not byte-stable and would break loop prevention).
+4. Read `docs/PROGRESS.md` — find the pass marked `next`.
+5. Read that pass's brief in `docs/passes/`. Work only within its scope.
+6. When the pass's Definition of Done is fully met, update `docs/PROGRESS.md` (status, date,
    deviations, notes for the next agent) and commit.
 
 ## Hard rules — never violate, regardless of pass
