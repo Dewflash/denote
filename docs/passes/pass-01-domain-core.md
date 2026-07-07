@@ -31,6 +31,11 @@ SPECS **S1** (normalization + contentHash — do NOT parse/re-serialize YAML; te
 - Title fallback chain: first H1 → filename.
 - Malformed input never throws: parser returns best-effort + `warnings[]`.
 
+## Canonical corpus
+`tests/fixtures/vision-vault/` + its `EXPECTED.md` exists already — the deterministic-layer
+expectations there (ghosts, alias links, code-fence exclusion, tag hubs, title fallback) are
+part of this pass's test suite in addition to the per-case parser fixtures you author.
+
 ## Executable ground truth
 `docs/reference/hash_spec_test.mjs` is a runnable reference of the S1 algorithm and S3 tag
 regex with all vectors (run `node docs/reference/hash_spec_test.mjs` → must print ALL

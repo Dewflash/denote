@@ -18,6 +18,11 @@ decisions were made up front by the architect. Your job is to execute a pass, no
 6. When the pass's Definition of Done is fully met, update `docs/PROGRESS.md` (status, date,
    deviations, notes for the next agent) and commit.
 
+Also know: `tests/fixtures/vision-vault/` + `EXPECTED.md` is the canonical semantic corpus
+(architect-authored — it encodes the owner's real scenarios; extend, never weaken), and
+`docs/ACCEPTANCE.md` is what the owner personally verifies — your DoD claims will be checked
+against it, so never mark done what an owner check would fail.
+
 ## Hard rules — never violate, regardless of pass
 
 - **Files are the only source of truth.** `.md` files on disk. Everything else (indexes,

@@ -74,7 +74,9 @@ written — D37), **S26** (note created/edited date precedence for the insights 
 - On-device context limits: canonicalization sweeps operate on stubs, never full bodies.
 
 ## Definition of Done
-Scripted fixture vault (finance/faith/tech mix incl. the Japan-banking scenario): Japan note
+Run against the canonical corpus `tests/fixtures/vision-vault/` and satisfy every pass-8
+line of its `EXPECTED.md` (authored by the architect — it IS the vision; extend it, never
+weaken it): Japan note
 lands in Banking topic under Finance parent; interest-rate mentions link; near-duplicate
 names collapse to one topic; default graph view shows semantic clusters with a mixed-content
 folder scattering correctly; `_topics/Finance.md` materializes and survives user-edit

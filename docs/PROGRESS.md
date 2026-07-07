@@ -5,7 +5,7 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 
 | Pass | Title | Depends on | Status | Completed | Notes |
 |------|-------|-----------|--------|-----------|-------|
-| 00 | Toolchain & scaffold | — | **next** | | |
+| 00 | Toolchain & scaffold | — | **next** | | Pre-flight done 2026-07-07: arm64, macOS 26.5.1, Xcode+Swift 6.3.2 ✓, Node 24 + pnpm 11 ✓, Rust 1.96.1 installed ✓, FoundationModels probe: importable, availability=available ✓ |
 | 01 | Domain core: parser, types, graph builder | 00 | pending | | |
 | 02 | Vault engine: fs, watcher, repository, indexes | 01 | pending | | |
 | 03 | App shell UI: layout, tree, editor, backlinks | 02 | pending | | |
@@ -32,7 +32,7 @@ what is needed and why, and continues with the rest of the pass if independent.
 | LICENSE choice for the repo | any time (repo is public with no license = all rights reserved) | awaiting-owner | agent adds the file once told |
 | App icon / final branding | pass 10 (build polish) | awaiting-owner | default Tauri icon until then |
 | Anthropic API key | pass 09 (entered by owner in Settings → AI, stored in Keychain — never give it to an agent in chat) | awaiting-owner | pass 09 dev/tests use mock until owner enters key and runs verification |
-| Apple Intelligence enabled on the Mac | pass 07 (sidecar `capabilities()` will report it) | awaiting-owner | if disabled, pass 07 completes with backend marked unavailable + a note here |
+| Apple Intelligence enabled on the Mac | pass 07 (sidecar `capabilities()` will report it) | **verified 2026-07-07** | architect probe: `SystemLanguageModel.default.availability == available` |
 
 ## Deviations log
 
