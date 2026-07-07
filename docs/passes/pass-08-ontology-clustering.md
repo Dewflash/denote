@@ -8,7 +8,9 @@ clusters as the graph's default view, and the first insights panel.
 ## Normative specs for this pass
 SPECS **S17** (topic centroid definition, membership weight formula, dominant-topic tie
 break, deterministic coloring, staleness), **S18** (`_topics` template — byte-stable, no
-timestamps — and the generated_hash freeze mechanism).
+timestamps — and the generated_hash freeze mechanism), **S25** (combined-view topic
+visual-merge: name match OR centroid ≥0.92, presentation-only, per-vault ontologies never
+written — D37), **S26** (note created/edited date precedence for the insights timeline).
 
 ## Deliverables
 - `domain/ontology.ts` (pure) + `services/topicStore.ts` (`.denote/ai/topics.json`, D14).

@@ -8,7 +8,10 @@ suggestion → accept/reject → promotion/demotion loop works end-to-end with f
 ## Normative specs for this pass
 SPECS **S10** (`ai:` frontmatter schema + takeover/demotion state machine — includes the
 non-obvious rule that accepting one suggestion demotes the rest, D30), **S11** (rejection
-fingerprint formula), **S12** (queue semantics + persistence), **S20** (error taxonomy).
+fingerprint formula), **S12** (queue semantics + persistence), **S20** (error taxonomy),
+**S23** (open-buffer write rules + two-tier undo — the accept/takeover write paths MUST
+implement the dirty-buffer deferral and op-log; this is where the typing race lives),
+**S28** (first-run takeover consent gate at >20 notes).
 
 ## Deliverables
 - `services/aiClient/` — the `AiClient` interface exactly as MASTERPLAN §6, plus:

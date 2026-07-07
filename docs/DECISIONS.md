@@ -153,3 +153,29 @@ curates a note, AI structure retreats to advisory. (S10 state machine is normati
 disagree, SPECS wins. Its algorithms were executed and verified by the architect
 (2026-07-07: S1 hash algorithm and S3 tag grammar — 20/20 test vectors green); its test
 vectors are mandatory test cases, not examples.
+
+**D32. Embedding model: `intfloat/multilingual-e5-small` (384d) via fastembed** — chosen
+over English-only bge-small because the owner's vaults may contain non-English content. The
+model id is recorded in the store; a model change invalidates the entire store (full
+re-embed). Fallback if unavailable in fastembed: BGESmallENV15, logged as a deviation. (S14)
+
+**D33. Filesystem containment is a hard security boundary:** every Rust path command
+canonicalizes and verifies containment within registered vault roots (or the guarded
+app-support dir); no generic file access is ever exposed to the webview. (S22)
+
+**D34. Background writes never clobber typing.** AI/takeover writes to an open dirty buffer
+are deferred until saved + idle, then precondition-rechecked. External changes to a dirty
+buffer surface a conflict bar; the app never silently merges. (S23)
+
+**D35. First-run takeover consent gate:** bulk provisional annotation (>20 notes) requires
+one explicit per-vault confirmation before AI writes `ai:` blocks at scale. (S28)
+
+**D36. Vault `.denote/` stores never reference other vaults.** Cross-vault AI edges live in
+app support (`crossvault.json`) so any vault folder remains fully self-contained and
+portable on its own. (S24)
+
+**D37. Combined-graph merging is presentation-only:** tags merge by name; topics merge
+visually by name/centroid match — per-vault ontologies are never written to. (S25)
+
+**D38. Two-tier undo:** CodeMirror history for typing; a repository op-log with inverse
+operations for structural ops (accept, takeover, rename refactor, restore). (S23)

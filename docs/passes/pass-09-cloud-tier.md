@@ -7,7 +7,10 @@ hard, code-enforced budget cap.
 
 ## Normative specs for this pass
 SPECS **S19** (single pricing module, verifiedAt, 1.2× safety margin), **S20** (error kinds
-`budget-exceeded`, `local-only-blocked`).
+`budget-exceeded`, `local-only-blocked`), **S27** (batch durability: persist batchId BEFORE
+submission, resume polling across app restarts, reconcile actuals, expired-batch losses
+visible; unified ledger covers on-demand insights too — no uncapped path exists; corpus
+assembler itself excludes localOnly vaults, not just the router).
 
 ## Read first
 The `claude-api` skill / current Anthropic docs — model IDs, Batch API, prompt caching, and

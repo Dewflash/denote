@@ -24,6 +24,12 @@ after this pass. Zero AI.
 - Paste-to-capture v1: pasting into the file tree / Today view with nothing focused creates a
   new note from clipboard (title = first line, truncated).
 
+## Also normative here
+**S21** (keymap registry — register bindings, never scatter literals), **S23** rule 3
+(external change to a dirty open buffer → conflict bar, never silent merge), **S26** assets
+(image embeds `![[img.png]]` render read-only; non-md files never enter the parse/AI
+pipeline), **S26** settings location.
+
 ## Pitfalls
 - Ghost links (`[[Nonexistent]]`) must be visually distinct and clicking one CREATES the note
   (Obsidian behavior) — via repository, in the current folder.

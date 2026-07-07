@@ -6,8 +6,16 @@ enrichment, similarity edges, and paste-summarize — fully offline, $0.
 
 ## Normative specs for this pass
 SPECS **S13** (sidecar NDJSON protocol: methods, timeouts, restart policy, repair-retry),
-**S14** (embeddings binary format, free-list, compaction, L2-normalize-at-write),
-**S15** (similarity thresholds, pair dedup, vacuity denylist), **S16** (token budgeting).
+**S14** (embeddings binary format incl. exact model `multilingual-e5-small` + model-mismatch
+invalidation — D32), **S15** (similarity thresholds, pair dedup, vacuity denylist, edge
+ownership; cross-vault pairs → app-side store per S24), **S16** (token budgeting),
+**S23** (any write this pass triggers obeys the dirty-buffer rules).
+
+Build integration: the Swift sidecar compiles via `swift build -c release` wired into
+`tauri.conf.json` `beforeBuildCommand` / dev equivalent, bundled as a Tauri external binary
+(Apple Silicon only — matches the app's hardware floor). Offline semantics: "fully offline"
+means after the one-time embedding-model download; if the model is absent and the machine is
+offline, embedding jobs queue with a clear badge and the app stays fully usable.
 
 ## Deliverables
 - **Embeddings (D24):** `fastembed` in `src-tauri` (bge-small class). Model files downloaded

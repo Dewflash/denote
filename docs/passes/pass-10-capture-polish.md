@@ -33,9 +33,12 @@ plus the full theming system and a hardening sweep.
   clobbering immediately).
 - Global shortcut conflicts: detect registration failure and surface remap UI, don't fail
   silently.
-- Snippets are arbitrary CSS — scope injection after token layer so tokens stay overridable;
-  a broken snippet must be disable-able from settings even if it breaks layout (settings
-  window unaffected by snippets).
+- Snippets are arbitrary CSS — scope injection after token layer so tokens stay overridable.
+  Mechanism (decided): snippet stylesheets are injected scoped under a `.snippet-scope`
+  class applied to the main app root but NOT the settings subtree — settings shares the
+  window but sits outside the scope, so a broken snippet can always be disabled from
+  settings. Enforce with an e2e case using a hostile `* { display:none !important }` snippet.
+- Migration scaffold dispatches per owned-JSON-file version (S26).
 
 ## Definition of Done
 From Safari: select text → hotkey → capture window pre-filled with text + URL → filed note

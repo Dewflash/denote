@@ -124,8 +124,9 @@ interface Topic {
   members: { notePath: string; weight: number }[];   // soft multi-membership (D14)
 }
 
-interface GraphNode { id: NoteId | `topic:${string}` | `tag:${string}` | `ghost:${string}`;
-  type: 'note' | 'topic' | 'tag' | 'ghost'; vaultId?: VaultId }
+interface GraphNode { id: NoteId | `topic:${string}` | `topicmerge:${string}` | `tag:${string}` | `ghost:${string}`;
+  type: 'note' | 'topic' | 'topicmerge' | 'tag' | 'ghost'; vaultId?: VaultId }
+// tag ids are global (merge across vaults); topicmerge is presentation-only — see SPECS S25
 interface GraphEdge {
   id: string; from: string; to: string;
   type: 'wikilink' | 'embed' | 'note-tag' | 'note-topic' | 'topic-topic' | 'ai-similar' | 'manual';

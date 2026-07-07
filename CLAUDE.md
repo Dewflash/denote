@@ -55,6 +55,49 @@ silently substitute your own architecture.
 - UI: manual verification per pass DoD; e2e smoke tests arrive in pass 10.
 - `pnpm test` and `pnpm lint` must pass before a pass is marked done.
 
+## Known traps — read before your pass; these are where implementations go wrong
+
+Each of these looks fine in code review and fails in production. The spec section is the fix.
+
+1. **Hashing via YAML round-trip (S1).** Parsing and re-serializing frontmatter to strip the
+   `ai:` key produces unstable bytes → hash inequality → infinite enrichment loop. The strip
+   is textual line removal. Run `node docs/reference/hash_spec_test.mjs` against your port.
+2. **Background write vs. typing race (S23).** Takeover writes `ai:` frontmatter while the
+   user is typing in that note → clobbered keystrokes. Dirty open buffers DEFER AI writes.
+   If you implement any write path and haven't thought about the open-editor case, stop.
+3. **Watcher echo (S8).** Your own writes come back as watcher events. Without signature
+   tagging you'll re-run pipelines on every save; with naive tagging you'll misclassify a
+   real external edit that happens to occur within the window — the signature matches on
+   content hash, not just path+time, for exactly this reason.
+4. **Unbounded path access (S22).** A generic `read_file(absolutePath)` Tauri command is a
+   security hole (webview → whole disk). Containment checks are canonicalize-then-verify,
+   in Rust, on every command.
+5. **Note-note cliques (D6).** "Notes sharing a tag are connected" = O(n²) edges = hairball.
+   Tags and topics are hub nodes. If your graph code ever iterates pairs of notes to make
+   edges (other than the capped ai-similar pipeline), it's wrong.
+6. **Topic sprawl (D14/S17).** Skipping the retrieve-existing-topics step in enrichment
+   prompts creates "banking"/"banks"/"banking system" as three topics within a week. The
+   canonicalization order (exact → alias → 0.80 centroid → create) is mandatory, including
+   for cloud-tier output.
+7. **Storing derived data (D3/D5).** The moment backlinks, or any index, get persisted as
+   truth, external edits corrupt them. Everything derived must be rebuildable — pass 10
+   literally deletes `.denote/cache` live to prove it.
+8. **Cross-system undo (S23/D38).** Wiring structural ops into CodeMirror's typing history
+   (or ignoring undo for them) both fail. Two tiers, op-log with inverses.
+9. **Batch jobs and app restarts (S27).** A submitted Anthropic batch outlives the process.
+   Persist batch ids before submission; resume polling on launch; reconcile spend. Money
+   must never vanish silently.
+10. **Mixed embedding models (S14).** Vectors from different models are not comparable.
+    The store records its model id; mismatch = discard and re-embed, never mix.
+11. **Editor perf cliff (pass 3).** Re-decorating the whole document per keystroke feels
+    fine on test notes and dies on a 10k-line note. Use viewport-incremental decorations
+    from the start.
+12. **Scope discipline.** If you find yourself designing something the docs don't specify,
+    that's not initiative, it's drift: check SPECS first, then DECISIONS; if genuinely
+    unspecified AND load-bearing, write it up in PROGRESS "Blocked" and stop. Small
+    mechanical choices (a variable name, a private helper) are yours; anything an S-number
+    or D-number could plausibly govern is not.
+
 ## Commands
 
 - `pnpm tauri dev` — run the app

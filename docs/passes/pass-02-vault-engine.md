@@ -7,7 +7,10 @@ live under external edits; rename/move handled per D4/D4a.
 ## Normative specs for this pass
 SPECS **S7** (atomic writes, per-note mutex, ordering — D29), **S8** (app-write tagging
 protocol, exact signature/window semantics), **S9** (rename/move/retitle rules — note the
-three distinct cases and the move re-key list).
+three distinct cases and the move re-key list), **S22** (filesystem containment — every Rust
+command canonicalizes + verifies vault-root containment; watcher shares the ignore set;
+security-critical, test with symlink-escape and `../` fixtures), **S26** (store versioning:
+every owned JSON file carries `version: 1`; assets = non-md files, indexed by path only).
 
 ## Deliverables
 - Rust commands (`src-tauri`): `read_note`, `write_note`, `list_vault_files` (respecting

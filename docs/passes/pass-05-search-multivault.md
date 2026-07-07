@@ -18,6 +18,9 @@ Full-text search with filters; true multi-vault: registry, fast switching, combi
   discipline actually held; fix drift now).
 - Graph vault selector: checkbox set of open vaults → combined graph (D17). Wikilink
   resolution stays vault-scoped; cross-vault edges only from (future) AI layers.
+  Combined-view identity merging per **S25**: tags merge by name into one hub (implement
+  now); topic visual-merge machinery is pass 8, but graphBuilder's node-id scheme must not
+  preclude it — follow S25 ids exactly.
 - Settings → Vaults page: manage registry, set localOnly per vault (enforcement lands pass 6
   router; persist the flag now).
 

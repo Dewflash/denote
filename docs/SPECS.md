@@ -164,7 +164,7 @@ Editor rendering: provisional tags/links from `ai:` render in muted/dashed style
 
 `sha256(kind + "\x1f" + normalizedTarget)` where normalizedTarget = lowercase NFC of: topic
 name (topic), resolved target relPath or raw target (link), tag name (tag), first 64 chars of
-summary (summary). Stored with the contentHash it was rejected against; a suggestion is
+summary (summary), alias name (alias). Stored with the contentHash it was rejected against; a suggestion is
 suppressed iff (fingerprint, contentHash) matches — content edits give suggestions a new
 chance, identical content never re-asks.
 
@@ -193,9 +193,14 @@ retry (re-prompt with the validation error), then park the job.
 
 ## S14. Embedding store format (D24)
 
-`embeddings.bin`: header `DENV` (4 bytes) + u32 version(1) + u32 dim + u32 rowCount, then
-rows of f32 little-endian, row-major. `embeddings.idx` (JSON): `{version, dim, rows:
-[{row, relPath, contentHash} ...], free: [rowNumbers]}`. New vectors fill `free` slots first,
+Model: `intfloat/multilingual-e5-small` via fastembed (`MultilingualE5Small`, 384 dims) —
+multilingual chosen deliberately (owner's vaults may contain non-English content); if
+fastembed lacks it at implementation time, fall back to `BGESmallENV15` and log the
+deviation in PROGRESS. `embeddings.bin`: header `DENV` (4 bytes) + u32 version(1) + u32 dim
++ u32 rowCount, then rows of f32 little-endian, row-major. `embeddings.idx` (JSON):
+`{version, model, dim, rows: [{row, relPath, contentHash} ...], free: [rowNumbers]}` —
+`model` is the exact model id; on mismatch at load (model changed), the entire store is
+invalid: discard and re-embed everything. Never mix vectors from different models. New vectors fill `free` slots first,
 else append. Deleting marks the row free. Compact (rewrite both files) when
 `free.length > 0.25 * rowCount`. All writes atomic per S7. Vectors are L2-normalized at write
 time so similarity = dot product.
@@ -209,6 +214,12 @@ reason passes the vacuity gate: length ≥ 15 chars AND not matching the denylis
 (case-insensitive substrings: "both are notes", "similar writing", "same language", "both
 discuss topics", "related content"). Failed pairs recorded (pair + both hashes) so they are
 not re-asked until content changes.
+
+**Edge ownership:** an accepted similar-pair within one vault is stored as an annotation
+owned by the lexicographically smaller relPath (payload carries the other endpoint);
+graphBuilder treats pairs as unordered. Failed pairs go to `.denote/ai/rejections.json`
+under a `similarityPairs` key (pair + both hashes). **Cross-vault pairs never touch either
+vault's `.denote/`** — they live app-side (S24) so vaults stay self-contained and portable.
 
 ## S16. On-device token budgeting
 
@@ -268,3 +279,104 @@ the cap; the ledger records actuals from response `usage` and reconciles.
 'ai-timeout' | 'ai-invalid-output' | 'budget-exceeded' | 'local-only-blocked' | 'conflict' |
 'corrupt-store', path?, detail, retryable: bool}`. UI maps kinds to surfaces (badge, toast,
 parked-jobs panel). Never throw raw strings across a service boundary.
+
+## S21. Keymap registry (defaults; all rebindable in Settings → Hotkeys)
+
+One module owns all bindings; passes register into it — no scattered literals.
+`cmd-N` new note · `cmd-O` quick switcher · `cmd-P` command palette · `cmd-E` reading view ·
+`cmd-T` Today view · `cmd-shift-F` search · `cmd-,` settings · `cmd-shift-N` GLOBAL capture
+(system-wide) · `cmd-G` graph view · `cmd-Z` undo (see S23). Registering a duplicate binding
+is a build-time error (unit test over the registry).
+
+## S22. Filesystem containment (security — D33)
+
+Every Rust command that touches a path MUST: canonicalize the input path (resolving
+symlinks), canonicalize the registered vault roots, and verify the canonical path is inside
+a registered root; otherwise return `fs`-kind error. This is the defense against path
+traversal and symlink escape — the webview must be physically unable to read or write
+outside vault roots (plus the app-support dir via separate, equally-guarded commands).
+Never expose a generic `read_file(path)` command. Watcher shares the ignore set with
+`list_vault_files` (`.denote/`, `.git/`, dotfiles) — events under ignored paths are dropped
+in Rust before reaching the frontend.
+
+## S23. Open-buffer writes & the undo model (D34, D38) — race-prone; read twice
+
+Two undo systems exist and must not be blended naively:
+- **Typing** = CodeMirror history (cmd-Z inside the editor).
+- **Structural ops** (accept suggestion, takeover apply/demote, rename refactor, restore
+  snapshot) = a repository op-log with inverse operations; repository-level undo pops the
+  op-log (also bound to cmd-Z when editor is not focused, and to a toast "Undo" action).
+
+Rules for background writes to a note that is OPEN in the editor:
+1. If the buffer is clean (saved): apply the change as a CodeMirror transaction (so the view
+   updates in place), tagged as remote (excluded from CM's typing history), and record the
+   inverse in the op-log.
+2. If the buffer is dirty (unsaved keystrokes): DEFER the write — takeover/AI writes wait
+   until the buffer is saved and idle ≥2s, then re-check preconditions (hash may have
+   changed; if so, drop the deferred write and let the pipeline re-run). Never clobber
+   unsaved user input. This deferral is mandatory; it prevents the classic
+   background-write-vs-typing race.
+3. External (watcher) changes to a dirty open buffer: keep the user's buffer, surface a
+   non-modal conflict bar (keep mine / take disk / view both as `Note (conflict …).md`).
+   Never silently merge.
+
+## S24. Cross-vault AI store (app support)
+
+`~/Library/Application Support/DeNote/crossvault.json` — versioned; holds ai-similar pair
+edges whose endpoints are in different vaults `{aVaultId, aRelPath, bVaultId, bRelPath,
+reason, confidence, hashes}` and their rejection records. Presentation-layer topic merging
+(S25) is computed at graph time and never stored. If a referenced vault is closed/missing,
+its cross-vault edges are simply not rendered (kept in file until the vault is deleted from
+the registry).
+
+## S25. Combined-graph identity merging (multi-vault view)
+
+- **Tags:** same lowercased tag name across vaults renders as ONE hub node
+  (id `tag:{name}`); inspector lists per-vault member counts.
+- **Topics:** ontologies are strictly per-vault (portability). In combined view, topics from
+  different vaults merge VISUALLY into one node when exact case-insensitive name match OR
+  centroid cosine ≥ 0.92 (id `topicmerge:{lowercased name}`); the merge is presentation-only
+  — no data is written, and the inspector shows the constituent per-vault topics. Semantic
+  clustering in combined view colors by merged topic.
+- **Notes and ghosts:** never merge across vaults.
+
+## S26. Store versioning & assets
+
+- Every JSON file the app owns (`annotations.json`, `rejections.json`, `topics.json`,
+  `queue.json`, `vaults.json`, `settings.json`, `spend.json`, `crossvault.json`) carries a
+  top-level `version: 1`. Pass-10's migration scaffold dispatches per file+version.
+  Global app settings live at `~/Library/Application Support/DeNote/settings.json`.
+- **Assets** = non-`.md` files in a vault (images, PDFs): indexed by path for embed
+  resolution (S4 steps 1–2 only), rendered read-only in the editor for image embeds
+  (`![[img.png]]`), never hashed into the note pipeline, never sent to any AI backend,
+  excluded from search body indexing (filename searchable).
+- Search indexes both user and provisional (`ai:`) tags; results and tag pickers show a
+  provenance badge on provisional ones.
+- Rejections pruning: entries whose note was deleted ≥30 days ago, or older than 180 days,
+  are dropped during Organize-vault runs.
+- Note dates for timelines/insights: `created` = frontmatter `created`/`date` if parseable,
+  else file birthtime; `edited` = mtime. Document this precedence in one util.
+
+## S27. Cloud job durability & unified spend ledger
+
+- EVERY Anthropic-backend call (deep-organize batches AND on-demand insights) records to
+  `spend.json` and respects the monthly cap — there is no uncapped path to the paid backend.
+- Batch jobs persist `{batchId, submittedAt, estimatedCost, custom_id manifest}` BEFORE
+  submission. Batches take up to 24h; the app must resume polling on next launch for any
+  non-terminal persisted batch and reconcile actual usage into the ledger. A batch whose
+  results are fetched is marked terminal; unfetched-but-expired batches are logged as losses
+  (visible in the spend UI) — money must never disappear silently.
+- Local estimate (chars/3.5) is used for corpus trimming; `count_tokens` verifies the final
+  assembled batch before submission (free endpoint; still respects the 1.2× margin, S19).
+- Corpus assembly excludes localOnly vaults entirely (D18) — enforced in the assembler, not
+  just the router (defense in depth).
+
+## S28. First-run takeover consent (trust gate — D35)
+
+The first time takeover (D9/S10) would apply provisional structure to more than 20 notes in
+a vault (typical after import or first enrichment of an existing vault), it pauses and asks
+once: "DeNote's AI can annotate N uncategorized notes with provisional tags/links (stored in
+an `ai:` metadata block, reversible, clearly marked). Apply?" — options: apply all / apply
+none (stay suggestions-only) / always ask. The answer is a per-vault setting. Below the
+20-note threshold, takeover proceeds silently as specced. Bulk demotion never asks (removing
+AI data is always safe).
