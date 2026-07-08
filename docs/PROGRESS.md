@@ -21,6 +21,11 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 Statuses: `pending` → `next` → `in-progress` → `done` (or `blocked` with a Blocked section
 below explaining exactly what and why).
 
+Model assignment (architect recommendation): Opus 4.8 at effort `high` for passes 01, 02,
+06, 07, 08, 09 (escalate to `xhigh` if 02/06/07/08 struggle); Sonnet 5 at `high` for passes
+00, 03, 04, 05, 10, 11. One pass per fresh session. Two consecutive DoD failures on a pass =
+stop and summon the architect, do not keep retrying.
+
 ## Architect review checkpoints
 
 Independent architect inspections of implemented code, distinct from pass DoDs. The owner
