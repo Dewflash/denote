@@ -53,5 +53,5 @@ export interface StorageBackend {
  *  `.git/`). Rust drops these before they reach the frontend; mirrored here as defense in
  *  depth for backends and event handling. */
 export function isIgnoredPath(relPath: string): boolean {
-  return relPath.split('/').some((seg) => seg.startsWith('.'));
+  return relPath.split('/').some((seg) => seg.startsWith('.')) || relPath.endsWith('.denote-tmp');
 }

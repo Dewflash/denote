@@ -100,13 +100,20 @@ string without the mask.
 
 ## S6. Vault-relative paths
 
-Forward slashes only, no leading slash, NFC-normalized, `.md` extension included in relPath.
-Comparisons are case-insensitive (APFS default) but stored casing is preserved.
+Forward slashes only, no leading slash, `.md` extension included in relPath.
+**Path bytes are stored/keyed exactly as the filesystem reports them — never rewrite their
+unicode normalization for fs access** (a forced NFC rewrite would break access on
+normalization-sensitive volumes). All *comparisons* — link resolution, identity checks —
+fold both sides (NFC + lowercase), which also covers APFS case-insensitivity. Stored casing
+preserved for display. (Amended at checkpoint A, 2026-07-08: codifies the safer
+implementation choice over the original blanket-NFC wording.)
 
 ## S7. Atomic writes, concurrency, ordering
 
-- Every vault file write: write to `path + ".denote-tmp"` in the same directory, fsync,
-  atomic rename over the target.
+- Every vault file write: write to `path + ".denote-tmp"` (APPENDED to the full name,
+  never replacing the extension), fsync, atomic rename over the target. `*.denote-tmp` is
+  part of the shared ignore set (S22) on both the Rust and TS sides, so tmp files never
+  produce watcher events or listings. (Amended at checkpoint A, 2026-07-08.)
 - **Per-note mutex** in the repository: all mutations to one relPath are serialized; the
   enrichment applier, takeover writer, and user saves all queue on it (D29).
 - One pipeline instance per vault; watcher events are processed in arrival order after

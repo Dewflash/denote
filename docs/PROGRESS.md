@@ -8,7 +8,7 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 | 00 | Toolchain & scaffold | — | **done** | 2026-07-08 | Tauri 2 + React 19 + TS scaffold at repo root (identifier `com.dewflash.denote`, product name `DeNote`). Source tree per MASTERPLAN §3 (empty `index.ts` files w/ header comments). Tailwind v4 + `src/app/tokens.css` (light/dark via `prefers-color-scheme`, `data-theme` override). Vitest + ESLint flat config w/ domain-purity boundary rule (`no-restricted-imports` on `src/domain/**`) — probed with a `react` import, confirmed it fails lint, then removed. `pnpm tauri dev` builds and opens the 3-pane placeholder shell; `pnpm test`/`pnpm lint` pass. Only `opener` Tauri plugin enabled (fs/dialog/global-shortcut deferred). No Swift sidecar or AI deps added (`sidecar/apple-ai/` has a README stub only). |
 | 01 | Domain core: parser, types, graph builder | 00 | **done** | 2026-07-08 | Pure `src/domain/`: `types.ts` (MASTERPLAN §5 + `WikiLink.heading` S2 + `ParsedNote.warnings` per brief), `sha256.ts` (pure FIPS-180-4, see deviation), `hashing.ts` (S1 verbatim port of the reference; all 12 vectors + R1 property test green), `parser.ts` (unified/remark blocks + masked inline scanner, S2/S3/S5), `links.ts` (S4 + ghost identity + link-index builder), `backlinks.ts` (D5, computed only), `graphBuilder.ts` (D6/D6a/D7/D17 hub model, deterministic sorted output), `takeover.ts` (D9/S10 pure decision fn). 119 tests pass (48-case parser corpus + S3 vectors, hashing vectors+property, links, backlinks, takeover, graphBuilder snapshots, vision-corpus deterministic layer, sha256 vs node:crypto). `pnpm test`/`pnpm lint`/`tsc`/`pnpm build` all clean. Reference script still ALL GREEN. Next: pass 02 → **architect checkpoint A** follows. |
 | 02 | Vault engine: fs, watcher, repository, indexes | 01 | **done** | 2026-07-08 | Rust core: `containment.rs` (S22 canonicalize-then-verify + shared ignore set; 6 unit tests incl. symlink-escape & `../` green via `cargo test --lib`), `fs_commands.rs` (`read_note`/`write_note` atomic tmp+fsync+rename S7, `list_vault_files` ignore-filtered, `list_dir`, `create_dir`/`delete_path`/`rename_path`/`stat_path`/`path_exists`, `register_vault_root` w/ managed `VaultRoots`), `watcher.rs` (`notify`-based recursive watcher → `denote://fs-event`, ignore-filtered in Rust, rename-mode mapping). TS: `services/storage.ts` (StorageBackend interface + `isIgnoredPath`), `tauriStorage.ts`, `watcherBridge.ts` (300ms per-path debounce), `snapshots.ts` (D21 pure policy), `errors.ts` (S20 `DenoteError`), `state/appWriteRegistry.ts` (S8 content-hash signatures + path-ops, consume-once, 5s window), `state/vaultIndex.ts` (live index, backlinks recomputed never stored), `state/repository.ts` (openVault/createVault/createNote/saveNote/renameNote/moveNote/deleteNote/snapshotNote; all writes tagged D23; per-note mutex + per-vault event chain S7/D29; rename refactor S9 preserving heading+alias; move reconciliation D4a via `registerRekeyHook`; meta.json bootstrap). 146 tests pass (27 new: integration temp-dir vaults for all DoD cases + appWriteRegistry + snapshots). `pnpm test`/`lint`/`build`, `cargo test --lib`, and hash reference script all green. Next: **architect checkpoint A** before pass 03. |
-| 03 | App shell UI: layout, tree, editor, backlinks | 02 | **next** | | Gated on architect checkpoint A (post-02); implementation pauses until the verdict lands. |
+| 03 | App shell UI: layout, tree, editor, backlinks | 02 | **next** | | Checkpoint A passed — cleared to implement. NOTE for this pass: the FIRST manual DoD step (create vault) is also the first-ever exercise of the real tauriStorage→Rust path (tests use the node backend), so verify `.denote/meta.json` bootstrap and note listing work in the running app before anything else. |
 | 04 | Graph view | 02, 03 | pending | | |
 | 05 | Search & multi-vault | 02, 03 | pending | | |
 | 06 | AI framework: AiClient, mock, annotations, takeover | 02 | pending | | |
@@ -34,7 +34,7 @@ review verdict lands here.
 
 | Checkpoint | After pass | Focus | Status |
 |-----------|-----------|-------|--------|
-| A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | pending |
+| A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | **done 2026-07-08 — PASS w/ 2 architect fixes** |
 | B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | pending |
 | C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | pending |
 | D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | pending |
@@ -69,6 +69,31 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   Deviation 2 (remark satellite deps) approved under D20. MASTERPLAN §5 synced with
   `ParsedNote.warnings`. Suite 119/119, lint clean, reference script ALL GREEN. Cleared for
   pass 02; checkpoint A (post-02) will re-sweep this foundation plus the vault engine.
+
+- 2026-07-08 · **CHECKPOINT A (post-pass-02)** · **verdict: PASS with 2 architect fixes
+  applied; all 4 deviations APPROVED (one codified into SPECS).**
+  Verified by direct read + independent runs: containment.rs is a correct
+  canonicalize-then-verify boundary (rejects `../`, absolute, unregistered roots, symlink
+  escapes via deepest-existing-ancestor; correctly ALLOWS `.denote/` through commands while
+  ignoring it in listings/watcher); every fs command routes through `contained_path`; no
+  generic file access exists. S8 registry: hash-matched consume-once signatures, 5s window,
+  path-ops for deletes — the misclassification-negative test (external edit inside the
+  window) is present. S9/D4a: move reconciliation keyed by contentHash, 2s window, rekey
+  hooks, both event orderings tested. Integration suite covers every DoD case incl.
+  path/filename/title-form rename rewriting preserving heading+alias. Snapshot policy
+  matches D21 exactly. Suites: 146 TS + 6 Rust green, lint/build green, reference ALL GREEN.
+  **Architect fixes:** (1) Rust `write_note` used `with_extension` (extension REPLACEMENT),
+  so `a.md`/`a.txt` would share one tmp file — fixed to append per S7; notably the TS test
+  backend already appended correctly, i.e. the bug lived only on the untestable-by-vitest
+  production side (the exact prod/test divergence the deviation log flagged — pass 03's
+  first manual step must exercise the real Rust path). (2) `*.denote-tmp` added to the
+  shared ignore set (Rust + TS + test) so atomic-write tmp files never emit watcher events —
+  gap existed in SPECS too; S7 amended. **Deviation rulings:** notify=6 pin OK;
+  StorageBackend injection OK (good pattern); enrichment-enqueue deferral to pass 6 OK —
+  pass-6 agent MUST wire in-app saves → S12 queue (it owns the queue); NFC deviation
+  APPROVED AND ADOPTED — implementation's fs-reported-bytes + fold-comparisons approach is
+  safer than the original blanket-NFC S6 wording; S6 amended to codify it. Cleared for
+  pass 03.
 
 ## Owner inputs required
 

@@ -13,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 /// The shared ignore set (S22): dotfiles / dot-directories anywhere in the relative path.
 /// Covers `.denote/`, `.git/`. Applied by `list_vault_files` and the watcher alike.
 pub fn is_ignored(rel: &str) -> bool {
-    rel.split('/').any(|seg| seg.starts_with('.'))
+    rel.split('/').any(|seg| seg.starts_with('.')) || rel.ends_with(".denote-tmp")
 }
 
 /// Resolve a vault-relative path to an absolute path guaranteed to be inside `root`, where
@@ -121,6 +121,7 @@ mod tests {
         assert!(is_ignored(".denote/meta.json"));
         assert!(is_ignored(".git/config"));
         assert!(is_ignored("a/.hidden/x.md"));
+        assert!(is_ignored("notes/a.md.denote-tmp"), "atomic-write tmp files are ignored (S7)");
         assert!(!is_ignored("notes/a.md"));
     }
 

@@ -81,7 +81,9 @@ pub fn write_note(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("mkdir failed: {e}"))?;
     }
-    let tmp = path.with_extension("denote-tmp");
+    // Append (not with_extension, which would REPLACE .md and let `a.md`/`a.txt` collide on
+    // one tmp name — S7 says path + ".denote-tmp").
+    let tmp = PathBuf::from(format!("{}.denote-tmp", path.display()));
     {
         let mut f = fs::File::create(&tmp).map_err(|e| format!("tmp create failed: {e}"))?;
         f.write_all(content.as_bytes())
