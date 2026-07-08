@@ -12,11 +12,13 @@ use watcher::Watchers;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(VaultRoots::default())
         .manage(Watchers::default())
         .invoke_handler(tauri::generate_handler![
             fs_commands::register_vault_root,
             fs_commands::read_note,
+            fs_commands::read_asset,
             fs_commands::write_note,
             fs_commands::create_dir,
             fs_commands::delete_path,

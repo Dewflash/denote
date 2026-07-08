@@ -9,6 +9,7 @@
 /** Result of stat()-ing a vault-relative path. */
 export interface FileStat {
   mtime: number; // epoch ms
+  btime: number; // epoch ms; birthtime, falls back to mtime if unsupported (S26)
   size: number; // bytes
 }
 
@@ -18,6 +19,7 @@ export interface DirEntry {
   isDir: boolean;
   isMarkdown: boolean;
   mtime: number;
+  btime: number;
   size: number;
 }
 

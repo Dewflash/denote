@@ -13,6 +13,10 @@ export class VaultIndex {
   readonly notes = new Map<string, ParsedNote>();
   readonly hashes = new Map<string, string>();
   readonly mtimes = new Map<string, number>();
+  /** First-seen creation time per note (S26 `created` fallback). Preserved across edits —
+   *  set once, never overwritten by a later `setNote` unless the note is removed first (rename
+   *  carries it over explicitly; see repository.ts `relocate`). */
+  readonly btimes = new Map<string, number>();
   /** Non-`.md` files, indexed by path only (S26). */
   readonly assets = new Map<string, FileStat>();
 
@@ -21,11 +25,20 @@ export class VaultIndex {
 
   constructor(readonly vaultId: VaultId) {}
 
-  /** Upsert a note. Pass `rebuild: false` during bulk load, then call rebuildDerived() once. */
-  setNote(parsed: ParsedNote, hash: string, mtime: number, opts: { rebuild?: boolean } = {}): void {
+  /** Upsert a note. Pass `rebuild: false` during bulk load, then call rebuildDerived() once.
+   *  `btime`, if given, seeds the creation time ONLY if this relPath has none recorded yet. */
+  setNote(
+    parsed: ParsedNote,
+    hash: string,
+    mtime: number,
+    opts: { rebuild?: boolean; btime?: number } = {},
+  ): void {
     this.notes.set(parsed.relPath, parsed);
     this.hashes.set(parsed.relPath, hash);
     this.mtimes.set(parsed.relPath, mtime);
+    if (!this.btimes.has(parsed.relPath)) {
+      this.btimes.set(parsed.relPath, opts.btime ?? mtime);
+    }
     if (opts.rebuild !== false) this.rebuildDerived();
   }
 
@@ -33,7 +46,12 @@ export class VaultIndex {
     this.notes.delete(relPath);
     this.hashes.delete(relPath);
     this.mtimes.delete(relPath);
+    this.btimes.delete(relPath);
     if (opts.rebuild !== false) this.rebuildDerived();
+  }
+
+  getBtime(relPath: string): number | undefined {
+    return this.btimes.get(relPath);
   }
 
   setAsset(relPath: string, stat: FileStat): void {

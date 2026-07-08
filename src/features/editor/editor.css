@@ -1,0 +1,61 @@
+/* src/features/editor/editor.css — shared live-preview / reading-view typography (D16 tokens
+   only). Plain global CSS (not EditorView.theme) on purpose: CodeMirror themes are scoped to
+   the editor's own DOM and never reach the reading view, which renders as plain React markup. */
+
+.cm-denote-h1 { font-size: 1.7em; font-weight: 700; }
+.cm-denote-h2 { font-size: 1.4em; font-weight: 700; }
+.cm-denote-h3 { font-size: 1.2em; font-weight: 600; }
+.cm-denote-h4, .cm-denote-h5, .cm-denote-h6 { font-weight: 600; }
+.cm-denote-strong { font-weight: 700; }
+.cm-denote-em { font-style: italic; }
+
+.cm-denote-link {
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px solid var(--accent);
+  text-decoration: none;
+}
+.cm-denote-link-ghost {
+  color: var(--fg-muted);
+  border-bottom: 1px dashed var(--fg-muted);
+}
+
+.cm-denote-tag {
+  color: var(--accent);
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 6px;
+  font-size: 0.9em;
+}
+
+.cm-denote-embed { max-width: 100%; border-radius: var(--radius); display: block; }
+.cm-denote-embed-missing {
+  color: var(--fg-muted);
+  font-style: italic;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+}
+
+.cm-denote-inline-code {
+  font-family: var(--font-editor);
+  background-color: var(--bg-panel);
+  border-radius: var(--radius);
+  padding: 0 4px;
+}
+
+.denote-reading-view h1, .denote-reading-view h2, .denote-reading-view h3 { margin-top: 1em; }
+.denote-reading-view pre {
+  background-color: var(--bg-panel);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--font-editor);
+}
+.denote-reading-view blockquote {
+  border-left: 3px solid var(--border);
+  margin-left: 0;
+  padding-left: 12px;
+  color: var(--fg-muted);
+}

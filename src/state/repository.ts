@@ -136,12 +136,13 @@ export class Repository {
           const content = await this.backend.readNote(this.root, e.relPath);
           this.index.setNote(parseNote(e.relPath, content), contentHash(content), e.mtime, {
             rebuild: false,
+            btime: e.btime,
           });
         } catch (err) {
           this.warnings.push(`index ${e.relPath}: ${errMsg(err)}`);
         }
       } else {
-        this.index.setAsset(e.relPath, { mtime: e.mtime, size: e.size });
+        this.index.setAsset(e.relPath, { mtime: e.mtime, btime: e.btime, size: e.size });
       }
     }
     this.index.rebuildDerived();
@@ -307,6 +308,7 @@ export class Repository {
       const raw = await this.backend.readNote(this.root, oldRel);
       const content = normalize(raw);
       const hash = contentHash(content);
+      const btime = this.index.getBtime(oldRel); // carry the true creation time across the rename
 
       await this.ensureParent(newRel);
       this.appWrites.recordPathOp(oldRel);
@@ -317,6 +319,7 @@ export class Repository {
       this.index.removeNote(oldRel, { rebuild: false });
       this.index.setNote(parseNote(newRel, content), hash, st?.mtime ?? this.now(), {
         rebuild: false,
+        btime,
       });
       this.index.rebuildDerived();
 

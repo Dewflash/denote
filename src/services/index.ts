@@ -6,3 +6,5 @@ export * from './errors';
 export * from './snapshots';
 export { tauriStorage } from './tauriStorage';
 export { startWatcherBridge, FS_EVENT, WATCH_DEBOUNCE_MS } from './watcherBridge';
+export { pickFolder } from './dialogs';
+export { guessImageMime, loadAssetObjectUrl } from './assets';

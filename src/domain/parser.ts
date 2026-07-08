@@ -104,8 +104,10 @@ function parseInner(inner: string): Pick<WikiLink, 'targetTitle' | 'heading' | '
   return link;
 }
 
-// S3 tag grammar (verified). `gmu`; capture group 1 = name without `#`.
-const TAG_RE = /(?<=^|[\s(])#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gmu;
+// S3 tag grammar (verified). `gmu`; capture group 1 = name without `#`. Exported so presentation
+// code (editor live-preview decorations) can scan for tag spans using the exact same grammar
+// instead of duplicating the regex — this file remains the sole source of truth for it.
+export const TAG_RE = /(?<=^|[\s(])#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gmu;
 
 /** Scan tags per S3, skipping masked regions. Returns display casing, deduped by lowercase. */
 function scanTags(text: string, mask: MaskRange[]): string[] {

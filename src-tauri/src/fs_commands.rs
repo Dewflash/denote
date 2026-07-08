@@ -24,6 +24,7 @@ pub struct DirEntryDto {
     pub is_dir: bool,
     pub is_markdown: bool,
     pub mtime: u64,
+    pub btime: u64,
     pub size: u64,
 }
 
@@ -31,6 +32,7 @@ pub struct DirEntryDto {
 #[serde(rename_all = "camelCase")]
 pub struct FileStatDto {
     pub mtime: u64,
+    pub btime: u64,
     pub size: u64,
 }
 
@@ -40,6 +42,16 @@ fn mtime_ms(meta: &fs::Metadata) -> u64 {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Birthtime (creation time), used for Today view / note-dates precedence (S26). Falls back to
+/// mtime when the platform/filesystem doesn't report it (mirrors `mtime_ms`'s error handling).
+fn btime_ms(meta: &fs::Metadata) -> u64 {
+    meta.created()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_else(|| mtime_ms(meta))
 }
 
 fn is_md(name: &str) -> bool {
@@ -68,6 +80,20 @@ pub fn read_note(
 ) -> Result<String, String> {
     let path = contained_path(&roots(&state), &root, &rel_path)?;
     fs::read_to_string(&path).map_err(|e| format!("read failed: {e}"))
+}
+
+/// Read a non-`.md` asset's raw bytes (S26: image embeds `![[img.png]]` render read-only in the
+/// editor). Same containment boundary as every other command (S22) — there is still no generic
+/// `read_file(path)` escape hatch; this only ever returns bytes for a path inside a registered
+/// vault root, and the frontend never sends this content to any AI backend or the parse pipeline.
+#[tauri::command]
+pub fn read_asset(
+    root: String,
+    rel_path: String,
+    state: tauri::State<'_, VaultRoots>,
+) -> Result<Vec<u8>, String> {
+    let path = contained_path(&roots(&state), &root, &rel_path)?;
+    fs::read(&path).map_err(|e| format!("read failed: {e}"))
 }
 
 #[tauri::command]
@@ -146,6 +172,7 @@ pub fn stat_path(
     match fs::metadata(&path) {
         Ok(meta) => Ok(Some(FileStatDto {
             mtime: mtime_ms(&meta),
+            btime: btime_ms(&meta),
             size: meta.len(),
         })),
         Err(_) => Ok(None),
@@ -202,6 +229,7 @@ fn walk(base: &PathBuf, dir: &PathBuf, out: &mut Vec<DirEntryDto>) -> Result<(),
                 is_dir: false,
                 is_markdown: is_md(&name),
                 mtime: mtime_ms(&meta),
+                btime: btime_ms(&meta),
                 size: meta.len(),
             });
         }
@@ -240,6 +268,7 @@ pub fn list_dir(
             is_dir: meta.is_dir(),
             is_markdown: is_md(&name),
             mtime: mtime_ms(&meta),
+            btime: btime_ms(&meta),
             size: meta.len(),
         });
     }

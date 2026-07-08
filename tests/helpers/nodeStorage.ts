@@ -40,6 +40,7 @@ export function nodeStorage(): StorageBackend {
           isDir: d.isDirectory(),
           isMarkdown: isMd(d.name),
           mtime: st ? st.mtimeMs : 0,
+          btime: st ? st.birthtimeMs : 0,
           size: st ? st.size : 0,
         });
       }
@@ -75,7 +76,7 @@ export function nodeStorage(): StorageBackend {
     async stat(root, relPath): Promise<FileStat | null> {
       try {
         const st = await fs.stat(path.join(root, relPath));
-        return { mtime: st.mtimeMs, size: st.size };
+        return { mtime: st.mtimeMs, btime: st.birthtimeMs, size: st.size };
       } catch {
         return null;
       }
@@ -112,6 +113,7 @@ async function walk(root: string, dir: string, out: DirEntry[]): Promise<void> {
         isDir: false,
         isMarkdown: isMd(d.name),
         mtime: st ? st.mtimeMs : 0,
+        btime: st ? st.birthtimeMs : 0,
         size: st ? st.size : 0,
       });
     }

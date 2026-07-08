@@ -179,3 +179,8 @@ visually by name/centroid match — per-vault ontologies are never written to. (
 
 **D38. Two-tier undo:** CodeMirror history for typing; a repository op-log with inverse
 operations for structural ops (accept, takeover, rename refactor, restore). (S23)
+
+**D39. Official Tauri `plugin-dialog` added (pass 03).** Needed for native folder-picker
+dialogs (create/open vault) — a browser/webview has no API for this, and it is a first-party
+Tauri plugin (same trust tier as the already-approved `opener` plugin from D1/pass 00), not a
+new external service or dependency category. Scoped to the `dialog:default` permission only.

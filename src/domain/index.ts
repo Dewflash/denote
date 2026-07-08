@@ -10,3 +10,4 @@ export * from './links';
 export * from './backlinks';
 export * from './graphBuilder';
 export * from './takeover';
+export * from './noteDates';

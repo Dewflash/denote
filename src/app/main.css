@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "../features/editor/editor.css";
 
 body {
   margin: 0;
@@ -7,3 +8,16 @@ body {
   color: var(--fg);
   font-family: var(--font-ui);
 }
+
+.denote-tab-trigger {
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.denote-tab-trigger[data-state="active"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+

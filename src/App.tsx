@@ -1,27 +1,192 @@
 import "./app/main.css";
+import { useEffect } from "react";
+import { useVaultStore } from "./state/vaultStore";
+import { useUiStore } from "./state/uiStore";
+import { VaultRail } from "./app/VaultRail";
+import { RightPanel } from "./app/RightPanel";
+import { StatusBar } from "./app/StatusBar";
+import { CommandPalette } from "./app/CommandPalette";
+import { ExplorerPanel, TodayView } from "./features/explorer";
+import { Editor, ReadingView } from "./features/editor";
+import { SettingsModal } from "./features/settings";
+import { createUntitledNote } from "./features/capture";
+import { appKeymap, installGlobalKeymap } from "./app/keymap";
+import { pickFolder } from "./services/dialogs";
 
-// Placeholder three-pane shell: explorer / editor / graph-or-inspector.
-// Real panes arrive in pass 03 (shell UI) and pass 04 (graph view).
-function App() {
+function ConflictBar() {
+  const conflict = useVaultStore((s) => s.conflict);
+  const keepMine = useVaultStore((s) => s.resolveConflictKeepMine);
+  const takeDisk = useVaultStore((s) => s.resolveConflictTakeDisk);
+  const viewBoth = useVaultStore((s) => s.resolveConflictViewBoth);
+
+  if (!conflict) return null;
   return (
-    <div className="grid h-screen grid-cols-[240px_1fr_320px]" style={{ backgroundColor: "var(--bg)" }}>
-      <aside
-        className="border-r p-3"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-panel)" }}
-      >
-        <p style={{ color: "var(--fg-muted)" }}>Explorer</p>
-      </aside>
-      <main className="p-3">
-        <p style={{ color: "var(--fg-muted)" }}>Editor</p>
-      </main>
-      <aside
-        className="border-l p-3"
-        style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-panel)" }}
-      >
-        <p style={{ color: "var(--fg-muted)" }}>Graph / Inspector</p>
-      </aside>
+    <div
+      className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+      style={{ backgroundColor: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}
+    >
+      <span>
+        External changes detected in <strong>{conflict.relPath}</strong> while you had unsaved
+        edits.
+      </span>
+      <div className="flex gap-2">
+        <button
+          className="rounded px-2 py-1"
+          style={{ border: "1px solid var(--border)" }}
+          onClick={() => keepMine()}
+        >
+          Keep mine
+        </button>
+        <button
+          className="rounded px-2 py-1"
+          style={{ border: "1px solid var(--border)" }}
+          onClick={() => takeDisk()}
+        >
+          Take disk
+        </button>
+        <button
+          className="rounded px-2 py-1"
+          style={{ border: "1px solid var(--border)" }}
+          onClick={() => void viewBoth()}
+        >
+          View both
+        </button>
+      </div>
     </div>
   );
+}
+
+function Welcome() {
+  const openVaultAt = useVaultStore((s) => s.openVaultAt);
+  const createVaultAt = useVaultStore((s) => s.createVaultAt);
+  const error = useVaultStore((s) => s.error);
+
+  return (
+    <div
+      className="flex h-screen flex-col items-center justify-center gap-4"
+      style={{ backgroundColor: "var(--bg)", color: "var(--fg)" }}
+    >
+      <h1 className="text-xl font-semibold">DeNote</h1>
+      <p style={{ color: "var(--fg-muted)" }}>
+        Open an existing vault or create a new one to get started.
+      </p>
+      <div className="flex gap-3">
+        <button
+          className="rounded px-4 py-2 text-sm"
+          style={{ border: "1px solid var(--border)" }}
+          onClick={() =>
+            void pickFolder("Open vault").then((p) => {
+              if (p) void openVaultAt(p);
+            })
+          }
+        >
+          Open vault
+        </button>
+        <button
+          className="rounded px-4 py-2 text-sm"
+          style={{ backgroundColor: "var(--accent)", color: "#fff" }}
+          onClick={() =>
+            void pickFolder("Create vault").then((p) => {
+              if (p) void createVaultAt(p);
+            })
+          }
+        >
+          Create vault
+        </button>
+      </div>
+      {error && (
+        <p className="text-sm" style={{ color: "#c0392b" }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CenterPane() {
+  const todayViewOpen = useUiStore((s) => s.todayViewOpen);
+  const viewMode = useUiStore((s) => s.viewMode);
+  const buffer = useVaultStore((s) => s.buffer);
+
+  if (todayViewOpen) return <TodayView />;
+  if (!buffer) {
+    return (
+      <div className="flex h-full items-center justify-center" style={{ color: "var(--fg-muted)" }}>
+        <p>Select or create a note to begin.</p>
+      </div>
+    );
+  }
+  return viewMode === "reading" ? <ReadingView /> : <Editor />;
+}
+
+function Shell() {
+  useEffect(() => {
+    appKeymap.setHandler("new-note", () => {
+      useUiStore.getState().setTodayViewOpen(false);
+      void createUntitledNote(useUiStore.getState().selectedFolder);
+    });
+    appKeymap.setHandler("command-palette", () => {
+      const ui = useUiStore.getState();
+      ui.setCommandPaletteOpen(!ui.commandPaletteOpen);
+    });
+    appKeymap.setHandler("reading-view", () => useUiStore.getState().toggleViewMode());
+    appKeymap.setHandler("today-view", () => useUiStore.getState().toggleTodayView());
+    appKeymap.setHandler("settings", () => {
+      const ui = useUiStore.getState();
+      ui.setSettingsOpen(!ui.settingsOpen);
+    });
+    appKeymap.setHandler("undo", () => void useVaultStore.getState().opLog.undo());
+    return installGlobalKeymap(appKeymap);
+  }, []);
+
+  return (
+    <div
+      className="grid h-screen"
+      style={{
+        gridTemplateColumns: "56px 260px 1fr 300px",
+        gridTemplateRows: "1fr 24px",
+        backgroundColor: "var(--bg)",
+      }}
+    >
+      <div style={{ gridRow: "1 / 2" }}>
+        <VaultRail />
+      </div>
+      <aside
+        style={{
+          gridRow: "1 / 2",
+          borderRight: "1px solid var(--border)",
+          backgroundColor: "var(--bg-panel)",
+        }}
+      >
+        <ExplorerPanel />
+      </aside>
+      <main style={{ gridRow: "1 / 2", display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <ConflictBar />
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <CenterPane />
+        </div>
+      </main>
+      <aside
+        style={{
+          gridRow: "1 / 2",
+          borderLeft: "1px solid var(--border)",
+          backgroundColor: "var(--bg-panel)",
+        }}
+      >
+        <RightPanel />
+      </aside>
+      <div style={{ gridColumn: "1 / -1", gridRow: "2 / 3" }}>
+        <StatusBar />
+      </div>
+      <CommandPalette />
+      <SettingsModal />
+    </div>
+  );
+}
+
+function App() {
+  const root = useVaultStore((s) => s.root);
+  return root ? <Shell /> : <Welcome />;
 }
 
 export default App;
