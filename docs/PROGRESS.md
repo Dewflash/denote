@@ -7,8 +7,8 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 |------|-------|-----------|--------|-----------|-------|
 | 00 | Toolchain & scaffold | — | **done** | 2026-07-08 | Tauri 2 + React 19 + TS scaffold at repo root (identifier `com.dewflash.denote`, product name `DeNote`). Source tree per MASTERPLAN §3 (empty `index.ts` files w/ header comments). Tailwind v4 + `src/app/tokens.css` (light/dark via `prefers-color-scheme`, `data-theme` override). Vitest + ESLint flat config w/ domain-purity boundary rule (`no-restricted-imports` on `src/domain/**`) — probed with a `react` import, confirmed it fails lint, then removed. `pnpm tauri dev` builds and opens the 3-pane placeholder shell; `pnpm test`/`pnpm lint` pass. Only `opener` Tauri plugin enabled (fs/dialog/global-shortcut deferred). No Swift sidecar or AI deps added (`sidecar/apple-ai/` has a README stub only). |
 | 01 | Domain core: parser, types, graph builder | 00 | **done** | 2026-07-08 | Pure `src/domain/`: `types.ts` (MASTERPLAN §5 + `WikiLink.heading` S2 + `ParsedNote.warnings` per brief), `sha256.ts` (pure FIPS-180-4, see deviation), `hashing.ts` (S1 verbatim port of the reference; all 12 vectors + R1 property test green), `parser.ts` (unified/remark blocks + masked inline scanner, S2/S3/S5), `links.ts` (S4 + ghost identity + link-index builder), `backlinks.ts` (D5, computed only), `graphBuilder.ts` (D6/D6a/D7/D17 hub model, deterministic sorted output), `takeover.ts` (D9/S10 pure decision fn). 119 tests pass (48-case parser corpus + S3 vectors, hashing vectors+property, links, backlinks, takeover, graphBuilder snapshots, vision-corpus deterministic layer, sha256 vs node:crypto). `pnpm test`/`pnpm lint`/`tsc`/`pnpm build` all clean. Reference script still ALL GREEN. Next: pass 02 → **architect checkpoint A** follows. |
-| 02 | Vault engine: fs, watcher, repository, indexes | 01 | **next** | | |
-| 03 | App shell UI: layout, tree, editor, backlinks | 02 | pending | | |
+| 02 | Vault engine: fs, watcher, repository, indexes | 01 | **done** | 2026-07-08 | Rust core: `containment.rs` (S22 canonicalize-then-verify + shared ignore set; 6 unit tests incl. symlink-escape & `../` green via `cargo test --lib`), `fs_commands.rs` (`read_note`/`write_note` atomic tmp+fsync+rename S7, `list_vault_files` ignore-filtered, `list_dir`, `create_dir`/`delete_path`/`rename_path`/`stat_path`/`path_exists`, `register_vault_root` w/ managed `VaultRoots`), `watcher.rs` (`notify`-based recursive watcher → `denote://fs-event`, ignore-filtered in Rust, rename-mode mapping). TS: `services/storage.ts` (StorageBackend interface + `isIgnoredPath`), `tauriStorage.ts`, `watcherBridge.ts` (300ms per-path debounce), `snapshots.ts` (D21 pure policy), `errors.ts` (S20 `DenoteError`), `state/appWriteRegistry.ts` (S8 content-hash signatures + path-ops, consume-once, 5s window), `state/vaultIndex.ts` (live index, backlinks recomputed never stored), `state/repository.ts` (openVault/createVault/createNote/saveNote/renameNote/moveNote/deleteNote/snapshotNote; all writes tagged D23; per-note mutex + per-vault event chain S7/D29; rename refactor S9 preserving heading+alias; move reconciliation D4a via `registerRekeyHook`; meta.json bootstrap). 146 tests pass (27 new: integration temp-dir vaults for all DoD cases + appWriteRegistry + snapshots). `pnpm test`/`lint`/`build`, `cargo test --lib`, and hash reference script all green. Next: **architect checkpoint A** before pass 03. |
+| 03 | App shell UI: layout, tree, editor, backlinks | 02 | **next** | | Gated on architect checkpoint A (post-02); implementation pauses until the verdict lands. |
 | 04 | Graph view | 02, 03 | pending | | |
 | 05 | Search & multi-vault | 02, 03 | pending | | |
 | 06 | AI framework: AiClient, mock, annotations, takeover | 02 | pending | | |
@@ -106,6 +106,29 @@ what is needed and why, and continues with the rest of the pass if independent.
   shapes as the brief/SPECS direct. Domain unit tests live under `tests/domain/` (brief:
   "tests in `tests/`"); `vite.config.ts` `test.include` extended to cover `tests/**/*.test.ts`.
   Parser fixture corpus is data-driven at `tests/fixtures/parser/cases.ts`.
+
+- 2026-07-08 · pass 02 · **`notify = "6"` added to `src-tauri/Cargo.toml`.** Not a new
+  decision — the fs watcher is pre-specified by MASTERPLAN §3 ("notify watcher") and the
+  pass-02 brief. Pinned to v6 (v8 available) for a stable API surface; revisit if needed.
+- 2026-07-08 · pass 02 · **Storage is injected behind a `StorageBackend` interface**
+  (`services/storage.ts`); production uses `tauriStorage` (Rust commands), tests use a
+  node:fs backend (`tests/helpers/nodeStorage.ts`). This is what lets the DoD run as real
+  temp-dir integration tests in Vitest without a Tauri runtime. The Rust watcher itself is not
+  Vitest-testable; watcher LOGIC (S8 classify, S9/D4a reconcile) is tested by feeding
+  `Repository.onWatcherEvent` synthetic events, which is where the risk lives.
+- 2026-07-08 · pass 02 · **Enrichment pipeline is not enqueued on app-originated saves yet.**
+  Per S8, the watcher fires the pipeline for `external` (and future `app-write-content-change`)
+  events; the app's own write echoes are suppressed (R1). `Repository` exposes an `onPipeline`
+  hook for the watcher path. Wiring a user's in-app save → enrichment queue (S12) and the
+  per-write-kind trigger mapping (D23) belongs to pass 6, which owns the queue. No behavior a
+  pass-02 owner check exercises depends on it.
+- 2026-07-08 · pass 02 · **Move detection is clean for delete→create (the order S9 states);**
+  a rarer create→delete ordering re-keys identity correctly but fires one spurious pipeline
+  run on the create — harmless because enrichment is hash-gated + idempotent (D26/R1). macOS
+  filename NFC normalization is not applied to relPaths coming from the Rust listing/watcher
+  (would need a new unicode-normalization crate); link *targets* are NFC-normalized in the
+  domain layer as before. Snapshots store the newly-saved version as a point-in-time
+  checkpoint (filename = epoch millis), a valid reading of D21's copy-on-write history.
 
 ## Blocked
 
