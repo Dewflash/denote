@@ -45,6 +45,14 @@ a deviation touches an S- or D-number, or a checkpoint's focus area was reworked
 
 Review outcomes are logged under this table (date, verdict, corrective commands issued).
 
+- 2026-07-08 · unscheduled quick inspection of pass 00 · **verdict: PASS, no corrections.**
+  Architect independently re-verified: approved-stack-only deps (no AI/fs/dialog/shortcut
+  plugins; opener only), identifier/product name correct, MASTERPLAN §3 tree present,
+  tokens.css with light/dark + data-theme override, .gitignore complete, sidecar stub only.
+  Domain-purity rule probed live with react AND @tauri-apps imports — both correctly fail
+  lint with a clear message; baseline lint/test green (1/1). Ledger claims matched reality
+  exactly. Cleared to proceed to pass 01.
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing
