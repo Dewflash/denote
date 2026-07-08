@@ -21,6 +21,25 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 Statuses: `pending` → `next` → `in-progress` → `done` (or `blocked` with a Blocked section
 below explaining exactly what and why).
 
+## Architect review checkpoints
+
+Independent architect inspections of implemented code, distinct from pass DoDs. The owner
+summons the architect at these points; implementation pauses on the next pass until the
+review verdict lands here.
+
+| Checkpoint | After pass | Focus | Status |
+|-----------|-----------|-------|--------|
+| A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | pending |
+| B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | pending |
+| C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | pending |
+| D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | pending |
+| E | 11 | Release audit: full-repo sweep, derived-data deletion drill, conflict handling, private-repo default, EXPECTED.md + ACCEPTANCE.md end-to-end | pending |
+
+Unscheduled trigger: summon the architect immediately whenever anything sits in **Blocked**,
+a deviation touches an S- or D-number, or a checkpoint's focus area was reworked afterward.
+
+Review outcomes are logged under this table (date, verdict, corrective commands issued).
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing
