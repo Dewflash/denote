@@ -5,8 +5,8 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 
 | Pass | Title | Depends on | Status | Completed | Notes |
 |------|-------|-----------|--------|-----------|-------|
-| 00 | Toolchain & scaffold | — | **next** | | Pre-flight done 2026-07-07: arm64, macOS 26.5.1, Xcode+Swift 6.3.2 ✓, Node 24 + pnpm 11 ✓, Rust 1.96.1 installed ✓, FoundationModels probe: importable, availability=available ✓ |
-| 01 | Domain core: parser, types, graph builder | 00 | pending | | |
+| 00 | Toolchain & scaffold | — | **done** | 2026-07-08 | Tauri 2 + React 19 + TS scaffold at repo root (identifier `com.dewflash.denote`, product name `DeNote`). Source tree per MASTERPLAN §3 (empty `index.ts` files w/ header comments). Tailwind v4 + `src/app/tokens.css` (light/dark via `prefers-color-scheme`, `data-theme` override). Vitest + ESLint flat config w/ domain-purity boundary rule (`no-restricted-imports` on `src/domain/**`) — probed with a `react` import, confirmed it fails lint, then removed. `pnpm tauri dev` builds and opens the 3-pane placeholder shell; `pnpm test`/`pnpm lint` pass. Only `opener` Tauri plugin enabled (fs/dialog/global-shortcut deferred). No Swift sidecar or AI deps added (`sidecar/apple-ai/` has a README stub only). |
+| 01 | Domain core: parser, types, graph builder | 00 | **next** | | |
 | 02 | Vault engine: fs, watcher, repository, indexes | 01 | pending | | |
 | 03 | App shell UI: layout, tree, editor, backlinks | 02 | pending | | |
 | 04 | Graph view | 02, 03 | pending | | |
