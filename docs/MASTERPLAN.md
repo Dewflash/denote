@@ -101,6 +101,7 @@ interface ParsedNote {
   headings: { depth: number; text: string }[];
   links: WikiLink[];                        // outbound only
   tags: string[];
+  warnings: string[];                       // best-effort parser never throws (pass-01 brief)
 }
 interface WikiLink { targetTitle: string; heading?: string; alias?: string; embed: boolean; offsetStart: number; offsetEnd: number }  // grammar: SPECS S2
 

@@ -53,6 +53,23 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   lint with a clear message; baseline lint/test green (1/1). Ledger claims matched reality
   exactly. Cleared to proceed to pass 01.
 
+- 2026-07-08 · unscheduled inspection of pass 01 · **verdict: PASS, no corrections; both
+  deviations APPROVED.** Architect ran an independent differential probe (temporary test,
+  removed after): domain `contentHash` vs the reference algorithm on 54 adversarial inputs
+  the implementation had never seen (BOM+ai combos, `...` closers, tab indentation, `--- `
+  near-miss closer, uppercase `AI:`, unterminated fm, CRLF, NFD, 40 seeded key-order
+  permutations) — byte-identical on all. Parser hostile battery green: inline-code and
+  unclosed-fence masking, indented-code exclusion, `![[x#h|a|b]]` → heading `h` + alias
+  `a|b`, unicode tags, `#123` rejected, no throws on malformed input. (One probe assertion
+  initially failed due to the ARCHITECT's own swapped arguments — implementation was
+  correct.) links.ts implements S4 order + fold + shortest-then-lex tie exactly;
+  graphBuilder is sorted-deterministic with hub model — vision-corpus test asserts the
+  "0 note→note edges" anti-goal explicitly. Deviation 1 (pure in-domain SHA-256) approved:
+  reasoning is sound (webview + synchronous R1 requirement), cross-checked vs node:crypto;
+  Deviation 2 (remark satellite deps) approved under D20. MASTERPLAN §5 synced with
+  `ParsedNote.warnings`. Suite 119/119, lint clean, reference script ALL GREEN. Cleared for
+  pass 02; checkpoint A (post-02) will re-sweep this foundation plus the vault engine.
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing
