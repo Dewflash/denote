@@ -1,0 +1,247 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`graphBuilder (D6/D6a/D7/D17) > ai-similar edge carries reason + confidence and is unordered/deduped 1`] = `
+{
+  "edges": [
+    {
+      "confidence": 0.82,
+      "from": "vault-1/Untitled Capture.md",
+      "id": "ai-similar:vault-1/Untitled Capture.md<->vault-1/Yen.md",
+      "reason": "both discuss BOJ zero-rate policy and its effect on regional banks",
+      "source": "ai",
+      "to": "vault-1/Yen.md",
+      "type": "ai-similar",
+      "weight": 0.82,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "vault-1/Untitled Capture.md",
+      "label": "Untitled Capture",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/Yen.md",
+      "label": "Yen",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+  ],
+}
+`;
+
+exports[`graphBuilder (D6/D6a/D7/D17) > cross-vault id namespacing: same relPath in two vaults → distinct nodes; shared tag hub merges 1`] = `
+{
+  "edges": [
+    {
+      "from": "vault-1/Note.md",
+      "id": "note-tag:vault-1/Note.md->tag:shared",
+      "source": "parser",
+      "to": "tag:shared",
+      "type": "note-tag",
+      "weight": 1,
+    },
+    {
+      "from": "vault-2/Note.md",
+      "id": "note-tag:vault-2/Note.md->tag:shared",
+      "source": "parser",
+      "to": "tag:shared",
+      "type": "note-tag",
+      "weight": 1,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "tag:shared",
+      "label": "shared",
+      "type": "tag",
+    },
+    {
+      "id": "vault-1/Note.md",
+      "label": "Note",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-2/Note.md",
+      "label": "Note",
+      "type": "note",
+      "vaultId": "vault-2",
+    },
+  ],
+}
+`;
+
+exports[`graphBuilder (D6/D6a/D7/D17) > ghost node for an unresolved link 1`] = `
+{
+  "edges": [
+    {
+      "from": "vault-1/Japan.md",
+      "id": "wikilink:vault-1/Japan.md->ghost:vault-1/bank of japan",
+      "source": "parser",
+      "to": "ghost:vault-1/bank of japan",
+      "type": "wikilink",
+      "weight": 1,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "ghost:vault-1/bank of japan",
+      "label": "Bank of Japan",
+      "type": "ghost",
+    },
+    {
+      "id": "vault-1/Japan.md",
+      "label": "Japan",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+  ],
+}
+`;
+
+exports[`graphBuilder (D6/D6a/D7/D17) > tag hub with 3 notes → exactly 3 note→tag edges, zero note→note edges (no clique) 1`] = `
+{
+  "edges": [
+    {
+      "from": "vault-1/a.md",
+      "id": "note-tag:vault-1/a.md->tag:japan",
+      "source": "parser",
+      "to": "tag:japan",
+      "type": "note-tag",
+      "weight": 1,
+    },
+    {
+      "from": "vault-1/b.md",
+      "id": "note-tag:vault-1/b.md->tag:japan",
+      "source": "parser",
+      "to": "tag:japan",
+      "type": "note-tag",
+      "weight": 1,
+    },
+    {
+      "from": "vault-1/c.md",
+      "id": "note-tag:vault-1/c.md->tag:japan",
+      "source": "parser",
+      "to": "tag:japan",
+      "type": "note-tag",
+      "weight": 1,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "tag:japan",
+      "label": "japan",
+      "type": "tag",
+    },
+    {
+      "id": "vault-1/a.md",
+      "label": "A",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/b.md",
+      "label": "B",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/c.md",
+      "label": "C",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+  ],
+}
+`;
+
+exports[`graphBuilder (D6/D6a/D7/D17) > topic hub: note→topic and topic→topic hierarchy edges (source ai) 1`] = `
+{
+  "edges": [
+    {
+      "from": "vault-1/Japan.md",
+      "id": "note-topic:vault-1/Japan.md->topic:banking",
+      "reason": "member of topic "Banking"",
+      "source": "ai",
+      "to": "topic:banking",
+      "type": "note-topic",
+      "weight": 0.9,
+    },
+    {
+      "from": "vault-1/Yen.md",
+      "id": "note-topic:vault-1/Yen.md->topic:banking",
+      "reason": "member of topic "Banking"",
+      "source": "ai",
+      "to": "topic:banking",
+      "type": "note-topic",
+      "weight": 0.8,
+    },
+    {
+      "from": "topic:banking",
+      "id": "topic-topic:topic:banking->topic:finance",
+      "reason": "topic hierarchy",
+      "source": "ai",
+      "to": "topic:finance",
+      "type": "topic-topic",
+      "weight": 1,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "topic:banking",
+      "label": "Banking",
+      "type": "topic",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "topic:finance",
+      "label": "Finance",
+      "type": "topic",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/Japan.md",
+      "label": "Japan",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/Yen.md",
+      "label": "Yen",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+  ],
+}
+`;
+
+exports[`graphBuilder (D6/D6a/D7/D17) > two-note wikilink 1`] = `
+{
+  "edges": [
+    {
+      "from": "vault-1/A.md",
+      "id": "wikilink:vault-1/A.md->vault-1/B.md",
+      "source": "parser",
+      "to": "vault-1/B.md",
+      "type": "wikilink",
+      "weight": 1,
+    },
+  ],
+  "nodes": [
+    {
+      "id": "vault-1/A.md",
+      "label": "A",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+    {
+      "id": "vault-1/B.md",
+      "label": "B",
+      "type": "note",
+      "vaultId": "vault-1",
+    },
+  ],
+}
+`;

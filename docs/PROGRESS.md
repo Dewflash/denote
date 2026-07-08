@@ -6,8 +6,8 @@ and anything the next agent must know. One pass in flight at a time; respect dep
 | Pass | Title | Depends on | Status | Completed | Notes |
 |------|-------|-----------|--------|-----------|-------|
 | 00 | Toolchain & scaffold | — | **done** | 2026-07-08 | Tauri 2 + React 19 + TS scaffold at repo root (identifier `com.dewflash.denote`, product name `DeNote`). Source tree per MASTERPLAN §3 (empty `index.ts` files w/ header comments). Tailwind v4 + `src/app/tokens.css` (light/dark via `prefers-color-scheme`, `data-theme` override). Vitest + ESLint flat config w/ domain-purity boundary rule (`no-restricted-imports` on `src/domain/**`) — probed with a `react` import, confirmed it fails lint, then removed. `pnpm tauri dev` builds and opens the 3-pane placeholder shell; `pnpm test`/`pnpm lint` pass. Only `opener` Tauri plugin enabled (fs/dialog/global-shortcut deferred). No Swift sidecar or AI deps added (`sidecar/apple-ai/` has a README stub only). |
-| 01 | Domain core: parser, types, graph builder | 00 | **next** | | |
-| 02 | Vault engine: fs, watcher, repository, indexes | 01 | pending | | |
+| 01 | Domain core: parser, types, graph builder | 00 | **done** | 2026-07-08 | Pure `src/domain/`: `types.ts` (MASTERPLAN §5 + `WikiLink.heading` S2 + `ParsedNote.warnings` per brief), `sha256.ts` (pure FIPS-180-4, see deviation), `hashing.ts` (S1 verbatim port of the reference; all 12 vectors + R1 property test green), `parser.ts` (unified/remark blocks + masked inline scanner, S2/S3/S5), `links.ts` (S4 + ghost identity + link-index builder), `backlinks.ts` (D5, computed only), `graphBuilder.ts` (D6/D6a/D7/D17 hub model, deterministic sorted output), `takeover.ts` (D9/S10 pure decision fn). 119 tests pass (48-case parser corpus + S3 vectors, hashing vectors+property, links, backlinks, takeover, graphBuilder snapshots, vision-corpus deterministic layer, sha256 vs node:crypto). `pnpm test`/`pnpm lint`/`tsc`/`pnpm build` all clean. Reference script still ALL GREEN. Next: pass 02 → **architect checkpoint A** follows. |
+| 02 | Vault engine: fs, watcher, repository, indexes | 01 | **next** | | |
 | 03 | App shell UI: layout, tree, editor, backlinks | 02 | pending | | |
 | 04 | Graph view | 02, 03 | pending | | |
 | 05 | Search & multi-vault | 02, 03 | pending | | |
@@ -69,6 +69,26 @@ what is needed and why, and continues with the rest of the pass if independent.
 ## Deviations log
 
 (append entries: date, pass, what deviated from the brief, why)
+
+- 2026-07-08 · pass 01 · **Hashing uses a pure in-domain SHA-256 (`src/domain/sha256.ts`),
+  not `node:crypto`.** The reference script (`hash_spec_test.mjs`) uses `node:crypto` because
+  it is a Node script, but domain code runs in the Tauri webview too (data flow: write →
+  hash → parse), where `node:crypto` is unavailable, and D3a hashing must stay synchronous
+  (R1) so Web Crypto's async API is unsuitable. The pure implementation is dependency-free,
+  browser+node safe, and cross-checked byte-for-byte against `node:crypto` in
+  `tests/domain/sha256.test.ts` (known answers + varied inputs across block boundaries). The
+  hashed bytes (`stripAiBlock` output) are unchanged, so all S1 vectors match the reference.
+- 2026-07-08 · pass 01 · **Parser satellite deps added under D20** (which selects
+  unified/remark): `unified`, `remark-parse`, `remark-frontmatter`, `yaml` (the last two named
+  in the pass brief), plus ecosystem helpers `unist-util-visit` and `mdast-util-to-string`.
+  No new architectural decision — these implement D20/D28. No math plugin wired, so S5 math
+  masking is inactive this pass (masks fenced/indented code, inline code, HTML, and the
+  frontmatter region).
+- 2026-07-08 · pass 01 · **`ParsedNote.warnings: string[]` added** (best-effort, never-throw
+  parser per the brief) and **`WikiLink.heading?`** per S2 — both supersede the MASTERPLAN §5
+  shapes as the brief/SPECS direct. Domain unit tests live under `tests/domain/` (brief:
+  "tests in `tests/`"); `vite.config.ts` `test.include` extended to cover `tests/**/*.test.ts`.
+  Parser fixture corpus is data-driven at `tests/fixtures/parser/cases.ts`.
 
 ## Blocked
 
