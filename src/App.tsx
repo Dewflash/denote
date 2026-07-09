@@ -10,6 +10,7 @@ import { ExplorerPanel, TodayView } from "./features/explorer";
 import { Editor, ReadingView } from "./features/editor";
 import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
+import { SearchPanel, QuickSwitcher } from "./features/search";
 import { createUntitledNote } from "./features/capture";
 import { appKeymap, installGlobalKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
@@ -139,6 +140,8 @@ function Shell() {
       const ui = useUiStore.getState();
       ui.setSettingsOpen(!ui.settingsOpen);
     });
+    appKeymap.setHandler("search", () => useUiStore.getState().toggleSearch());
+    appKeymap.setHandler("quick-switcher", () => useUiStore.getState().toggleQuickSwitcher());
     appKeymap.setHandler("undo", () => void useVaultStore.getState().opLog.undo());
     return installGlobalKeymap(appKeymap);
   }, []);
@@ -184,6 +187,8 @@ function Shell() {
       </div>
       <CommandPalette />
       <SettingsModal />
+      <SearchPanel />
+      <QuickSwitcher />
     </div>
   );
 }

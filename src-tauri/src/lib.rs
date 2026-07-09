@@ -17,6 +17,7 @@ pub fn run() {
         .manage(Watchers::default())
         .invoke_handler(tauri::generate_handler![
             fs_commands::register_vault_root,
+            fs_commands::app_support_dir,
             fs_commands::read_note,
             fs_commands::read_asset,
             fs_commands::write_note,

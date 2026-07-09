@@ -32,6 +32,10 @@ export interface GraphViewProps {
   edges: GraphEdge[];
   groupings?: GraphGroupings;
   styleTokens: GraphStyleTokens;
+  /** vaultId → registered accent color (pass-05 brief: "per-vault accent color used on rail +
+   *  hulls + headers"). Optional and additive: a renderer with no entry for a given vault falls
+   *  back to its own single-vault hashed palette, so this never changes single-vault output. */
+  vaultColors?: Record<string, string>;
   selectedId?: string | null;
   /** Plain click: open the note (or create+open a ghost) and, by convention, leave the graph.
    *  Cmd-click: open + keep the graph open. Tag/topic clicks just select (no navigation). */

@@ -20,9 +20,9 @@ function sourceBadgeColor(source: GraphEdge['source']): string {
   }
 }
 
-function relPathOf(node: GraphNode, vaultId: string | undefined): string | null {
-  if (node.type !== 'note' || !vaultId) return null;
-  return noteRelPath(node.id, vaultId);
+function relPathOf(node: GraphNode): string | null {
+  if (node.type !== 'note' || !node.vaultId) return null;
+  return noteRelPath(node.id, node.vaultId);
 }
 
 interface ConnectionRow {
@@ -35,7 +35,8 @@ interface ConnectionRow {
 export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () => void }) {
   const selectedId = useGraphStore((s) => s.selectedNodeId);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
-  const repo = useVaultStore((s) => s.repo);
+  const getOpenRepo = useVaultStore((s) => s.getOpenRepo);
+  const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
@@ -43,8 +44,9 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const node = graph.nodes.find((n) => n.id === selectedId);
   if (!node) return null;
 
-  const relPath = relPathOf(node, repo?.vaultId);
-  const parsed = relPath ? repo?.getParsed(relPath) : undefined;
+  const relPath = relPathOf(node);
+  const noteRepo = node.vaultId ? getOpenRepo(node.vaultId) : undefined;
+  const parsed = relPath ? noteRepo?.getParsed(relPath) : undefined;
   const folder = relPath ? folderOf(relPath) || '(vault root)' : null;
 
   const byId = new Map<string, GraphNode>(graph.nodes.map((n) => [n.id, n]));
@@ -95,7 +97,12 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
         <button
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)', width: 'fit-content' }}
-          onClick={() => void createGhostAndOpen(node.label ?? String(node.id).split('/').pop() ?? '')}
+          onClick={() => {
+            void (async () => {
+              if (node.vaultId) await switchVault(node.vaultId);
+              await createGhostAndOpen(node.label ?? String(node.id).split('/').pop() ?? '');
+            })();
+          }}
         >
           Create note
         </button>
@@ -106,8 +113,11 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)', width: 'fit-content' }}
           onClick={() => {
-            void setActiveNote(relPath);
-            setGraphViewOpen(false);
+            void (async () => {
+              if (node.vaultId) await switchVault(node.vaultId);
+              await setActiveNote(relPath);
+              setGraphViewOpen(false);
+            })();
           }}
         >
           Open note

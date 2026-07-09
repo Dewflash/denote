@@ -1,8 +1,11 @@
 // src/features/graph/LayerControls.tsx — layer toggles (wikilinks/tags/topics/ai-similar),
 // AI-edge confidence slider, and the structural-hulls toggle (D7: default OFF). All persisted
-// via graphStore (localStorage), per the pass-4 brief.
+// via graphStore (localStorage), per the pass-4 brief. Pass-05 adds the vault checkbox selector
+// ("Graph vault selector: checkbox set of open vaults → combined graph", D17) — shown only once
+// there's more than one open vault to choose among, so single-vault sessions see no new UI.
 
 import { useGraphStore } from '../../state/graphStore';
+import { useVaultStore } from '../../state/vaultStore';
 import type { LayerToggles } from './filter';
 
 const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
@@ -21,6 +24,14 @@ export function LayerControls() {
   const toggleHulls = useGraphStore((s) => s.toggleHulls);
   const localView = useGraphStore((s) => s.localView);
   const exitLocalView = useGraphStore((s) => s.exitLocalView);
+  const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
+  const toggleGraphVault = useGraphStore((s) => s.toggleGraphVault);
+
+  const openVaultIds = useVaultStore((s) => s.openVaultIds);
+  const registry = useVaultStore((s) => s.registry);
+  const openVaults = openVaultIds
+    .map((id) => registry.find((v) => v.id === id))
+    .filter((v): v is NonNullable<typeof v> => v != null);
 
   return (
     <div
@@ -33,6 +44,31 @@ export function LayerControls() {
           {label}
         </label>
       ))}
+
+      {openVaults.length > 1 && (
+        <div className="flex items-center gap-2" style={{ borderLeft: '1px solid var(--border)', paddingLeft: 12 }}>
+          {openVaults.map((v) => (
+            <label key={v.id} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={selectedGraphVaultIds.includes(v.id)}
+                onChange={() => toggleGraphVault(v.id)}
+              />
+              <span
+                aria-hidden
+                style={{
+                  display: 'inline-block',
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  backgroundColor: v.color,
+                }}
+              />
+              {v.name}
+            </label>
+          ))}
+        </div>
+      )}
 
       <label className="flex items-center gap-1.5">
         AI confidence ≥ {minConfidence.toFixed(2)}

@@ -43,7 +43,7 @@ function useContainerSize(): [React.RefObject<HTMLDivElement | null>, { width: n
 // `positioned` (liveGraph.ts) before handing it here — the raw pre-position node list is a
 // GraphView-CONTRACT concept (D25), not something this concrete renderer needs a second copy of.
 export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { positioned: PositionedNode[] }) {
-  const { positioned, edges, groupings, styleTokens, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
+  const { positioned, edges, groupings, styleTokens, vaultColors, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
   const [containerRef, size] = useContainerSize();
   const fgRef = useRef<ForceGraphMethods<PositionedNode, GraphEdge> | undefined>(undefined);
 
@@ -98,7 +98,14 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
             if (relPath === null) continue;
             folderNotes.push({ nodeId: String(n.id), vaultId: n.vaultId, relPath, x: n.x, y: n.y });
           }
-          const hulls = buildFolderHulls(folderNotes, styleTokens.hullPalette, paletteColor);
+          // Per-vault registered accent color wins over the hashed palette (pass-05 brief:
+          // "per-vault accent color used on ... hulls"); a hull id is `${vaultId}::${folderPath}`
+          // (hulls.ts), so every depth of a vault's hull tree shares its color, not just the
+          // vault-root one. Falls back to the hash for any vault with no registered color yet
+          // (or none at all), so single-vault output is byte-identical to before this pass.
+          const hullColorFor = (id: string, palette: readonly string[]): string =>
+            vaultColors?.[id.split('::')[0]] ?? paletteColor(id, palette);
+          const hulls = buildFolderHulls(folderNotes, styleTokens.hullPalette, hullColorFor);
           if (hulls.length === 0) return;
           // Shallower (vault-level) hulls first, deeper folder hulls painted on top — since a
           // child's points are a subset of its parent's, this reads as true nesting.

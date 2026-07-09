@@ -1,47 +1,39 @@
 // src/state/vaultStore.ts — the ONE place UI components touch to read/mutate vault state.
-// Owns the Repository lifecycle (open/create/switch), the watcher subscription, the single
-// open editor buffer (autosave + S23 dirty-buffer/conflict handling), and the structural-ops
-// undo stack (D38). Components never import tauriStorage/watcherBridge/Repository directly —
-// they read `repo` off this store for queries and call its wrapper actions for writes, so every
-// write bumps `revision` (the one signal consumers use to re-derive from the live index).
+// Owns the Repository lifecycle for EVERY open vault (pass-05: "Repository holds N open vaults
+// concurrently" — D17), the multi-vault registry (`vaults.json` in app support), the watcher
+// subscription per open vault, the single ACTIVE vault's open editor buffer (autosave + S23
+// dirty-buffer/conflict handling), and the structural-ops undo stack (D38). Components never
+// import tauriStorage/watcherBridge/Repository directly — they read `repo` (the active vault)
+// off this store for queries and call its wrapper actions for writes, so every write bumps
+// `revision` (the one signal consumers use to re-derive from the live index).
 //
-// "Single vault for now, rail built for many" (pass-03 brief): only one vault is open at a
-// time; `recentVaults` is a locally-persisted MRU list the vault rail renders as one icon per
-// entry. The real cross-vault registry (`vaults.json` in app support, D17) arrives in pass 05 —
-// using localStorage here is a mechanical stand-in, not a new architecture.
+// "Active" vs "open": exactly one vault is ACTIVE (drives `root`/`vaultId`/`repo`/`buffer` — the
+// explorer/editor/backlinks panels all read the active vault). Any number of REGISTERED vaults
+// can be OPEN at once (a live Repository + watcher, held in the module-scoped `repos` map below)
+// — switching the active vault among already-open ones is just a pointer swap (no I/O), which is
+// what makes rail switching feel instant (pass-05 DoD: "<100ms perceived"). The combined graph
+// (features/graph) reads across every open vault via `getOpenRepo`, not just the active one.
 
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { Repository } from './repository';
+import { Repository, type IndexChangeHook } from './repository';
 import { OpLog } from './opLog';
+import { createSearchIndexBinding } from './vaultSearchSync';
+import { useGraphStore } from './graphStore';
 import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
+import { appSupportRoot } from '../services/appSupport';
+import { NoteSearchIndex } from '../services/searchIndex';
+import {
+  loadVaultsFile,
+  nextVaultColor,
+  removeVaultEntry,
+  saveVaultsFile,
+  upsertVault,
+  type VaultRegistryEntry,
+} from '../services/vaultRegistry';
 
-const RECENT_VAULTS_KEY = 'denote:recentVaults';
-const MAX_RECENT_VAULTS = 8;
 export const AUTOSAVE_MS = 800;
-
-function loadRecentVaults(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_VAULTS_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentVaults(paths: string[]): void {
-  try {
-    localStorage.setItem(RECENT_VAULTS_KEY, JSON.stringify(paths));
-  } catch {
-    /* best-effort; loss of MRU history is not data loss */
-  }
-}
-
-function addRecent(existing: string[], root: string): string[] {
-  return [root, ...existing.filter((p) => p !== root)].slice(0, MAX_RECENT_VAULTS);
-}
 
 export interface OpenBuffer {
   relPath: string;
@@ -55,14 +47,21 @@ export interface ConflictState {
   diskContent: string;
 }
 
+/** Pitfall (pass-05 brief): "moving a registered vault on disk ... on open-failure prompt to
+ *  re-locate." Set when `switchVault` can't open a registered entry at its stored path. */
+export interface RelocateError {
+  vaultId: string;
+  expectedPath: string;
+}
+
 interface VaultStoreState {
+  // ── the ACTIVE vault ────────────────────────────────────────────────────
   root: string | null;
   vaultId: string | null;
   repo: Repository | null;
-  /** Bumped on every write or externally-observed change; the one dependency UI reads for
-   *  "the live index may have changed, re-derive your view." */
+  /** Bumped on every write or externally-observed change (any open vault); the one dependency
+   *  UI reads for "the live index may have changed, re-derive your view." */
   revision: number;
-  recentVaults: string[];
   activeNotePath: string | null;
   buffer: OpenBuffer | null;
   conflict: ConflictState | null;
@@ -70,8 +69,30 @@ interface VaultStoreState {
   error: string | null;
   readonly opLog: OpLog;
 
+  // ── multi-vault (D17) ──────────────────────────────────────────────────
+  /** Every registered vault (`vaults.json`), open or not. */
+  registry: VaultRegistryEntry[];
+  /** vaultIds currently holding a live Repository + watcher (a snapshot of the module-scoped
+   *  `repos` map, kept in state purely so components re-render when it changes). */
+  openVaultIds: string[];
+  relocateError: RelocateError | null;
+
   openVaultAt: (root: string) => Promise<void>;
   createVaultAt: (root: string) => Promise<void>;
+  /** Switch the active vault. Instant if already open; opens it first otherwise. */
+  switchVault: (vaultId: string) => Promise<void>;
+  /** Tear down a background vault's Repository + watcher (does not touch the registry). */
+  closeVault: (vaultId: string) => Promise<void>;
+  removeVaultFromRegistry: (vaultId: string) => Promise<void>;
+  setVaultColor: (vaultId: string, color: string) => Promise<void>;
+  setVaultLocalOnly: (vaultId: string, flag: boolean) => Promise<void>;
+  /** Re-point a registered vault at a new on-disk path after `relocateError` (verifies the
+   *  folder's `.denote/meta.json` vaultId matches before accepting). */
+  relocateVault: (vaultId: string, newPath: string) => Promise<void>;
+  clearRelocateError: () => void;
+  /** Any OPEN vault's Repository, active or not (the combined graph reads all of them). */
+  getOpenRepo: (vaultId: string) => Repository | undefined;
+  getSearchIndex: (vaultId: string) => NoteSearchIndex | undefined;
 
   setActiveNote: (relPath: string | null) => Promise<void>;
   updateBufferContent: (content: string) => void;
@@ -92,8 +113,11 @@ interface VaultStoreState {
   resolveConflictViewBoth: () => Promise<void>;
 }
 
-// Plumbing that isn't UI-observable state: kept module-scoped rather than in the store.
-let stopWatcherBridge: (() => void) | null = null;
+// Plumbing that isn't UI-observable state: kept module-scoped, like the single-vault version's
+// `stopWatcherBridge`, but now keyed per open vault (N concurrently, D17).
+const repos = new Map<string, Repository>();
+const searchIndexes = new Map<string, NoteSearchIndex>();
+const watcherTeardowns = new Map<string, () => void>();
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearAutosaveTimer(): void {
@@ -103,17 +127,28 @@ function clearAutosaveTimer(): void {
   }
 }
 
+function vaultLabelFromPath(root: string): string {
+  return root.split('/').filter(Boolean).pop() ?? root;
+}
+
+async function persistRegistry(vaults: VaultRegistryEntry[]): Promise<void> {
+  const appRoot = await appSupportRoot();
+  await saveVaultsFile(tauriStorage, appRoot, { version: 1, vaults });
+}
+
 export const useVaultStore = create<VaultStoreState>((set, get) => {
   // `cause` (external vs app-write-content-change) is not distinguished yet — both mean
-  // "the file on disk changed for a reason other than my own in-flight edit."
-  function handlePipeline(relPath: string): void {
-    set((s) => ({ revision: s.revision + 1 }));
+  // "the file on disk changed for a reason other than my own in-flight edit." Scoped to the
+  // ACTIVE vault + the currently-open buffer; background vaults have no buffer to protect.
+  function handlePipeline(vaultId: string, relPath: string): void {
     const s = get();
-    if (!s.repo || s.buffer?.relPath !== relPath) return;
+    if (!s.repo || s.vaultId !== vaultId || s.buffer?.relPath !== relPath) return;
     const wasDirty = s.buffer.dirty;
-    void s.repo.readNote(relPath).then((diskContent) => {
+    const repo = repos.get(vaultId);
+    if (!repo) return;
+    void repo.readNote(relPath).then((diskContent) => {
       const cur = get();
-      if (cur.buffer?.relPath !== relPath) return; // switched notes meanwhile
+      if (cur.vaultId !== vaultId || cur.buffer?.relPath !== relPath) return; // switched meanwhile
       if (wasDirty && cur.buffer.dirty) {
         set({ conflict: { relPath, diskContent } });
       } else if (!cur.buffer.dirty) {
@@ -122,38 +157,70 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     });
   }
 
-  async function teardownCurrent(): Promise<void> {
-    clearAutosaveTimer();
-    stopWatcherBridge?.();
-    stopWatcherBridge = null;
-    const root = get().root;
-    if (root) await invoke('unwatch_vault', { root }).catch(() => {});
-  }
+  /** Open (adopt-or-bootstrap, D2) a vault at `root`, register it (new entries only), start its
+   *  watcher + search index, and make it the ACTIVE vault. If `root` is already open, just
+   *  switches to it (no duplicate Repository/watcher). */
+  async function openAndActivate(root: string, mode: 'open' | 'create'): Promise<void> {
+    const existingByPath = [...repos.values()].find((r) => r.root === root);
+    if (existingByPath) {
+      await get().switchVault(existingByPath.vaultId);
+      return;
+    }
 
-  async function open(
-    root: string,
-    mode: 'open' | 'create',
-  ): Promise<void> {
     set({ loading: true, error: null });
     try {
-      await teardownCurrent();
+      const index = new NoteSearchIndex();
+      const searchBinding = createSearchIndexBinding(index);
+      // `onPipeline`/`onIndexChange` must be supplied before the Repository (and therefore its
+      // vaultId) exists; both close over this mutable ref instead of a bare `let` reassignment
+      // (which some eslint/prefer-const configurations don't recognize across a closure).
+      const selfRef: { vaultId?: string } = {};
+      const onIndexChange: IndexChangeHook = (relPath, note) => {
+        searchBinding.onIndexChange(relPath, note);
+        set((s) => ({ revision: s.revision + 1 }));
+      };
+      const onPipeline = (relPath: string): void => {
+        set((s) => ({ revision: s.revision + 1 }));
+        if (selfRef.vaultId) handlePipeline(selfRef.vaultId, relPath);
+      };
+
       const repo =
         mode === 'create'
-          ? await Repository.createVault(tauriStorage, root, { onPipeline: handlePipeline })
-          : await Repository.openVault(tauriStorage, root, { onPipeline: handlePipeline });
+          ? await Repository.createVault(tauriStorage, root, { onPipeline, onIndexChange })
+          : await Repository.openVault(tauriStorage, root, { onPipeline, onIndexChange });
+      selfRef.vaultId = repo.vaultId;
+      await searchBinding.attach(repo);
+
       await invoke('watch_vault', { root });
-      stopWatcherBridge = await startWatcherBridge(root, (evt) => {
+      const teardown = await startWatcherBridge(root, (evt) => {
         void repo.onWatcherEvent(evt);
       });
-      const recentVaults = addRecent(get().recentVaults, root);
-      saveRecentVaults(recentVaults);
+
+      repos.set(repo.vaultId, repo);
+      searchIndexes.set(repo.vaultId, index);
+      watcherTeardowns.set(repo.vaultId, teardown);
+      useGraphStore.getState().addOpenVault(repo.vaultId);
+
+      const existingEntry = get().registry.find((v) => v.id === repo.vaultId);
+      const entry: VaultRegistryEntry = {
+        id: repo.vaultId,
+        name: existingEntry?.name ?? vaultLabelFromPath(root),
+        path: root, // refresh in case this is a relocate-via-reopen
+        color: existingEntry?.color ?? nextVaultColor(get().registry),
+        localOnly: existingEntry?.localOnly ?? false,
+      };
+      const registry = upsertVault({ version: 1, vaults: get().registry }, entry).vaults;
+      await persistRegistry(registry);
+
       set({
         root,
         vaultId: repo.vaultId,
         repo,
-        recentVaults,
+        registry,
+        openVaultIds: [...repos.keys()],
         loading: false,
         error: null,
+        relocateError: null,
         activeNotePath: null,
         buffer: null,
         conflict: null,
@@ -161,6 +228,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   }
 
@@ -169,7 +237,6 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     vaultId: null,
     repo: null,
     revision: 0,
-    recentVaults: loadRecentVaults(),
     activeNotePath: null,
     buffer: null,
     conflict: null,
@@ -177,8 +244,140 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     error: null,
     opLog: new OpLog(),
 
-    openVaultAt: (root) => open(root, 'open'),
-    createVaultAt: (root) => open(root, 'create'),
+    registry: [],
+    openVaultIds: [],
+    relocateError: null,
+
+    openVaultAt: (root) => openAndActivate(root, 'open'),
+    createVaultAt: (root) => openAndActivate(root, 'create'),
+
+    async switchVault(vaultId) {
+      if (get().vaultId === vaultId) return;
+      const already = repos.get(vaultId);
+      if (already) {
+        const cur = get();
+        if (cur.buffer?.dirty && cur.repo) {
+          await cur.repo.saveNote(cur.buffer.relPath, cur.buffer.content);
+        }
+        clearAutosaveTimer();
+        set({
+          root: already.root,
+          vaultId: already.vaultId,
+          repo: already,
+          activeNotePath: null,
+          buffer: null,
+          conflict: null,
+          relocateError: null,
+          error: null,
+          revision: get().revision + 1,
+        });
+        return;
+      }
+      const entry = get().registry.find((v) => v.id === vaultId);
+      if (!entry) {
+        set({ error: `Unknown vault: ${vaultId}` });
+        return;
+      }
+      try {
+        await openAndActivate(entry.path, 'open');
+      } catch (err) {
+        set({
+          loading: false,
+          relocateError: { vaultId, expectedPath: entry.path },
+          error: `Could not open "${entry.name}" at ${entry.path}: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    },
+
+    async closeVault(vaultId) {
+      const repo = repos.get(vaultId);
+      if (!repo) return;
+      const cur = get();
+      if (cur.vaultId === vaultId && cur.buffer?.dirty) {
+        await repo.saveNote(cur.buffer.relPath, cur.buffer.content).catch(() => {});
+      }
+      watcherTeardowns.get(vaultId)?.();
+      watcherTeardowns.delete(vaultId);
+      await invoke('unwatch_vault', { root: repo.root }).catch(() => {});
+      repos.delete(vaultId);
+      searchIndexes.delete(vaultId);
+      useGraphStore.getState().removeOpenVault(vaultId);
+
+      const after = get();
+      if (after.vaultId === vaultId) {
+        clearAutosaveTimer();
+        const next = [...repos.values()][0];
+        set({
+          root: next?.root ?? null,
+          vaultId: next?.vaultId ?? null,
+          repo: next ?? null,
+          activeNotePath: null,
+          buffer: null,
+          conflict: null,
+          openVaultIds: [...repos.keys()],
+          revision: after.revision + 1,
+        });
+      } else {
+        set({ openVaultIds: [...repos.keys()], revision: after.revision + 1 });
+      }
+    },
+
+    async removeVaultFromRegistry(vaultId) {
+      await get().closeVault(vaultId);
+      const registry = removeVaultEntry({ version: 1, vaults: get().registry }, vaultId).vaults;
+      await persistRegistry(registry);
+      set({ registry });
+    },
+
+    async setVaultColor(vaultId, color) {
+      const found = get().registry.find((v) => v.id === vaultId);
+      if (!found) return;
+      const registry = upsertVault({ version: 1, vaults: get().registry }, { ...found, color }).vaults;
+      await persistRegistry(registry);
+      set({ registry });
+    },
+
+    async setVaultLocalOnly(vaultId, flag) {
+      const found = get().registry.find((v) => v.id === vaultId);
+      if (!found) return;
+      const registry = upsertVault(
+        { version: 1, vaults: get().registry },
+        { ...found, localOnly: flag },
+      ).vaults;
+      await persistRegistry(registry);
+      set({ registry });
+    },
+
+    async relocateVault(vaultId, newPath) {
+      const found = get().registry.find((v) => v.id === vaultId);
+      if (!found) return;
+      set({ loading: true, error: null });
+      try {
+        // Probe-open (never registered as "open" — just verifies identity) so a relocate can
+        // never silently adopt an unrelated folder under this registry entry.
+        const probe = await Repository.openVault(tauriStorage, newPath, {});
+        if (probe.vaultId !== vaultId) {
+          set({ loading: false, error: `That folder is a different vault (expected ${found.name}).` });
+          return;
+        }
+        const registry = upsertVault(
+          { version: 1, vaults: get().registry },
+          { ...found, path: newPath },
+        ).vaults;
+        await persistRegistry(registry);
+        set({ registry, loading: false, relocateError: null });
+        await get().switchVault(vaultId);
+      } catch (err) {
+        set({ loading: false, error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+
+    clearRelocateError() {
+      set({ relocateError: null });
+    },
+
+    getOpenRepo: (vaultId) => repos.get(vaultId),
+    getSearchIndex: (vaultId) => searchIndexes.get(vaultId),
 
     bumpRevision: () => set((s) => ({ revision: s.revision + 1 })),
 
@@ -319,3 +518,15 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
   };
 });
+
+// Fire-and-forget: populate the registry from disk once the store exists. Never blocks vault
+// open/create (both work from a folder path directly, independent of the registry load).
+void (async () => {
+  try {
+    const appRoot = await appSupportRoot();
+    const file = await loadVaultsFile(tauriStorage, appRoot);
+    useVaultStore.setState({ registry: file.vaults });
+  } catch {
+    /* no Tauri runtime (e.g. a plain-browser dev preview) — registry stays empty */
+  }
+})();

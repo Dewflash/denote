@@ -1,9 +1,11 @@
-// src/features/graph/GraphPage.tsx — composes the live vault graph: buildGraph (domain) fed by
-// the open vault's index → layer/confidence filter → local-view neighborhood → position
-// reconciliation (liveGraph.ts, "graph updates live when a note is edited") → ForceGraphRenderer
-// + LayerControls + NodeInspector. No AI edges/topics exist yet this pass (buildGraph gets an
-// empty `similarPairs`/no `topics`, per D26/pass-6 — the styling machinery is built and proven
-// against `mockFixture.ts` in dev instead, so pass 7/8 plug in real data with zero UI changes).
+// src/features/graph/GraphPage.tsx — composes the live COMBINED graph (pass-05 brief: "Graph
+// vault selector: checkbox set of open vaults → combined graph", D17): buildGraph (domain) fed
+// by every SELECTED open vault's index → layer/confidence filter → local-view neighborhood →
+// position reconciliation (liveGraph.ts, "graph updates live when a note is edited") →
+// ForceGraphRenderer + LayerControls + NodeInspector. No AI edges/topics exist yet this pass
+// (buildGraph gets an empty `similarPairs`/no `topics`, per D26/pass-6 — the styling machinery
+// is built and proven against `mockFixture.ts` in dev instead, so pass 7/8 plug in real data
+// with zero UI changes).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildGraph, type Graph } from '../../domain';
@@ -26,8 +28,11 @@ function useDevMockGraph(): boolean {
 }
 
 export function GraphPage() {
-  const repo = useVaultStore((s) => s.repo);
   const revision = useVaultStore((s) => s.revision);
+  const openVaultIds = useVaultStore((s) => s.openVaultIds);
+  const registry = useVaultStore((s) => s.registry);
+  const getOpenRepo = useVaultStore((s) => s.getOpenRepo);
+  const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
@@ -38,17 +43,27 @@ export function GraphPage() {
   const localView = useGraphStore((s) => s.localView);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
+  const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
 
   const styleTokens = useGraphStyleTokens();
   const useMock = useDevMockGraph();
 
+  const vaultColors = useMemo(
+    () => Object.fromEntries(registry.map((v) => [v.id, v.color])),
+    [registry],
+  );
+
   const fullGraph: Graph = useMemo(() => {
     if (useMock) return buildMockGraphFixture();
-    if (!repo) return { nodes: [], edges: [] };
+    const vaults = selectedGraphVaultIds
+      .map((id) => getOpenRepo(id))
+      .filter((r): r is NonNullable<typeof r> => r != null)
+      .map((r) => ({ vaultId: r.vaultId, notes: r.index.allNotes() }));
+    if (vaults.length === 0) return { nodes: [], edges: [] };
     // similarPairs/topics are intentionally omitted — pass 6/7/8 own wiring them in (D26).
-    return buildGraph({ vaults: [{ vaultId: repo.vaultId, notes: repo.index.allNotes() }] });
+    return buildGraph({ vaults });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, revision, useMock]);
+  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, revision, useMock]);
 
   const scopedGraph: Graph = useMemo(() => {
     if (localView.enabled && localView.centerId) {
@@ -80,16 +95,21 @@ export function GraphPage() {
     }
   }, [fullGraph, selectedNodeId, setSelectedNode]);
 
-  function handleNodeClick(node: GraphNode, opts: { metaKey: boolean }): void {
+  // A combined graph may show notes/ghosts from a vault that isn't currently ACTIVE — switching
+  // is a no-op fast path when it's already active (vaultStore.switchVault), so this is safe to
+  // call unconditionally before navigating.
+  async function handleNodeClick(node: GraphNode, opts: { metaKey: boolean }): Promise<void> {
     setSelectedNode(node.id);
-    if (node.type === 'ghost') {
+    if (node.type === 'ghost' && node.vaultId) {
+      await switchVault(node.vaultId);
       void createGhostAndOpen(node.label ?? '');
       if (!opts.metaKey) setGraphViewOpen(false);
       return;
     }
-    if (node.type === 'note' && repo) {
-      const relPath = noteRelPath(node.id, repo.vaultId);
+    if (node.type === 'note' && node.vaultId) {
+      const relPath = noteRelPath(node.id, node.vaultId);
       if (relPath) {
+        await switchVault(node.vaultId);
         void setActiveNote(relPath);
         if (!opts.metaKey) setGraphViewOpen(false);
       }
@@ -107,8 +127,9 @@ export function GraphPage() {
             positioned={positioned}
             groupings={{ hullsEnabled }}
             styleTokens={styleTokens}
+            vaultColors={vaultColors}
             selectedId={selectedNodeId}
-            onNodeClick={handleNodeClick}
+            onNodeClick={(node, opts) => void handleNodeClick(node, opts)}
             onBackgroundClick={() => setSelectedNode(null)}
           />
         </div>

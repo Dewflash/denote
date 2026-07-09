@@ -52,6 +52,12 @@ interface GraphState {
   hullsEnabled: boolean;
   localView: LocalViewState;
   selectedNodeId: string | null;
+  /** Which OPEN vaults feed the combined graph (pass-05 brief: "checkbox set of open vaults →
+   *  combined graph", D17). Defaults to "every open vault" — vaultStore adds/removes ids here
+   *  as vaults open/close, so a freshly-opened second vault appears in the combined view
+   *  immediately rather than needing an extra click. Session-only (not persisted), same as
+   *  localView: this tracks which vaults happen to be open right now, not a durable preference. */
+  selectedGraphVaultIds: string[];
 
   toggleLayer: (key: keyof LayerToggles) => void;
   setMinConfidence: (v: number) => void;
@@ -59,6 +65,10 @@ interface GraphState {
   enterLocalView: (centerId: string, hops?: number) => void;
   exitLocalView: () => void;
   setSelectedNode: (id: string | null) => void;
+  toggleGraphVault: (vaultId: string) => void;
+  /** Called by vaultStore when a vault opens/closes — keeps the default "all open" behavior. */
+  addOpenVault: (vaultId: string) => void;
+  removeOpenVault: (vaultId: string) => void;
 }
 
 export const useGraphStore = create<GraphState>((set, get) => ({
@@ -67,6 +77,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   hullsEnabled: loadBool(HULLS_KEY, false), // default OFF (D7)
   localView: { enabled: false, centerId: null, hops: 2 },
   selectedNodeId: null,
+  selectedGraphVaultIds: [],
 
   toggleLayer(key) {
     const layers = { ...get().layers, [key]: !get().layers[key] };
@@ -91,5 +102,20 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   },
   setSelectedNode(id) {
     set({ selectedNodeId: id });
+  },
+  toggleGraphVault(vaultId) {
+    const cur = get().selectedGraphVaultIds;
+    set({
+      selectedGraphVaultIds: cur.includes(vaultId)
+        ? cur.filter((id) => id !== vaultId)
+        : [...cur, vaultId],
+    });
+  },
+  addOpenVault(vaultId) {
+    const cur = get().selectedGraphVaultIds;
+    if (!cur.includes(vaultId)) set({ selectedGraphVaultIds: [...cur, vaultId] });
+  },
+  removeOpenVault(vaultId) {
+    set({ selectedGraphVaultIds: get().selectedGraphVaultIds.filter((id) => id !== vaultId) });
   },
 }));

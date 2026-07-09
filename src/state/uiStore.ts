@@ -43,6 +43,8 @@ interface UiState {
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
   settingsOpen: boolean;
+  searchOpen: boolean;
+  quickSwitcherOpen: boolean;
   /** The folder cmd-N / paste-capture files a new note into when nothing more specific is
    *  selected in the tree (brief: "untitled note in Inbox/ unless a folder is selected"). */
   selectedFolder: string | null;
@@ -58,6 +60,10 @@ interface UiState {
   setRightPanelTab: (tab: RightPanelTab) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
+  toggleSearch: () => void;
+  setQuickSwitcherOpen: (open: boolean) => void;
+  toggleQuickSwitcher: () => void;
   setSelectedFolder: (folder: string | null) => void;
 }
 
@@ -76,6 +82,8 @@ export const useUiStore = create<UiState>((set) => {
     rightPanelTab: 'backlinks',
     commandPaletteOpen: false,
     settingsOpen: false,
+    searchOpen: false,
+    quickSwitcherOpen: false,
     selectedFolder: null,
 
     setTheme(mode) {
@@ -115,6 +123,18 @@ export const useUiStore = create<UiState>((set) => {
     },
     setSettingsOpen(open) {
       set({ settingsOpen: open });
+    },
+    setSearchOpen(open) {
+      set({ searchOpen: open });
+    },
+    toggleSearch() {
+      set((s) => ({ searchOpen: !s.searchOpen }));
+    },
+    setQuickSwitcherOpen(open) {
+      set({ quickSwitcherOpen: open });
+    },
+    toggleQuickSwitcher() {
+      set((s) => ({ quickSwitcherOpen: !s.quickSwitcherOpen }));
     },
     setSelectedFolder(folder) {
       set({ selectedFolder: folder });

@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+use tauri::Manager;
 
 use crate::containment::{contained_path, is_ignored};
 
@@ -70,6 +71,21 @@ pub fn register_vault_root(root: String, state: tauri::State<'_, VaultRoots>) ->
         guard.push(canon);
     }
     Ok(())
+}
+
+/// Resolve (and create if missing) the OS-conventional per-app data directory (macOS:
+/// `~/Library/Application Support/{bundle identifier}`) — the home of `vaults.json` and future
+/// app-support stores (D17/S24/S26). A "separate, equally-guarded command" per S22: it never
+/// returns file CONTENTS, only a fixed system path; every actual read/write against it still
+/// goes through `register_vault_root` + the same `contained_path` boundary as any vault.
+#[tauri::command]
+pub fn app_support_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data dir failed: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("mkdir failed: {e}"))?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]

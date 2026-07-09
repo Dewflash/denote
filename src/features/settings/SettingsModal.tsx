@@ -1,6 +1,6 @@
 // src/features/settings/SettingsModal.tsx — Settings sections skeleton (pass-03 brief):
-// Vaults, Editor, Appearance (functional), AI & Models, Graph, Hotkeys, Data. Only Appearance
-// does real work this pass; everything else is a stub that later passes fill in, so the
+// Vaults, Editor, Appearance (functional), AI & Models, Graph, Hotkeys, Data. Vaults (pass-05)
+// and Appearance do real work; everything else is a stub that later passes fill in, so the
 // section structure never needs to be reshuffled.
 
 import * as Dialog from '@radix-ui/react-dialog';
@@ -9,6 +9,7 @@ import { useUiStore, type ThemeMode } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { pickFolder } from '../../services/dialogs';
 import { appKeymap } from '../../app/keymap';
+import { VAULT_COLOR_PALETTE } from '../../services/vaultRegistry';
 
 const ACCENT_PRESETS = ['#3b6fd6', '#6f9bef', '#d6763b', '#3bd6a0', '#a03bd6', '#d63b6f'];
 
@@ -28,20 +29,114 @@ function Stub({ text }: { text: string }) {
   return <p style={{ color: 'var(--fg-muted)' }}>{text}</p>;
 }
 
+function RelocateRow({ vaultId, expectedPath }: { vaultId: string; expectedPath: string }) {
+  const registry = useVaultStore((s) => s.registry);
+  const relocateVault = useVaultStore((s) => s.relocateVault);
+  const clearRelocateError = useVaultStore((s) => s.clearRelocateError);
+  const name = registry.find((v) => v.id === vaultId)?.name ?? vaultId;
+
+  return (
+    <div
+      className="flex flex-col gap-2 rounded p-2 text-sm"
+      style={{ border: '1px solid #c0392b' }}
+    >
+      <div>
+        Couldn&apos;t open <strong>{name}</strong> at <code>{expectedPath}</code>. Did you move
+        it?
+      </div>
+      <div className="flex gap-2">
+        <button
+          className="rounded px-2 py-1 text-xs"
+          style={{ border: '1px solid var(--border)' }}
+          onClick={() =>
+            void pickFolder(`Locate "${name}"`).then((p) => {
+              if (p) void relocateVault(vaultId, p);
+            })
+          }
+        >
+          Locate...
+        </button>
+        <button className="text-xs" style={{ color: 'var(--fg-muted)' }} onClick={clearRelocateError}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VaultRow({ id, name, path, color, localOnly }: { id: string; name: string; path: string; color: string; localOnly: boolean }) {
+  const vaultId = useVaultStore((s) => s.vaultId);
+  const openVaultIds = useVaultStore((s) => s.openVaultIds);
+  const switchVault = useVaultStore((s) => s.switchVault);
+  const closeVault = useVaultStore((s) => s.closeVault);
+  const removeVaultFromRegistry = useVaultStore((s) => s.removeVaultFromRegistry);
+  const setVaultColor = useVaultStore((s) => s.setVaultColor);
+  const setVaultLocalOnly = useVaultStore((s) => s.setVaultLocalOnly);
+  const isActive = id === vaultId;
+  const isOpen = openVaultIds.includes(id);
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded p-2" style={{ border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          className="flex min-w-0 items-center gap-2 text-left text-sm"
+          onClick={() => void switchVault(id)}
+        >
+          <span
+            aria-hidden
+            style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: color, flexShrink: 0 }}
+          />
+          <span className="truncate font-medium">{name}</span>
+          {isActive && <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>(active)</span>}
+        </button>
+        <div className="flex shrink-0 items-center gap-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          {isOpen && !isActive && (
+            <button onClick={() => void closeVault(id)} title="Stop watching (stays registered)">
+              Close
+            </button>
+          )}
+          <button onClick={() => void removeVaultFromRegistry(id)} title="Remove from registry (files are untouched)">
+            Remove
+          </button>
+        </div>
+      </div>
+      <div className="truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
+        {path}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+          {VAULT_COLOR_PALETTE.map((c) => (
+            <button
+              key={c}
+              aria-label={c}
+              className="h-4 w-4 rounded-full"
+              style={{ backgroundColor: c, outline: color === c ? '2px solid var(--fg)' : 'none' }}
+              onClick={() => void setVaultColor(id, c)}
+            />
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          <input
+            type="checkbox"
+            checked={localOnly}
+            onChange={(e) => void setVaultLocalOnly(id, e.target.checked)}
+          />
+          Local only (never sent to a cloud AI backend)
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function VaultsSection() {
-  const root = useVaultStore((s) => s.root);
-  const recentVaults = useVaultStore((s) => s.recentVaults);
+  const registry = useVaultStore((s) => s.registry);
   const openVaultAt = useVaultStore((s) => s.openVaultAt);
   const createVaultAt = useVaultStore((s) => s.createVaultAt);
+  const relocateError = useVaultStore((s) => s.relocateError);
+  const error = useVaultStore((s) => s.error);
 
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <div className="text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
-          Current vault
-        </div>
-        <div className="text-sm">{root ?? 'No vault open'}</div>
-      </div>
       <div className="flex gap-2">
         <button
           className="rounded px-3 py-1.5 text-sm"
@@ -66,25 +161,29 @@ function VaultsSection() {
           Create vault...
         </button>
       </div>
-      {recentVaults.length > 0 && (
-        <div>
-          <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
-            Recent
-          </div>
-          <div className="flex flex-col gap-1">
-            {recentVaults.map((p) => (
-              <button
-                key={p}
-                className="truncate rounded px-2 py-1 text-left text-sm"
-                style={{ backgroundColor: p === root ? 'var(--bg-panel)' : 'transparent' }}
-                onClick={() => void openVaultAt(p)}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
+
+      {relocateError && <RelocateRow vaultId={relocateError.vaultId} expectedPath={relocateError.expectedPath} />}
+      {error && !relocateError && (
+        <p className="text-xs" style={{ color: '#c0392b' }}>
+          {error}
+        </p>
       )}
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Registered vaults
+        </div>
+        {registry.length === 0 && (
+          <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+            No vaults registered yet.
+          </p>
+        )}
+        <div className="flex flex-col gap-2">
+          {registry.map((v) => (
+            <VaultRow key={v.id} {...v} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

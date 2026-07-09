@@ -79,3 +79,25 @@ describe('never throws on malformed input', () => {
     });
   }
 });
+
+// pass-05: full-text search indexes ParsedNote.bodyText (title/headings/tags/body per D15).
+describe('bodyText (search indexing)', () => {
+  it('excludes frontmatter but includes headings and prose', () => {
+    const input = '---\ntitle: ignored\ntags: [x]\n---\n# Heading\n\nSome prose about banking.';
+    const { bodyText } = parseNote('n.md', input);
+    expect(bodyText).not.toContain('ignored');
+    expect(bodyText).toContain('Heading');
+    expect(bodyText).toContain('Some prose about banking.');
+  });
+
+  it('includes fenced code content (still useful to search)', () => {
+    const input = '```\nconst x = 1;\n```';
+    expect(parseNote('n.md', input).bodyText).toContain('const x = 1;');
+  });
+
+  it('never throws and always returns a string, even on malformed input', () => {
+    for (const input of ['[[', '---\nunterminated', '']) {
+      expect(typeof parseNote('n.md', input).bodyText).toBe('string');
+    }
+  });
+});

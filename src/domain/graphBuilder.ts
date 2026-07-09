@@ -81,7 +81,10 @@ export function buildGraph(input: GraphBuildInput): Graph {
         to = noteId(v.vaultId, entry.resolution.relPath);
       } else {
         to = entry.resolution.id;
-        addNode({ id: entry.resolution.id, type: 'ghost', label: entry.link.targetTitle });
+        // vaultId is redundant with the id's own `ghost:{vaultId}/...` encoding (S4), but an
+        // explicit field lets multi-vault UI (e.g. "which vault to create this ghost note in")
+        // read it the same way it reads a note node's vaultId, without string-parsing the id.
+        addNode({ id: entry.resolution.id, type: 'ghost', vaultId: v.vaultId, label: entry.link.targetTitle });
       }
       addEdge({ id: `${type}:${from}->${to}`, from, to, type, source: 'parser', weight: 1 });
     }

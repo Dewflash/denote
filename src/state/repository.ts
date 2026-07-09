@@ -38,9 +38,19 @@ export type PipelineCause = 'external' | 'app-write-content-change';
 export type RekeyHook = (oldRelPath: string, newRelPath: string) => void | Promise<void>;
 export type DeleteHook = (relPath: string) => void | Promise<void>;
 
+/** Fires for EVERY note-level index mutation — upsert (create/save/external edit/rename
+ *  target) with the fresh `ParsedNote`, or removal (delete, or the old side of a rename/move)
+ *  with `null`. The one choke point consumers (search index, live "did anything change" UI
+ *  signals) need instead of re-deriving from individual write methods — notably this is also
+ *  the only notification an EXTERNAL delete produces (pass-05: closes a gap where nothing
+ *  downstream of the repository ever heard about a Finder-deleted file). NOT fired during the
+ *  initial bulk `reindexAll()` load — callers do their own full rebuild after `openVault()`. */
+export type IndexChangeHook = (relPath: string, note: ParsedNote | null) => void;
+
 export interface RepositoryDeps {
   now?: () => number;
   onPipeline?: (relPath: string, cause: PipelineCause) => void;
+  onIndexChange?: IndexChangeHook;
 }
 
 /** delete+create within this window with equal contentHash ⇒ a move, not a delete (S9/D4a). */
@@ -77,6 +87,7 @@ interface PendingDelete {
 export class Repository {
   private readonly now: () => number;
   private readonly onPipeline?: (relPath: string, cause: PipelineCause) => void;
+  private readonly onIndexChange?: IndexChangeHook;
   private readonly appWrites: AppWriteRegistry;
   private readonly locks = new Map<string, Promise<unknown>>();
   private eventChain: Promise<unknown> = Promise.resolve();
@@ -99,6 +110,7 @@ export class Repository {
   ) {
     this.now = deps.now ?? Date.now;
     this.onPipeline = deps.onPipeline;
+    this.onIndexChange = deps.onIndexChange;
     this.appWrites = new AppWriteRegistry(this.now);
   }
 
@@ -200,6 +212,7 @@ export class Repository {
       this.appWrites.recordPathOp(relPath);
       await this.backend.deletePath(this.root, relPath);
       this.index.removeNote(relPath);
+      this.onIndexChange?.(relPath, null);
       for (const h of this.deleteHooks) await h(relPath);
     });
   }
@@ -241,6 +254,7 @@ export class Repository {
     const inbound = this.index.inboundResolved(relPath);
     if (this.index.getNote(relPath)) {
       this.index.removeNote(relPath);
+      this.onIndexChange?.(relPath, null);
     } else if (this.index.assets.has(relPath)) {
       this.index.removeAsset(relPath);
       return;
@@ -317,11 +331,14 @@ export class Repository {
 
       const st = await this.backend.stat(this.root, newRel);
       this.index.removeNote(oldRel, { rebuild: false });
-      this.index.setNote(parseNote(newRel, content), hash, st?.mtime ?? this.now(), {
+      const parsed = parseNote(newRel, content);
+      this.index.setNote(parsed, hash, st?.mtime ?? this.now(), {
         rebuild: false,
         btime,
       });
       this.index.rebuildDerived();
+      this.onIndexChange?.(oldRel, null);
+      this.onIndexChange?.(newRel, parsed);
 
       await this.rekey(oldRel, newRel);
       await this.applyInboundRewrites(oldRel, newRel, inbound, mode);
@@ -399,7 +416,9 @@ export class Repository {
 
   private reindexNote(relPath: string, content: string): void {
     const mtime = this.now();
-    this.index.setNote(parseNote(relPath, content), contentHash(content), mtime);
+    const parsed = parseNote(relPath, content);
+    this.index.setNote(parsed, contentHash(content), mtime);
+    this.onIndexChange?.(relPath, parsed);
   }
 
   private async ensureParent(relPath: string): Promise<void> {

@@ -90,6 +90,7 @@ exports[`graphBuilder (D6/D6a/D7/D17) > ghost node for an unresolved link 1`] = 
       "id": "ghost:vault-1/bank of japan",
       "label": "Bank of Japan",
       "type": "ghost",
+      "vaultId": "vault-1",
     },
     {
       "id": "vault-1/Japan.md",

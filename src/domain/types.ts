@@ -31,6 +31,9 @@ export interface ParsedNote {
   links: WikiLink[]; // outbound only
   tags: string[]; // display casing, deduped case-insensitively (S3)
   warnings: string[]; // best-effort parse never throws (pass-01 brief)
+  /** Plain-text rendering of the body (frontmatter excluded), for full-text search (pass-05
+   *  brief: search indexes title/headings/body/tags). Derived, never a source of truth. */
+  bodyText: string;
 }
 
 // grammar: SPECS S2. `heading?` supersedes the MASTERPLAN §5 shape.

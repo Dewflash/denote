@@ -137,9 +137,16 @@ export function parseNote(relPath: string, rawText: string): ParsedNote {
   const headings: { depth: number; text: string }[] = [];
   let frontmatter: Record<string, unknown> = {};
   let aiFrontmatter: AiFrontmatter | null = null;
+  let bodyText = text.trim(); // parse-error fallback: still something for search to index
 
   try {
     const tree = processor.parse(text);
+    bodyText = (tree as { children: { type: string }[] }).children
+      .filter((c) => c.type !== 'yaml')
+      .map((c) => mdastToString(c))
+      .filter((s) => s !== '')
+      .join('\n')
+      .trim();
     visit(tree, (node) => {
       const pos = node.position;
       if (!pos || pos.start.offset == null || pos.end.offset == null) return;
@@ -184,7 +191,7 @@ export function parseNote(relPath: string, rawText: string): ParsedNote {
   const h1 = headings.find((h) => h.depth === 1 && h.text !== '');
   const title = h1 ? h1.text : filenameTitle(relPath);
 
-  return { relPath, title, frontmatter, aiFrontmatter, headings, links, tags, warnings };
+  return { relPath, title, frontmatter, aiFrontmatter, headings, links, tags, warnings, bodyText };
 }
 
 /** Parse frontmatter YAML, splitting the reserved `ai:` key (D28) into aiFrontmatter. */
