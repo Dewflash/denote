@@ -11,6 +11,23 @@
   --radius: 6px;
   --font-ui: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-editor: "SF Mono", ui-monospace, Menlo, monospace;
+
+  /* Graph view (D25/pass 4) — canvas painting can't resolve CSS vars itself, so
+     graph code reads these via getComputedStyle; still token-driven, still theme-swappable. */
+  --graph-node-note: #5b7cae;
+  --graph-node-ghost: #9a9a94;
+  --graph-node-tag: #b07aa1;
+  --graph-node-topic: #f28e2b;
+  --graph-edge-solid: #9a9a94;
+  --graph-edge-ai: #b5533c;
+  --graph-hull-0: #4e79a7;
+  --graph-hull-1: #f28e2b;
+  --graph-hull-2: #59a14f;
+  --graph-hull-3: #e15759;
+  --graph-hull-4: #edc948;
+  --graph-hull-5: #b07aa1;
+  --graph-hull-6: #ff9da7;
+  --graph-hull-7: #9c755f;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +38,9 @@
     --fg-muted: #93928c;
     --accent: #6f9bef;
     --border: #33332f;
+    --graph-node-note: #7fa0d4;
+    --graph-node-ghost: #6f6f68;
+    --graph-edge-solid: #6f6f68;
   }
 }
 
@@ -32,6 +52,9 @@
   --fg-muted: #6b6b66;
   --accent: #3b6fd6;
   --border: #e2e1dd;
+  --graph-node-note: #5b7cae;
+  --graph-node-ghost: #9a9a94;
+  --graph-edge-solid: #9a9a94;
 }
 
 :root[data-theme="dark"] {
@@ -41,4 +64,7 @@
   --fg-muted: #93928c;
   --accent: #6f9bef;
   --border: #33332f;
+  --graph-node-note: #7fa0d4;
+  --graph-node-ghost: #6f6f68;
+  --graph-edge-solid: #6f6f68;
 }

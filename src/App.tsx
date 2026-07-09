@@ -8,6 +8,7 @@ import { StatusBar } from "./app/StatusBar";
 import { CommandPalette } from "./app/CommandPalette";
 import { ExplorerPanel, TodayView } from "./features/explorer";
 import { Editor, ReadingView } from "./features/editor";
+import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { createUntitledNote } from "./features/capture";
 import { appKeymap, installGlobalKeymap } from "./app/keymap";
@@ -105,9 +106,11 @@ function Welcome() {
 
 function CenterPane() {
   const todayViewOpen = useUiStore((s) => s.todayViewOpen);
+  const graphViewOpen = useUiStore((s) => s.graphViewOpen);
   const viewMode = useUiStore((s) => s.viewMode);
   const buffer = useVaultStore((s) => s.buffer);
 
+  if (graphViewOpen) return <GraphPage />;
   if (todayViewOpen) return <TodayView />;
   if (!buffer) {
     return (
@@ -131,6 +134,7 @@ function Shell() {
     });
     appKeymap.setHandler("reading-view", () => useUiStore.getState().toggleViewMode());
     appKeymap.setHandler("today-view", () => useUiStore.getState().toggleTodayView());
+    appKeymap.setHandler("graph-view", () => useUiStore.getState().toggleGraphView());
     appKeymap.setHandler("settings", () => {
       const ui = useUiStore.getState();
       ui.setSettingsOpen(!ui.settingsOpen);
@@ -184,8 +188,24 @@ function Shell() {
   );
 }
 
+/** Dev-only escape hatch (never reachable in a production build — the `import.meta.env.DEV`
+ *  check is statically eliminated by Vite): lets a plain browser preview (no Tauri, no open
+ *  vault) exercise GraphPage's mock-data path (mockFixture.ts) to sanity-check the visual
+ *  language pass 7/8 will rely on, without needing the Rust fs bridge this environment can't
+ *  reach (same limitation noted in pass 3's PROGRESS entry). */
+function DevGraphPreview() {
+  return (
+    <div className="h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <GraphPage />
+    </div>
+  );
+}
+
 function App() {
   const root = useVaultStore((s) => s.root);
+  if (import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('graphMock') === '1') {
+    return <DevGraphPreview />;
+  }
   return root ? <Shell /> : <Welcome />;
 }
 

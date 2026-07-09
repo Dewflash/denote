@@ -14,6 +14,8 @@ import { livePreviewExtensions } from './livePreview';
 import { wikilinkAndTagAutocomplete } from './autocomplete';
 import { setVaultContext, type EditorVaultContext } from './vaultContext';
 import { useVaultStore } from '../../state/vaultStore';
+import { useUiStore } from '../../state/uiStore';
+import { useGraphStore } from '../../state/graphStore';
 import { EDITOR_ROOT_ATTR } from '../../app/keymap';
 
 export function Editor() {
@@ -113,5 +115,22 @@ export function Editor() {
   }, [buffer?.content]);
 
   if (!buffer) return null;
-  return <div ref={containerRef} className="h-full" data-testid="denote-editor" />;
+  return (
+    <div className="relative h-full">
+      {activeNotePath && (
+        <button
+          title="Show local graph (2-hop neighborhood)"
+          className="absolute right-3 top-3 z-10 rounded px-2 py-1 text-xs"
+          style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+          onClick={() => {
+            useGraphStore.getState().enterLocalView(`${repo?.vaultId}/${activeNotePath}`, 2);
+            useUiStore.getState().setGraphViewOpen(true);
+          }}
+        >
+          Local graph
+        </button>
+      )}
+      <div ref={containerRef} className="h-full" data-testid="denote-editor" />
+    </div>
+  );
 }

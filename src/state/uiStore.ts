@@ -39,6 +39,7 @@ interface UiState {
   accent: string | null;
   viewMode: ViewMode;
   todayViewOpen: boolean;
+  graphViewOpen: boolean;
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
   settingsOpen: boolean;
@@ -52,6 +53,8 @@ interface UiState {
   toggleViewMode: () => void;
   setTodayViewOpen: (open: boolean) => void;
   toggleTodayView: () => void;
+  setGraphViewOpen: (open: boolean) => void;
+  toggleGraphView: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
@@ -69,6 +72,7 @@ export const useUiStore = create<UiState>((set) => {
     accent,
     viewMode: 'editor',
     todayViewOpen: false,
+    graphViewOpen: false,
     rightPanelTab: 'backlinks',
     commandPaletteOpen: false,
     settingsOpen: false,
@@ -96,6 +100,12 @@ export const useUiStore = create<UiState>((set) => {
     },
     toggleTodayView() {
       set((s) => ({ todayViewOpen: !s.todayViewOpen }));
+    },
+    setGraphViewOpen(open) {
+      set({ graphViewOpen: open });
+    },
+    toggleGraphView() {
+      set((s) => ({ graphViewOpen: !s.graphViewOpen }));
     },
     setRightPanelTab(tab) {
       set({ rightPanelTab: tab });
