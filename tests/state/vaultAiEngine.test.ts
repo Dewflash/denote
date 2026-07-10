@@ -204,3 +204,96 @@ class CountingClient implements AiClient {
     return this.inner.labelSimilarity(req);
   }
 }
+
+// ── Architect checkpoint-B additions: S23 deferral + S28 consent (implementations existed
+//    untested; these lock the two most race/trust-critical behaviors) ────────────────────
+
+describe('VaultAiEngine — S23 dirty-buffer deferral (architect checkpoint B)', () => {
+  it('never writes ai: frontmatter into a dirty open buffer; applies after the buffer is clean', async () => {
+    let dirty = true;
+    const clock = makeClock();
+    const holder: { engine?: VaultAiEngine } = {};
+    const repo = await Repository.openVault(backend, root, {
+      now: clock.now,
+      onIndexChange: (relPath, note) => holder.engine?.noteChanged(relPath, note),
+    });
+    const store = new AnnotationStore(
+      { read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) },
+      clock.now,
+    );
+    const engine = new VaultAiEngine(repo, new AiRouter([new MockAiClient()], DEFAULT_ROUTING), store, {
+      now: clock.now,
+      localOnly: () => false,
+      threshold: () => 0.75,
+      isDirty: () => dirty,
+      disableTimers: true,
+    });
+    holder.engine = engine;
+    await engine.attach();
+
+    await repo.saveNote('Yen.md', '# Yen\nBOJ and interest rates.\n');
+    await engine.enrichNow('Yen.md');
+    await engine.settle();
+
+    // Dirty buffer: the file must NOT have been touched by takeover (S23).
+    expect(await repo.readNote('Yen.md')).not.toMatch(/^---/);
+
+    // Buffer becomes clean; the deferred apply runs on the next trigger.
+    dirty = false;
+    await engine.enrichNow('Yen.md');
+    await engine.settle();
+    expect(await repo.readNote('Yen.md')).toMatch(/^---\n[\s\S]*\bai:/m);
+  });
+});
+
+describe('VaultAiEngine — S28 consent gate (architect checkpoint B)', () => {
+  it('pauses bulk takeover past the threshold, prompts once, and applies all on consent', async () => {
+    const clock = makeClock();
+    const consentPrompts: number[] = [];
+    const holder: { engine?: VaultAiEngine } = {};
+    const repo = await Repository.openVault(backend, root, {
+      now: clock.now,
+      onIndexChange: (relPath, note) => holder.engine?.noteChanged(relPath, note),
+    });
+    const store = new AnnotationStore(
+      { read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) },
+      clock.now,
+    );
+    const engine = new VaultAiEngine(repo, new AiRouter([new MockAiClient()], DEFAULT_ROUTING), store, {
+      now: clock.now,
+      localOnly: () => false,
+      threshold: () => 0.5, // low threshold so every mock note takes over
+      onConsentNeeded: (n) => consentPrompts.push(n),
+      disableTimers: true,
+    });
+    holder.engine = engine;
+    await engine.attach();
+
+    // 25 bare notes (> CONSENT_THRESHOLD = 20), each with enrichable content.
+    for (let i = 0; i < 25; i++) {
+      await repo.saveNote(`n${i}.md`, `# Note ${i}\nBOJ banking policy and interest rates ${i}.\n`);
+    }
+    for (let i = 0; i < 25; i++) await engine.enrichNow(`n${i}.md`);
+    await engine.settle();
+
+    // Past the threshold the gate must have paused applies and prompted at least once.
+    expect(consentPrompts.length).toBeGreaterThan(0);
+    const withAi = async () => {
+      let c = 0;
+      for (let i = 0; i < 25; i++) if ((await repo.readNote(`n${i}.md`)).includes('ai:')) c++;
+      return c;
+    };
+    const before = await withAi();
+    expect(before).toBeLessThanOrEqual(20); // bulk apply held at the gate (S28)
+
+    await engine.setTakeoverConsent('apply');
+    await engine.settle();
+    expect(await withAi()).toBe(25); // consent releases every held apply
+
+    // The prompt is once-per-vault: consenting again is a no-op, no re-prompt storm.
+    const prompts = consentPrompts.length;
+    await engine.enrichNow('n0.md');
+    await engine.settle();
+    expect(consentPrompts.length).toBe(prompts);
+  });
+});

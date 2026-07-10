@@ -35,7 +35,7 @@ review verdict lands here.
 | Checkpoint | After pass | Focus | Status |
 |-----------|-----------|-------|--------|
 | A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | **done 2026-07-08 — PASS w/ 2 architect fixes** |
-| B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | pending |
+| B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | **done 2026-07-10 — PASS w/ 2 architect-added tests** |
 | C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | pending |
 | D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | pending |
 | E | 11 | Release audit: full-repo sweep, derived-data deletion drill, conflict handling, private-repo default, EXPECTED.md + ACCEPTANCE.md end-to-end | pending |
@@ -94,6 +94,31 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   APPROVED AND ADOPTED — implementation's fs-reported-bytes + fold-comparisons approach is
   safer than the original blanket-NFC S6 wording; S6 amended to codify it. Cleared for
   pass 03.
+
+- 2026-07-10 · **CHECKPOINT B (post-06, sweeping 03–05)** · **verdict: PASS; architect added
+  2 missing tests; all pass 03–06 deviations APPROVED.**
+  Verified: suites 296 TS + 6 Rust green, lint/build green, reference ALL GREEN. **R1 loop
+  test is legitimate** — real Repository, real watcher echo, counting client, asserts exactly
+  1 enrichment across write→echo→ambient-re-run; the `writeAiFrontmatter` R1 invariant
+  (`contentHash` unchanged for all ai payloads) is asserted directly in domain tests. S10
+  state machine, D30 accept-demotes-rest (with failure rollback), S11 fingerprint
+  (reason-independent, resolved-path-preferring), S12 queue (newest-hash-wins, 5s/30s/2m
+  backoff→park), D18 router (network client physically un-obtainable for localOnly — typed
+  error + zero-calls integration tests both directions) all verified in source. Checkpoint-A
+  directive (in-app saves → queue via onIndexChange) fulfilled. Passes 03–05 spot-swept:
+  S21 keymap registry, D38 op-log, S23-rule-3 conflict bar present; hulls default OFF (D7),
+  deterministic seeded layout (no Math.random), inspector reads UNFILTERED graph (honest
+  provenance); S25 global lowercased tag ids; registry relocate flow refuses vaultId
+  mismatch; no feature imports @tauri-apps directly. **Architect fixes: S23 dirty-buffer
+  deferral and S28 consent gate were implemented but UNTESTED** (the two most race/trust-
+  critical behaviors of the pass) — added both integration tests (deferral: no ai: write
+  while dirty, applies after clean; consent: 25-note bulk pauses ≤20 applied, prompt fires,
+  'apply' releases all 25, no re-prompt). Both passed first-run. **Directive for pass 10:**
+  SettingsModal hardcodes `#c0392b` danger color twice — introduce a `--danger` token in
+  tokens.css (both themes) during Appearance completion. **Directive for pass 07 (standing):**
+  Vitest's node backend cannot exercise tauriStorage→Rust — pass 07 adds Rust surface
+  (fastembed, sidecar spawn); its DoD manual steps are the only real-path verification, run
+  them in the actual app. Cleared for pass 07 (Opus 4.8, high).
 
 ## Owner inputs required
 
