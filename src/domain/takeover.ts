@@ -2,7 +2,8 @@
 // Decides which provisional entries to APPLY or DEMOTE. It does NOT write anything —
 // applying/demoting (the `ai:` frontmatter write) is the repository's job in pass 6.
 
-import type { AiAnnotation, ParsedNote } from './types';
+import type { AiAnnotation, AiFrontmatter, ParsedNote } from './types';
+import type { LinkPayload, TagPayload, TopicPayload } from './aiPayloads';
 
 export const DEFAULT_TAKEOVER_THRESHOLD = 0.75;
 
@@ -63,4 +64,36 @@ export function decideTakeover(
       PROVISIONABLE.has(a.kind),
   );
   return apply.length ? { action: 'apply', apply } : { action: 'none' };
+}
+
+/**
+ * Build the `ai:` frontmatter (S10 schema) from the annotations being applied provisionally.
+ * Only provisionable kinds contribute: `tag` → `tags`, `link` → `links` (the raw target text,
+ * resolved per S4 at read time), `topic` → `topics` (the topic id or, absent an ontology in
+ * pass 6, its name). De-duplicated in stable order. `applied`/`model` stamp provenance.
+ */
+export function buildAiFrontmatter(
+  apply: AiAnnotation[],
+  model: string,
+  appliedAt: string,
+): AiFrontmatter {
+  const tags: string[] = [];
+  const links: string[] = [];
+  const topics: string[] = [];
+  const pushUnique = (arr: string[], v: string): void => {
+    if (v && !arr.some((x) => x.toLowerCase() === v.toLowerCase())) arr.push(v);
+  };
+  for (const a of apply) {
+    if (a.kind === 'tag') pushUnique(tags, (a.payload as TagPayload).name);
+    else if (a.kind === 'link') pushUnique(links, (a.payload as LinkPayload).target);
+    else if (a.kind === 'topic') {
+      const p = a.payload as TopicPayload;
+      pushUnique(topics, p.existingTopicId ?? p.name);
+    }
+  }
+  const ai: AiFrontmatter = { v: 1, model, applied: appliedAt };
+  if (tags.length) ai.tags = tags;
+  if (links.length) ai.links = links;
+  if (topics.length) ai.topics = topics;
+  return ai;
 }

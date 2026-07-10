@@ -6,10 +6,16 @@ import { create } from 'zustand';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ViewMode = 'editor' | 'reading';
-export type RightPanelTab = 'backlinks' | 'outgoing';
+export type RightPanelTab = 'backlinks' | 'outgoing' | 'suggestions';
 
 const THEME_KEY = 'denote:theme';
 const ACCENT_KEY = 'denote:accent';
+const AI_THRESHOLD_KEY = 'denote:aiTakeoverThreshold';
+
+function loadThreshold(): number {
+  const v = Number(localStorage.getItem(AI_THRESHOLD_KEY));
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.75; // S10 default
+}
 
 function loadTheme(): ThemeMode {
   const v = localStorage.getItem(THEME_KEY);
@@ -37,6 +43,8 @@ function applyAccent(accent: string | null): void {
 interface UiState {
   theme: ThemeMode;
   accent: string | null;
+  /** Takeover confidence floor (S10). AI setting; persisted (Settings → AI & Models). */
+  aiTakeoverThreshold: number;
   viewMode: ViewMode;
   todayViewOpen: boolean;
   graphViewOpen: boolean;
@@ -51,6 +59,7 @@ interface UiState {
 
   setTheme: (mode: ThemeMode) => void;
   setAccent: (accent: string | null) => void;
+  setAiTakeoverThreshold: (v: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
   setTodayViewOpen: (open: boolean) => void;
@@ -76,6 +85,7 @@ export const useUiStore = create<UiState>((set) => {
   return {
     theme,
     accent,
+    aiTakeoverThreshold: loadThreshold(),
     viewMode: 'editor',
     todayViewOpen: false,
     graphViewOpen: false,
@@ -96,6 +106,11 @@ export const useUiStore = create<UiState>((set) => {
       else localStorage.removeItem(ACCENT_KEY);
       applyAccent(accent);
       set({ accent });
+    },
+    setAiTakeoverThreshold(v) {
+      const clamped = Math.max(0, Math.min(1, v));
+      localStorage.setItem(AI_THRESHOLD_KEY, String(clamped));
+      set({ aiTakeoverThreshold: clamped });
     },
     setViewMode(mode) {
       set({ viewMode: mode });

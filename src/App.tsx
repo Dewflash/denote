@@ -11,6 +11,7 @@ import { Editor, ReadingView } from "./features/editor";
 import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { SearchPanel, QuickSwitcher } from "./features/search";
+import { AiProvisionalBar, AiConsentModal } from "./features/ai";
 import { createUntitledNote } from "./features/capture";
 import { appKeymap, installGlobalKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
@@ -120,7 +121,14 @@ function CenterPane() {
       </div>
     );
   }
-  return viewMode === "reading" ? <ReadingView /> : <Editor />;
+  return (
+    <div className="flex h-full flex-col">
+      <AiProvisionalBar />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {viewMode === "reading" ? <ReadingView /> : <Editor />}
+      </div>
+    </div>
+  );
 }
 
 function Shell() {
@@ -189,6 +197,7 @@ function Shell() {
       <SettingsModal />
       <SearchPanel />
       <QuickSwitcher />
+      <AiConsentModal />
     </div>
   );
 }

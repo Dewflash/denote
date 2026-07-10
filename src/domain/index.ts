@@ -11,3 +11,7 @@ export * from './backlinks';
 export * from './graphBuilder';
 export * from './takeover';
 export * from './noteDates';
+export * from './frontmatterText';
+export * from './aiFrontmatter';
+export * from './aiPayloads';
+export * from './aiApply';

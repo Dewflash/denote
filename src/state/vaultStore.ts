@@ -19,7 +19,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { Repository, type IndexChangeHook } from './repository';
 import { OpLog } from './opLog';
 import { createSearchIndexBinding } from './vaultSearchSync';
+import { createVaultAiBinding, type VaultAiEngine } from './vaultAiEngine';
 import { useGraphStore } from './graphStore';
+import { useUiStore } from './uiStore';
+import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
+import type { AiAnnotation } from '../domain';
+import type { TakeoverConsent } from './enrichmentQueue';
 import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
 import { appSupportRoot } from '../services/appSupport';
@@ -54,6 +59,12 @@ export interface RelocateError {
   expectedPath: string;
 }
 
+/** S28: bulk provisional-takeover consent prompt (>20 notes in one vault). */
+export interface AiConsentPrompt {
+  vaultId: string;
+  count: number;
+}
+
 interface VaultStoreState {
   // ── the ACTIVE vault ────────────────────────────────────────────────────
   root: string | null;
@@ -76,6 +87,8 @@ interface VaultStoreState {
    *  `repos` map, kept in state purely so components re-render when it changes). */
   openVaultIds: string[];
   relocateError: RelocateError | null;
+  /** S28 consent prompt, when bulk takeover is paused awaiting the owner's answer. */
+  aiConsentPrompt: AiConsentPrompt | null;
 
   openVaultAt: (root: string) => Promise<void>;
   createVaultAt: (root: string) => Promise<void>;
@@ -93,6 +106,16 @@ interface VaultStoreState {
   /** Any OPEN vault's Repository, active or not (the combined graph reads all of them). */
   getOpenRepo: (vaultId: string) => Repository | undefined;
   getSearchIndex: (vaultId: string) => NoteSearchIndex | undefined;
+  /** The active vault's AI engine (pass 6): suggestions + accept/reject + manual enrichment. */
+  getActiveAiEngine: () => VaultAiEngine | undefined;
+
+  // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
+  aiSuggestionsFor: (relPath: string) => AiAnnotation[];
+  acceptSuggestion: (id: string) => Promise<void>;
+  rejectSuggestion: (id: string) => Promise<void>;
+  acceptSuggestionsAbove: (relPath: string) => Promise<void>;
+  enrichActiveNote: (opts?: { linksOnly?: boolean }) => Promise<void>;
+  resolveAiConsent: (choice: TakeoverConsent) => Promise<void>;
 
   setActiveNote: (relPath: string | null) => Promise<void>;
   updateBufferContent: (content: string) => void;
@@ -117,8 +140,14 @@ interface VaultStoreState {
 // `stopWatcherBridge`, but now keyed per open vault (N concurrently, D17).
 const repos = new Map<string, Repository>();
 const searchIndexes = new Map<string, NoteSearchIndex>();
+const aiEngines = new Map<string, VaultAiEngine>();
 const watcherTeardowns = new Map<string, () => void>();
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// One AI router shared across all open vaults (routing is global; localOnly is enforced per call
+// by the router, D18). Pass 6 registers only the local mock; apple (pass 7) / anthropic (pass 9)
+// register here later with no other change.
+const sharedRouter = new AiRouter([new MockAiClient()], DEFAULT_ROUTING);
 
 function clearAutosaveTimer(): void {
   if (autosaveTimer) {
@@ -175,8 +204,24 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       // vaultId) exists; both close over this mutable ref instead of a bare `let` reassignment
       // (which some eslint/prefer-const configurations don't recognize across a closure).
       const selfRef: { vaultId?: string } = {};
+      const aiBinding = createVaultAiBinding({
+        router: sharedRouter,
+        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+        threshold: () => useUiStore.getState().aiTakeoverThreshold,
+        // S23: only defer writes to the note that is OPEN and DIRTY in the ACTIVE editor.
+        isDirty: (relPath) => {
+          const s = get();
+          return s.vaultId === selfRef.vaultId && s.buffer?.relPath === relPath && !!s.buffer?.dirty;
+        },
+        pushOp: (op) => get().opLog.push(op),
+        onChange: () => set((s) => ({ revision: s.revision + 1 })),
+        onConsentNeeded: (count) => {
+          if (selfRef.vaultId) set({ aiConsentPrompt: { vaultId: selfRef.vaultId, count } });
+        },
+      });
       const onIndexChange: IndexChangeHook = (relPath, note) => {
         searchBinding.onIndexChange(relPath, note);
+        aiBinding.onIndexChange(relPath, note);
         set((s) => ({ revision: s.revision + 1 }));
       };
       const onPipeline = (relPath: string): void => {
@@ -190,6 +235,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
           : await Repository.openVault(tauriStorage, root, { onPipeline, onIndexChange });
       selfRef.vaultId = repo.vaultId;
       await searchBinding.attach(repo);
+      const aiEngine = await aiBinding.attach(repo);
 
       await invoke('watch_vault', { root });
       const teardown = await startWatcherBridge(root, (evt) => {
@@ -198,6 +244,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
       repos.set(repo.vaultId, repo);
       searchIndexes.set(repo.vaultId, index);
+      aiEngines.set(repo.vaultId, aiEngine);
       watcherTeardowns.set(repo.vaultId, teardown);
       useGraphStore.getState().addOpenVault(repo.vaultId);
 
@@ -247,6 +294,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     registry: [],
     openVaultIds: [],
     relocateError: null,
+    aiConsentPrompt: null,
 
     openVaultAt: (root) => openAndActivate(root, 'open'),
     createVaultAt: (root) => openAndActivate(root, 'create'),
@@ -299,6 +347,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       watcherTeardowns.get(vaultId)?.();
       watcherTeardowns.delete(vaultId);
       await invoke('unwatch_vault', { root: repo.root }).catch(() => {});
+      aiEngines.get(vaultId)?.dispose();
+      aiEngines.delete(vaultId);
       repos.delete(vaultId);
       searchIndexes.delete(vaultId);
       useGraphStore.getState().removeOpenVault(vaultId);
@@ -378,6 +428,40 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
     getOpenRepo: (vaultId) => repos.get(vaultId),
     getSearchIndex: (vaultId) => searchIndexes.get(vaultId),
+    getActiveAiEngine: () => {
+      const id = get().vaultId;
+      return id ? aiEngines.get(id) : undefined;
+    },
+
+    aiSuggestionsFor(relPath) {
+      return get().getActiveAiEngine()?.suggestionsFor(relPath) ?? [];
+    },
+    async acceptSuggestion(id) {
+      await get().getActiveAiEngine()?.accept(id);
+      set((s) => ({ revision: s.revision + 1 }));
+    },
+    async rejectSuggestion(id) {
+      await get().getActiveAiEngine()?.reject(id);
+      set((s) => ({ revision: s.revision + 1 }));
+    },
+    async acceptSuggestionsAbove(relPath) {
+      await get().getActiveAiEngine()?.acceptAllAboveThreshold(relPath);
+      set((s) => ({ revision: s.revision + 1 }));
+    },
+    async enrichActiveNote(opts) {
+      const s = get();
+      const engine = s.getActiveAiEngine();
+      if (!engine || !s.activeNotePath) return;
+      // Flush any unsaved edits first so enrichment sees the note the user actually wrote.
+      if (s.buffer?.dirty) await s.flushAutosave();
+      await engine.enrichNow(s.activeNotePath, opts);
+      set((cur) => ({ revision: cur.revision + 1 }));
+    },
+    async resolveAiConsent(choice) {
+      const prompt = get().aiConsentPrompt;
+      set({ aiConsentPrompt: null });
+      if (prompt) await aiEngines.get(prompt.vaultId)?.setTakeoverConsent(choice);
+    },
 
     bumpRevision: () => set((s) => ({ revision: s.revision + 1 })),
 

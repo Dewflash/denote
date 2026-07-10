@@ -17,6 +17,7 @@ export function CommandPalette() {
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const repo = useVaultStore((s) => s.repo);
+  const activeNotePath = useVaultStore((s) => s.activeNotePath);
   const [query, setQuery] = useState('');
   const [highlighted, setHighlighted] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -46,8 +47,22 @@ export function CommandPalette() {
         run: () => useUiStore.getState().toggleViewMode(),
       },
       { id: 'open-settings', label: 'Open settings', run: () => useUiStore.getState().setSettingsOpen(true) },
+      ...(activeNotePath
+        ? [
+            {
+              id: 'enrich-note',
+              label: 'Enrich this note now',
+              run: () => void useVaultStore.getState().enrichActiveNote(),
+            },
+            {
+              id: 'suggest-links',
+              label: 'Suggest links for this note',
+              run: () => void useVaultStore.getState().enrichActiveNote({ linksOnly: true }),
+            },
+          ]
+        : []),
     ],
-    [],
+    [activeNotePath],
   );
 
   const noteCommands: PaletteCommand[] = useMemo(() => {

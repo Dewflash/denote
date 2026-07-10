@@ -11,3 +11,5 @@ export { pickFolder } from './dialogs';
 export { guessImageMime, loadAssetObjectUrl } from './assets';
 export { appSupportRoot } from './appSupport';
 export * from './searchIndex';
+export * from './aiClient';
+export * from './annotationStore';

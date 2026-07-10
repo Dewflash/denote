@@ -1,0 +1,184 @@
+// src/features/ai/SuggestionsPanel.tsx — the AI suggestions surface (right sidebar, third tab).
+// Groups the active note's live annotations by kind; each row shows the reason, a confidence
+// bar, and a model badge (provenance, D6). Actions: Accept (writes real markdown via the
+// repository), Reject (→ rejection memory, D10), and Accept-all-above-threshold. Applied
+// provisional entries are shown distinctly (softer, "AI provisional" — S10) and are informational.
+
+import { useMemo } from 'react';
+import { useVaultStore } from '../../state/vaultStore';
+import { useUiStore } from '../../state/uiStore';
+import type { AiAnnotation } from '../../domain';
+
+const KIND_LABEL: Record<AiAnnotation['kind'], string> = {
+  topic: 'Topics',
+  link: 'Links',
+  tag: 'Tags',
+  summary: 'Summary',
+  alias: 'Aliases',
+};
+const KIND_ORDER: AiAnnotation['kind'][] = ['topic', 'link', 'tag', 'alias', 'summary'];
+
+function payloadLabel(a: AiAnnotation): string {
+  const p = (a.payload ?? {}) as Record<string, unknown>;
+  switch (a.kind) {
+    case 'link':
+      return String(p.target ?? '');
+    case 'summary':
+      return String(p.text ?? '');
+    default:
+      return String(p.name ?? '');
+  }
+}
+
+function ConfidenceBar({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="flex items-center gap-1.5" title={`Confidence ${pct}%`}>
+      <div style={{ width: 40, height: 5, borderRadius: 999, backgroundColor: 'var(--border)' }}>
+        <div
+          style={{
+            width: `${pct}%`,
+            height: 5,
+            borderRadius: 999,
+            backgroundColor: value >= 0.75 ? 'var(--accent)' : 'var(--fg-muted)',
+          }}
+        />
+      </div>
+      <span className="text-xs tabular-nums" style={{ color: 'var(--fg-muted)' }}>
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
+function SuggestionRow({ ann }: { ann: AiAnnotation }) {
+  const accept = useVaultStore((s) => s.acceptSuggestion);
+  const reject = useVaultStore((s) => s.rejectSuggestion);
+  const provisional = ann.status === 'applied-provisional';
+
+  return (
+    <div
+      className="flex flex-col gap-1 rounded p-2 text-sm"
+      style={{
+        border: `1px ${provisional ? 'dashed' : 'solid'} var(--border)`,
+        opacity: provisional ? 0.85 : 1,
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate font-medium" title={payloadLabel(ann)}>
+          {payloadLabel(ann)}
+        </span>
+        <ConfidenceBar value={ann.confidence} />
+      </div>
+      <div className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+        {ann.reason}
+      </div>
+      <div className="mt-0.5 flex items-center justify-between gap-2">
+        <span
+          className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
+          style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+          title={provisional ? 'Applied provisionally into the ai: block (S10)' : `Suggested by ${ann.model}`}
+        >
+          {provisional ? 'AI provisional' : ann.model}
+        </span>
+        <div className="flex gap-1.5">
+          <button
+            className="rounded px-2 py-0.5 text-xs"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={() => void accept(ann.id)}
+          >
+            Accept
+          </button>
+          <button
+            className="rounded px-2 py-0.5 text-xs"
+            style={{ color: 'var(--fg-muted)' }}
+            onClick={() => void reject(ann.id)}
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SuggestionsPanel() {
+  const activeNotePath = useVaultStore((s) => s.activeNotePath);
+  const revision = useVaultStore((s) => s.revision);
+  const threshold = useUiStore((s) => s.aiTakeoverThreshold);
+  const enrich = useVaultStore((s) => s.enrichActiveNote);
+  const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
+
+  const suggestions = useMemo(
+    () => (activeNotePath ? useVaultStore.getState().aiSuggestionsFor(activeNotePath) : []),
+    // revision is the deliberate re-derive signal (engine bumps it on any annotation change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeNotePath, revision],
+  );
+
+  const grouped = useMemo(() => {
+    const m = new Map<AiAnnotation['kind'], AiAnnotation[]>();
+    for (const a of suggestions) {
+      const list = m.get(a.kind) ?? [];
+      list.push(a);
+      m.set(a.kind, list);
+    }
+    return m;
+  }, [suggestions]);
+
+  if (!activeNotePath) {
+    return (
+      <div className="p-3 text-sm" style={{ color: 'var(--fg-muted)' }}>
+        Open a note to see AI suggestions.
+      </div>
+    );
+  }
+
+  const acceptableCount = suggestions.filter(
+    (a) => a.status === 'suggested' && a.confidence >= threshold,
+  ).length;
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between gap-2 p-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        <button
+          className="rounded px-2 py-1 text-xs"
+          style={{ border: '1px solid var(--border)' }}
+          onClick={() => void enrich()}
+          title="Run enrichment now (bypasses the debounce)"
+        >
+          Enrich now
+        </button>
+        {acceptableCount > 0 && (
+          <button
+            className="rounded px-2 py-1 text-xs"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={() => void acceptAbove(activeNotePath)}
+            title={`Accept the ${acceptableCount} suggestion(s) at or above ${Math.round(threshold * 100)}% confidence`}
+          >
+            Accept all ≥ {Math.round(threshold * 100)}%
+          </button>
+        )}
+      </div>
+      <div className="flex-1 overflow-auto p-2">
+        {suggestions.length === 0 && (
+          <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+            No suggestions yet. Edit the note (or run “Enrich now”) and they’ll appear here.
+          </p>
+        )}
+        <div className="flex flex-col gap-3">
+          {KIND_ORDER.filter((k) => grouped.has(k)).map((kind) => (
+            <div key={kind} className="flex flex-col gap-1.5">
+              <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--fg-muted)' }}>
+                {KIND_LABEL[kind]}
+              </div>
+              {grouped.get(kind)!.map((a) => (
+                <SuggestionRow key={a.id} ann={a} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

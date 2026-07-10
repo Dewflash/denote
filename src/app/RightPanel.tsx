@@ -2,12 +2,20 @@
 
 import * as Tabs from '@radix-ui/react-tabs';
 import { useUiStore, type RightPanelTab } from '../state/uiStore';
+import { useVaultStore } from '../state/vaultStore';
 import { BacklinksPanel } from '../features/editor/BacklinksPanel';
 import { OutgoingLinksPanel } from '../features/editor/OutgoingLinksPanel';
+import { SuggestionsPanel } from '../features/ai';
 
 export function RightPanel() {
   const tab = useUiStore((s) => s.rightPanelTab);
   const setTab = useUiStore((s) => s.setRightPanelTab);
+  const activeNotePath = useVaultStore((s) => s.activeNotePath);
+  const revision = useVaultStore((s) => s.revision);
+  const suggestionCount = activeNotePath
+    ? useVaultStore.getState().aiSuggestionsFor(activeNotePath).filter((a) => a.status === 'suggested').length
+    : 0;
+  void revision; // re-derive the badge count when the live index/annotations change
 
   return (
     <Tabs.Root
@@ -20,7 +28,10 @@ export function RightPanel() {
           Backlinks
         </Tabs.Trigger>
         <Tabs.Trigger value="outgoing" className="denote-tab-trigger flex-1 px-3 py-2 text-sm">
-          Outgoing links
+          Outgoing
+        </Tabs.Trigger>
+        <Tabs.Trigger value="suggestions" className="denote-tab-trigger flex-1 px-3 py-2 text-sm">
+          AI{suggestionCount > 0 ? ` (${suggestionCount})` : ''}
         </Tabs.Trigger>
       </Tabs.List>
       <Tabs.Content value="backlinks" className="flex-1 overflow-auto">
@@ -28,6 +39,9 @@ export function RightPanel() {
       </Tabs.Content>
       <Tabs.Content value="outgoing" className="flex-1 overflow-auto">
         <OutgoingLinksPanel />
+      </Tabs.Content>
+      <Tabs.Content value="suggestions" className="flex-1 overflow-hidden">
+        <SuggestionsPanel />
       </Tabs.Content>
     </Tabs.Root>
   );

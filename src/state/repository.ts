@@ -174,6 +174,10 @@ export class Repository {
   getParsed(relPath: string): ParsedNote | undefined {
     return this.index.getNote(relPath);
   }
+  /** The live contentHash (D3a) for a note, or undefined if it isn't indexed. */
+  getHash(relPath: string): string | undefined {
+    return this.index.getHash(relPath);
+  }
   listNotePaths(): string[] {
     return [...this.index.notes.keys()];
   }
@@ -182,6 +186,38 @@ export class Repository {
   }
   async readNote(relPath: string): Promise<string> {
     return this.backend.readNote(this.root, relPath);
+  }
+
+  // ── internal .denote/ store I/O (D23: every vault write routes through the repository) ────
+  // The AI annotation/rejection stores and the enrichment queue live under `.denote/` — part of
+  // the shared ignore set (S22), so these paths never produce watcher events or note-index
+  // mutations and need no app-write tagging (unlike note writes). Guarded so a caller can never
+  // reach a real note through this door. Writes are still atomic (tmp+rename, S7) in the backend.
+
+  private assertInternal(relPath: string): void {
+    if (!isIgnoredPath(relPath)) {
+      throw new DenoteError('fs', `not an internal .denote path: ${relPath}`, { path: relPath });
+    }
+  }
+
+  async readInternal(relPath: string): Promise<string | null> {
+    this.assertInternal(relPath);
+    if (!(await this.backend.exists(this.root, relPath))) return null;
+    return this.backend.readNote(this.root, relPath);
+  }
+
+  async writeInternal(relPath: string, content: string): Promise<void> {
+    this.assertInternal(relPath);
+    const d = dirname(relPath);
+    if (d) await this.backend.createDir(this.root, d);
+    await this.backend.writeNote(this.root, relPath, content);
+  }
+
+  async deleteInternal(relPath: string): Promise<void> {
+    this.assertInternal(relPath);
+    if (await this.backend.exists(this.root, relPath)) {
+      await this.backend.deletePath(this.root, relPath);
+    }
   }
 
   // ── writes (all tagged S8, serialized per note S7) ──────────────────────────

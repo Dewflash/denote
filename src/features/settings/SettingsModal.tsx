@@ -245,6 +245,116 @@ function AppearanceSection() {
   );
 }
 
+const AI_TASKS: { id: string; label: string }[] = [
+  { id: 'summarize', label: 'Summarize' },
+  { id: 'enrich', label: 'Enrich note' },
+  { id: 'label-similarity', label: 'Label similarity' },
+  { id: 'deep-organize', label: 'Deep organize (vault)' },
+];
+
+const AI_BACKENDS: { id: string; label: string; enabled: boolean; note?: string }[] = [
+  { id: 'mock', label: 'Mock', enabled: true },
+  { id: 'apple', label: 'Apple (on-device)', enabled: false, note: 'pass 7' },
+  { id: 'anthropic', label: 'Anthropic (cloud)', enabled: false, note: 'pass 9' },
+];
+
+function AiSection() {
+  const threshold = useUiStore((s) => s.aiTakeoverThreshold);
+  const setThreshold = useUiStore((s) => s.setAiTakeoverThreshold);
+  const registry = useVaultStore((s) => s.registry);
+  const setVaultLocalOnly = useVaultStore((s) => s.setVaultLocalOnly);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Task routing
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Each task runs on a backend. Only the local Mock backend is available now; Apple and
+          Anthropic backends arrive in later passes.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {AI_TASKS.map((t) => (
+            <div key={t.id} className="flex items-center justify-between text-sm">
+              <span>{t.label}</span>
+              <select
+                value="mock"
+                disabled
+                className="rounded px-2 py-1 text-sm"
+                style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+              >
+                {AI_BACKENDS.map((b) => (
+                  <option key={b.id} value={b.id} disabled={!b.enabled}>
+                    {b.label}
+                    {b.note ? ` (${b.note})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Takeover threshold
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          A note with no tags or links of your own gets AI structure auto-applied (as reversible
+          provisional metadata) only for suggestions at or above this confidence.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0.4}
+            max={0.95}
+            step={0.05}
+            value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            className="flex-1"
+          />
+          <span className="w-10 text-right text-sm tabular-nums">{Math.round(threshold * 100)}%</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Privacy (per vault)
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          A local-only vault’s content can never reach a cloud AI backend (enforced in the router,
+          D18).
+        </p>
+        {registry.length === 0 && (
+          <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+            No vaults registered yet.
+          </p>
+        )}
+        <div className="flex flex-col gap-1.5">
+          {registry.map((v) => (
+            <label key={v.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={v.localOnly}
+                onChange={(e) => void setVaultLocalOnly(v.id, e.target.checked)}
+              />
+              <span
+                aria-hidden
+                style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: v.color, flexShrink: 0 }}
+              />
+              <span className="truncate">{v.name}</span>
+              <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+                local only
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HotkeysSection() {
   return (
     <div className="flex flex-col gap-1 text-sm">
@@ -301,7 +411,7 @@ export function SettingsModal() {
             {section === 'vaults' && <VaultsSection />}
             {section === 'editor' && <Stub text="Editor settings arrive alongside their features." />}
             {section === 'appearance' && <AppearanceSection />}
-            {section === 'ai' && <Stub text="AI & Models routing arrives in pass 06." />}
+            {section === 'ai' && <AiSection />}
             {section === 'graph' && <Stub text="Graph settings arrive in pass 04." />}
             {section === 'hotkeys' && <HotkeysSection />}
             {section === 'data' && <Stub text="Data management (snapshots, export, migrations) arrives in later passes." />}
