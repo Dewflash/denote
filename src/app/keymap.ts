@@ -25,6 +25,9 @@ export const DEFAULT_BINDINGS: readonly BindingDef[] = [
   { id: 'reading-view', combo: 'cmd-e', description: 'Toggle reading view' },
   { id: 'today-view', combo: 'cmd-t', description: 'Today view' },
   { id: 'search', combo: 'cmd-shift-f', description: 'Search' },
+  // Architect fix (post-checkpoint-B manual testing): cmd-F aliases global search until an
+  // in-note find exists (pass 10 may rebind cmd-F to in-note find per S21).
+  { id: 'search-alias', combo: 'cmd-f', description: 'Search (alias)' },
   { id: 'settings', combo: 'cmd-,', description: 'Settings' },
   { id: 'global-capture', combo: 'cmd-shift-n', description: 'Global capture (system-wide)' },
   { id: 'graph-view', combo: 'cmd-g', description: 'Graph view' },

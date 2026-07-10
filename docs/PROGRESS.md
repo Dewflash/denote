@@ -120,6 +120,30 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   (fastembed, sidecar spawn); its DoD manual steps are the only real-path verification, run
   them in the actual app. Cleared for pass 07 (Opus 4.8, high).
 
+## Owner manual-testing findings (post-06) — fix session required before pass 07
+
+Owner ran the real app against real vaults; findings triaged by the architect 2026-07-10.
+Already fixed by architect (committed): cmd-F now aliases global search; graph nodes have a
+minimum 9px hit radius (low-degree dots were nearly unclickable — likely the "click just
+zooms" report). Remaining items = one short fix session (Sonnet 5, high), scope ONLY:
+
+1. **Visible affordances** — hotkey-only UX failed discoverability: add a small icon row
+   (new note, search, graph toggle) to the left sidebar header or status bar, tooltips
+   showing the combo. Tokens only, no new deps.
+2. **Graph empty-state guidance** — when all edge layers are toggled off OR the visible
+   selection yields 0 edges, render a one-line hint ("No edge layers active — enable
+   Wikilinks/Tags above") instead of silent dots; add a "Reset view" button restoring
+   DEFAULT_LAYERS + confidence 0.10. (Owner's screenshot: all 4 layers unchecked +
+   imported notes have few wikilinks → correct-but-confusing blank graph.)
+3. **Live-verify in `pnpm tauri dev` and REPORT here:** (a) clicking a graph note dot with
+   a real vault open now opens the note and closes the graph; (b) cmd-N creates a note
+   while editor focused AND while tree focused; if ctrl-N does anything, find who handles
+   it (keymap requires metaKey — ctrl must be inert). Console errors during these = log
+   verbatim.
+4. Note-dot labels: notes render title labels only at zoom — verify labels appear at
+   default zoom for small graphs (owner saw unlabeled dots; if labels are zoom-gated,
+   lower the gate for graphs <100 nodes).
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing

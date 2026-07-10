@@ -149,6 +149,7 @@ function Shell() {
       ui.setSettingsOpen(!ui.settingsOpen);
     });
     appKeymap.setHandler("search", () => useUiStore.getState().toggleSearch());
+    appKeymap.setHandler("search-alias", () => useUiStore.getState().toggleSearch());
     appKeymap.setHandler("quick-switcher", () => useUiStore.getState().toggleQuickSwitcher());
     appKeymap.setHandler("undo", () => void useVaultStore.getState().opLog.undo());
     return installGlobalKeymap(appKeymap);

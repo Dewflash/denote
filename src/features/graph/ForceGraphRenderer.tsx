@@ -201,7 +201,9 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           const r = node.type === 'topic' || node.type === 'topicmerge' ? TOPIC_R : node.type === 'note' ? NOTE_BASE_R + Math.sqrt(degree.get(String(node.id)) ?? 0) * NOTE_DEGREE_SCALE : GHOST_R;
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+          // Architect fix: enforce a minimum hit radius — low-degree notes render as tiny dots
+          // and were nearly unclickable in real vaults (manual-testing finding).
+          ctx.arc(x, y, Math.max(r + 2, 9), 0, Math.PI * 2);
           ctx.fill();
         }}
         cooldownTicks={200}
