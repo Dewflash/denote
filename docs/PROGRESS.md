@@ -120,29 +120,50 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   (fastembed, sidecar spawn); its DoD manual steps are the only real-path verification, run
   them in the actual app. Cleared for pass 07 (Opus 4.8, high).
 
-## Owner manual-testing findings (post-06) — NON-BLOCKING fix list (run as a short Sonnet session any time before pass 10; does not gate passes 07–09)
+## Owner manual-testing findings (post-06) — NON-BLOCKING fix list — **DONE 2026-07-10** (folded into the pass-07 session)
 
 Owner ran the real app against real vaults; findings triaged by the architect 2026-07-10.
 Already fixed by architect (committed): cmd-F now aliases global search; graph nodes have a
 minimum 9px hit radius (low-degree dots were nearly unclickable — likely the "click just
-zooms" report). Remaining items = one short fix session (Sonnet 5, high), scope ONLY:
+zooms" report). Remaining 4 items resolved this session (all four **done**, scope respected —
+tokens only, no new deps):
 
-1. **Visible affordances** — hotkey-only UX failed discoverability: add a small icon row
-   (new note, search, graph toggle) to the left sidebar header or status bar, tooltips
-   showing the combo. Tokens only, no new deps.
-2. **Graph empty-state guidance** — when all edge layers are toggled off OR the visible
-   selection yields 0 edges, render a one-line hint ("No edge layers active — enable
-   Wikilinks/Tags above") instead of silent dots; add a "Reset view" button restoring
-   DEFAULT_LAYERS + confidence 0.10. (Owner's screenshot: all 4 layers unchecked +
-   imported notes have few wikilinks → correct-but-confusing blank graph.)
-3. **Live-verify in `pnpm tauri dev` and REPORT here:** (a) clicking a graph note dot with
-   a real vault open now opens the note and closes the graph; (b) cmd-N creates a note
-   while editor focused AND while tree focused; if ctrl-N does anything, find who handles
-   it (keymap requires metaKey — ctrl must be inert). Console errors during these = log
-   verbatim.
-4. Note-dot labels: notes render title labels only at zoom — verify labels appear at
-   default zoom for small graphs (owner saw unlabeled dots; if labels are zoom-gated,
-   lower the gate for graphs <100 nodes).
+1. **Visible affordances** — DONE. `ExplorerPanel.tsx` gained a header toolbar with three
+   icon buttons (new note / search / graph view), each with a hotkey tooltip (`⌘N` / `⌘⇧F` /
+   `⌘G`). Buttons dispatch through the ONE keymap registry (`appKeymap.invoke(id)`) so a click
+   and its shortcut are guaranteed identical; `formatCombo()` added to `keymap.ts` (+2 unit
+   tests) renders combos as Mac glyphs. Inline SVGs, token-driven hover, no new deps.
+2. **Graph empty-state guidance** — DONE. `GraphPage.tsx` renders a one-line overlay hint
+   when the visible graph has 0 edges: "No edge layers active — enable Wikilinks / Tags /
+   Topics / AI-similar above." if all four layers are off, otherwise "No connections match the
+   current filters — try 'Reset view' above." (suppressed when there are simply no nodes at
+   all — not a filter problem). `graphStore.resetView()` + a **Reset view** button in
+   `LayerControls.tsx` restore DEFAULT_LAYERS + confidence 0.10. **Verified live** in a plain
+   Vite preview (`?graphMock=1`): unchecking all 4 layers showed the exact hint; Reset view
+   restored `[true,true,true,true]` + confidence `0.1` and cleared the hint; zero console errors.
+3. **cmd-N / ctrl-N / graph-click — verified (static trace + preview; real-vault live run still
+   needs Tauri, see below):**
+   (a) Graph note-dot click → `GraphPage.handleNodeClick` note branch calls
+   `setActiveNote(relPath)` then `setGraphViewOpen(false)` on a plain click (cmd-click keeps
+   the graph open) — opens the note and closes the graph, as intended (GraphPage.tsx).
+   (b) cmd-N is handled by the single window-level keydown listener (`installGlobalKeymap`),
+   NOT a focused-element handler, so it fires identically whether the editor or the file tree
+   has focus; `new-note` → `createUntitledNote(selectedFolder)`. cmd-N is not a CodeMirror
+   default binding, so CM does not swallow it while the editor is focused.
+   (c) ctrl-N is inert: `comboFromEvent` returns `null` unless `metaKey` is set (ctrl ≠ meta),
+   so no binding is ever looked up for it, and no other code path listens for ctrl-N. The
+   existing keymap test already asserts `metaKey:false → null`.
+   Console: no errors observed in the preview session. **Limitation (same as passes 03–06):**
+   this session's browser tools drive Chromium over CDP and cannot reach Tauri's macOS
+   WKWebView, and the graph note-click path needs a real open vault (Tauri fs bridge), so the
+   REAL-app click was traced in source + exercised via the mock-graph selection path, not
+   clicked against a live vault. Owner: a 30-second `pnpm tauri dev` click confirms (a) end-to-end.
+4. **Note-dot labels at default zoom** — DONE. Labels were gated at `globalScale > 2.2`
+   (unreadable-hairball guard for large graphs). `ForceGraphRenderer` now uses
+   `labelScaleGate = positioned.length < 100 ? 0.3 : 2.2`, so small graphs show titles at any
+   normal fit-zoom. **Verified live** (`?graphMock=1` screenshot): every note/tag/topic/ghost
+   label ("Interest Rates", "Yen Intervention", "Japan", "Bank of Japan", "Finance", "Banking",
+   "japan") renders at default zoom without zooming in.
 
 ## Owner inputs required
 

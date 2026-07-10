@@ -3,6 +3,7 @@ import {
   DEFAULT_BINDINGS,
   KeymapRegistry,
   comboFromEvent,
+  formatCombo,
   EDITOR_ROOT_ATTR,
 } from '../../src/app/keymap';
 
@@ -58,6 +59,18 @@ describe('comboFromEvent', () => {
 
   it('normalizes cmd-,', () => {
     expect(comboFromEvent({ key: ',', metaKey: true })).toBe('cmd-,');
+  });
+});
+
+describe('formatCombo (affordance tooltips — post-06 fix #1)', () => {
+  it('renders cmd/shift/alt as Mac glyphs and uppercases the key', () => {
+    expect(formatCombo('cmd-n')).toBe('⌘N');
+    expect(formatCombo('cmd-shift-f')).toBe('⌘⇧F');
+    expect(formatCombo('cmd-g')).toBe('⌘G');
+  });
+
+  it('leaves multi-char / punctuation keys intact', () => {
+    expect(formatCombo('cmd-,')).toBe('⌘,');
   });
 });
 

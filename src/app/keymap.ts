@@ -100,6 +100,17 @@ export interface KeyChord {
   altKey?: boolean;
 }
 
+/** Human-readable Mac glyph form of a combo string, e.g. "cmd-shift-f" → "⌘⇧F". Used for
+ *  tooltips on the visible affordance buttons (post-06 manual-testing fix: hotkey-only UX
+ *  failed discoverability). */
+export function formatCombo(combo: ComboString): string {
+  const glyphs: Record<string, string> = { cmd: '⌘', shift: '⇧', alt: '⌥' };
+  return combo
+    .split('-')
+    .map((part) => glyphs[part] ?? (part.length === 1 ? part.toUpperCase() : part))
+    .join('');
+}
+
 /** Normalize a key chord into a combo string, or null if it isn't a `cmd`-chord (D1: Mac-first). */
 export function comboFromEvent(e: KeyChord): ComboString | null {
   if (!e.metaKey) return null;

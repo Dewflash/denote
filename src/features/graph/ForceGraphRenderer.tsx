@@ -62,6 +62,12 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     return d;
   }, [edges]);
 
+  // Node-label zoom gate. On large graphs labels only appear when zoomed in (>2.2) to avoid an
+  // unreadable text hairball; but on SMALL graphs (post-06 fix #4: owner saw unlabeled dots at
+  // default zoom) they should be legible immediately, so the gate drops well below any default
+  // fit-zoom.
+  const labelScaleGate = positioned.length < 100 ? 0.3 : 2.2;
+
   return (
     <div ref={containerRef} className="h-full w-full" style={{ backgroundColor: styleTokens.bg }}>
       <ForceGraph2D<PositionedNode, GraphEdge>
@@ -187,7 +193,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
               break;
             }
           }
-          if (globalScale > 2.2 && node.label) {
+          if (globalScale > labelScaleGate && node.label) {
             ctx.font = `${10 / globalScale}px var(--font-ui, sans-serif)`;
             ctx.fillStyle = styleTokens.fg;
             ctx.textAlign = 'center';

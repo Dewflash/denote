@@ -22,6 +22,7 @@ export function LayerControls() {
   const setMinConfidence = useGraphStore((s) => s.setMinConfidence);
   const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
   const toggleHulls = useGraphStore((s) => s.toggleHulls);
+  const resetView = useGraphStore((s) => s.resetView);
   const localView = useGraphStore((s) => s.localView);
   const exitLocalView = useGraphStore((s) => s.exitLocalView);
   const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
@@ -86,6 +87,15 @@ export function LayerControls() {
         <input type="checkbox" checked={hullsEnabled} onChange={toggleHulls} />
         Structural hulls
       </label>
+
+      <button
+        className="rounded px-2 py-0.5"
+        style={{ border: '1px solid var(--border)' }}
+        onClick={resetView}
+        title="Restore all edge layers and a low confidence floor"
+      >
+        Reset view
+      </button>
 
       {localView.enabled && (
         <button

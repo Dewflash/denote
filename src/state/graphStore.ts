@@ -61,6 +61,9 @@ interface GraphState {
 
   toggleLayer: (key: keyof LayerToggles) => void;
   setMinConfidence: (v: number) => void;
+  /** Restore DEFAULT_LAYERS + a low confidence floor (post-06 fix #2: "Reset view" escape from
+   *  a confusing all-off / over-filtered graph). */
+  resetView: () => void;
   toggleHulls: () => void;
   enterLocalView: (centerId: string, hops?: number) => void;
   exitLocalView: () => void;
@@ -88,6 +91,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const clamped = Math.min(1, Math.max(0, v));
     localStorage.setItem(CONFIDENCE_KEY, String(clamped));
     set({ minConfidence: clamped });
+  },
+  resetView() {
+    localStorage.setItem(LAYERS_KEY, JSON.stringify(DEFAULT_LAYERS));
+    localStorage.setItem(CONFIDENCE_KEY, '0.1');
+    set({ layers: { ...DEFAULT_LAYERS }, minConfidence: 0.1 });
   },
   toggleHulls() {
     const hullsEnabled = !get().hullsEnabled;

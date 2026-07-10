@@ -77,6 +77,18 @@ export function GraphPage() {
     [scopedGraph, layers, minConfidence],
   );
 
+  // Empty-state guidance (post-06 fix #2): silent dots with no edges confused the owner (all
+  // layers off, or imported notes with few wikilinks). Surface a one-line hint instead.
+  const allLayersOff = !layers.wikilinks && !layers.tags && !layers.topics && !layers.aiSimilar;
+  const emptyHint =
+    scopedGraph.nodes.length === 0
+      ? null // nothing to show at all (no vault selected / empty vault) — not a filter problem
+      : visibleGraph.edges.length === 0
+        ? allLayersOff
+          ? 'No edge layers active — enable Wikilinks / Tags / Topics / AI-similar above.'
+          : 'No connections match the current filters — try “Reset view” above.'
+        : null;
+
   // Persists across renders so a note edit (revision bump → fresh buildGraph()) doesn't reset
   // the force layout — see liveGraph.ts. Reconciliation is ref-mutating and therefore lives in
   // an effect (syncing derived positions from the external, imperative simulation), not in
@@ -121,7 +133,19 @@ export function GraphPage() {
     <div className="flex h-full flex-col" style={{ minHeight: 0 }}>
       <LayerControls />
       <div className="flex flex-1" style={{ minHeight: 0 }}>
-        <div className="flex-1" style={{ minWidth: 0 }}>
+        <div className="flex-1" style={{ minWidth: 0, position: 'relative' }}>
+          {emptyHint && (
+            <div
+              className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded px-3 py-1.5 text-xs"
+              style={{
+                backgroundColor: 'var(--bg-panel)',
+                border: '1px solid var(--border)',
+                color: 'var(--fg-muted)',
+              }}
+            >
+              {emptyHint}
+            </div>
+          )}
           <ForceGraphRenderer
             edges={visibleGraph.edges}
             positioned={positioned}
