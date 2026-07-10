@@ -120,7 +120,7 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   (fastembed, sidecar spawn); its DoD manual steps are the only real-path verification, run
   them in the actual app. Cleared for pass 07 (Opus 4.8, high).
 
-## Owner manual-testing findings (post-06) — fix session required before pass 07
+## Owner manual-testing findings (post-06) — NON-BLOCKING fix list (run as a short Sonnet session any time before pass 10; does not gate passes 07–09)
 
 Owner ran the real app against real vaults; findings triaged by the architect 2026-07-10.
 Already fixed by architect (committed): cmd-F now aliases global search; graph nodes have a
