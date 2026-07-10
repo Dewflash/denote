@@ -5,3 +5,10 @@
 export * from './types';
 export * from './router';
 export { MockAiClient, MOCK_MODEL_ID } from './mock';
+export {
+  AppleAiClient,
+  APPLE_MODEL_ID,
+  normalizeTag,
+  createTauriSidecarTransport,
+  type SidecarTransport,
+} from './apple';

@@ -25,4 +25,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # notify: the vault filesystem watcher (pre-approved by MASTERPLAN §3 / pass-02 brief).
 notify = "6"
+# fastembed: local embeddings (D24/S14, multilingual-e5-small). Optional/feature-gated behind
+# `local-embeddings` because it pulls the heavy `ort`/ONNX-Runtime native stack (build-time
+# binary download); the embedding STORE + topK (embeddings.rs) compile and are unit-tested
+# WITHOUT it, so `cargo test --lib` verifies the S14 format everywhere. Production enables it.
+fastembed = { version = "4", optional = true }
+
+[features]
+# On by default so `pnpm tauri dev`/`build` ship real embeddings; disable
+# (`--no-default-features`) in constrained environments to build the store/commands without the
+# ONNX stack (embed_texts then returns a typed "unavailable" error and jobs queue).
+default = ["local-embeddings"]
+local-embeddings = ["dep:fastembed"]
 

@@ -4,7 +4,7 @@
 // section structure never needs to be reshuffled.
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useUiStore, type ThemeMode } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { pickFolder } from '../../services/dialogs';
@@ -254,15 +254,26 @@ const AI_TASKS: { id: string; label: string }[] = [
 
 const AI_BACKENDS: { id: string; label: string; enabled: boolean; note?: string }[] = [
   { id: 'mock', label: 'Mock', enabled: true },
-  { id: 'apple', label: 'Apple (on-device)', enabled: false, note: 'pass 7' },
+  { id: 'apple', label: 'Apple (on-device)', enabled: true },
   { id: 'anthropic', label: 'Anthropic (cloud)', enabled: false, note: 'pass 9' },
 ];
 
 function AiSection() {
   const threshold = useUiStore((s) => s.aiTakeoverThreshold);
   const setThreshold = useUiStore((s) => s.setAiTakeoverThreshold);
+  const topK = useUiStore((s) => s.similarityTopK);
+  const setTopK = useUiStore((s) => s.setSimilarityTopK);
+  const minCos = useUiStore((s) => s.similarityMinCos);
+  const setMinCos = useUiStore((s) => s.setSimilarityMinCos);
   const registry = useVaultStore((s) => s.registry);
   const setVaultLocalOnly = useVaultStore((s) => s.setVaultLocalOnly);
+  // `revision` bumps when routing changes, re-rendering the selects with the live table.
+  const revision = useVaultStore((s) => s.revision);
+  const setTaskRouting = useVaultStore((s) => s.setTaskRouting);
+  const routing = useMemo(() => {
+    void revision; // recompute when routing changes (revision bumps)
+    return useVaultStore.getState().aiRoutingTable();
+  }, [revision]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -271,16 +282,16 @@ function AiSection() {
           Task routing
         </div>
         <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-          Each task runs on a backend. Only the local Mock backend is available now; Apple and
-          Anthropic backends arrive in later passes.
+          Each task runs on a backend. Apple runs on-device (free, offline); the Anthropic cloud
+          tier arrives in pass 9. The Mock backend stays available for testing.
         </p>
         <div className="flex flex-col gap-1.5">
           {AI_TASKS.map((t) => (
             <div key={t.id} className="flex items-center justify-between text-sm">
               <span>{t.label}</span>
               <select
-                value="mock"
-                disabled
+                value={routing[t.id] ?? 'mock'}
+                onChange={(e) => setTaskRouting(t.id, e.target.value)}
                 className="rounded px-2 py-1 text-sm"
                 style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
               >
@@ -293,6 +304,27 @@ function AiSection() {
               </select>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Similarity (ai-similar edges)
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Embeddings propose up to <strong>{topK}</strong> neighbors per note above cosine{' '}
+          <strong>{minCos.toFixed(2)}</strong>; the on-device model must then name a specific shared
+          concept before an edge is drawn (D6a).
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="w-24 text-xs" style={{ color: 'var(--fg-muted)' }}>Top-K neighbors</span>
+          <input type="range" min={1} max={10} step={1} value={topK} onChange={(e) => setTopK(Number(e.target.value))} className="flex-1" />
+          <span className="w-8 text-right text-sm tabular-nums">{topK}</span>
+        </div>
+        <div className="mt-1.5 flex items-center gap-3">
+          <span className="w-24 text-xs" style={{ color: 'var(--fg-muted)' }}>Min cosine</span>
+          <input type="range" min={0.4} max={0.9} step={0.02} value={minCos} onChange={(e) => setMinCos(Number(e.target.value))} className="flex-1" />
+          <span className="w-8 text-right text-sm tabular-nums">{minCos.toFixed(2)}</span>
         </div>
       </div>
 

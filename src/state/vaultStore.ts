@@ -20,10 +20,18 @@ import { Repository, type IndexChangeHook } from './repository';
 import { OpLog } from './opLog';
 import { createSearchIndexBinding } from './vaultSearchSync';
 import { createVaultAiBinding, type VaultAiEngine } from './vaultAiEngine';
+import { createVaultEmbeddingBinding, type VaultEmbeddingEngine } from './vaultEmbeddings';
 import { useGraphStore } from './graphStore';
 import { useUiStore } from './uiStore';
-import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
-import type { AiAnnotation } from '../domain';
+import {
+  AiRouter,
+  APPLE_ROUTING,
+  AppleAiClient,
+  MockAiClient,
+  createTauriSidecarTransport,
+} from '../services/aiClient';
+import { createTauriEmbeddingsBackend } from '../services/embeddings';
+import type { AiAnnotation, SimilarPair } from '../domain';
 import type { TakeoverConsent } from './enrichmentQueue';
 import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
@@ -108,6 +116,8 @@ interface VaultStoreState {
   getSearchIndex: (vaultId: string) => NoteSearchIndex | undefined;
   /** The active vault's AI engine (pass 6): suggestions + accept/reject + manual enrichment. */
   getActiveAiEngine: () => VaultAiEngine | undefined;
+  /** Vetted ai-similar pairs (pass 7, S15) across the given open vaults, for the graph. */
+  graphSimilarPairs: (vaultIds: string[]) => SimilarPair[];
 
   // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
   aiSuggestionsFor: (relPath: string) => AiAnnotation[];
@@ -116,6 +126,18 @@ interface VaultStoreState {
   acceptSuggestionsAbove: (relPath: string) => Promise<void>;
   enrichActiveNote: (opts?: { linksOnly?: boolean }) => Promise<void>;
   resolveAiConsent: (choice: TakeoverConsent) => Promise<void>;
+  /** Paste-summarize (pass 7, D27): on-device title + summary + tag suggestions for captured text.
+   *  Returns nulls/empties if the backend is unavailable — capture still works, just unassisted. */
+  suggestForCapture: (
+    text: string,
+  ) => Promise<{ title: string; summary: string; tags: string[] }>;
+  /** The backend a task currently routes to (for the capture model-picker label). */
+  routingBackendFor: (task: 'summarize' | 'enrich') => string;
+  /** The full live routing table (Settings → AI). */
+  aiRoutingTable: () => Record<string, string>;
+  /** Re-route a task to a backend (Settings → AI). Session-scoped; resets to APPLE_ROUTING on
+   *  launch (the sensible default). */
+  setTaskRouting: (task: string, backend: string) => void;
 
   setActiveNote: (relPath: string | null) => Promise<void>;
   updateBufferContent: (content: string) => void;
@@ -141,13 +163,20 @@ interface VaultStoreState {
 const repos = new Map<string, Repository>();
 const searchIndexes = new Map<string, NoteSearchIndex>();
 const aiEngines = new Map<string, VaultAiEngine>();
+const embeddingEngines = new Map<string, VaultEmbeddingEngine>();
 const watcherTeardowns = new Map<string, () => void>();
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 // One AI router shared across all open vaults (routing is global; localOnly is enforced per call
-// by the router, D18). Pass 6 registers only the local mock; apple (pass 7) / anthropic (pass 9)
-// register here later with no other change.
-const sharedRouter = new AiRouter([new MockAiClient()], DEFAULT_ROUTING);
+// by the router, D18). Pass 7: on-device Apple Foundation Models handle summarize/enrich/similarity
+// (APPLE_ROUTING); the mock stays registered as a fallback + for tests. Anthropic (pass 9) registers
+// here later with no other change. Both apple + embeddings talk to the Rust core lazily, so
+// constructing them at module load costs nothing until first use.
+const sharedRouter = new AiRouter(
+  [new MockAiClient(), new AppleAiClient(createTauriSidecarTransport())],
+  APPLE_ROUTING,
+);
+const embeddingsBackend = createTauriEmbeddingsBackend();
 
 function clearAutosaveTimer(): void {
   if (autosaveTimer) {
@@ -219,9 +248,20 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
           if (selfRef.vaultId) set({ aiConsentPrompt: { vaultId: selfRef.vaultId, count } });
         },
       });
+      // Embeddings + ai-similar edges (pass 7). Local-only embedding; labelSimilarity inherits the
+      // D18 boundary via the shared router. Feeds the graph through `graphSimilarPairs`.
+      const embeddingBinding = createVaultEmbeddingBinding({
+        backend: embeddingsBackend,
+        router: sharedRouter,
+        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+        k: () => useUiStore.getState().similarityTopK,
+        minCos: () => useUiStore.getState().similarityMinCos,
+        onChange: () => set((s) => ({ revision: s.revision + 1 })),
+      });
       const onIndexChange: IndexChangeHook = (relPath, note) => {
         searchBinding.onIndexChange(relPath, note);
         aiBinding.onIndexChange(relPath, note);
+        embeddingBinding.onIndexChange(relPath, note);
         set((s) => ({ revision: s.revision + 1 }));
       };
       const onPipeline = (relPath: string): void => {
@@ -236,6 +276,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       selfRef.vaultId = repo.vaultId;
       await searchBinding.attach(repo);
       const aiEngine = await aiBinding.attach(repo);
+      const embeddingEngine = await embeddingBinding.attach(repo);
 
       await invoke('watch_vault', { root });
       const teardown = await startWatcherBridge(root, (evt) => {
@@ -245,6 +286,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       repos.set(repo.vaultId, repo);
       searchIndexes.set(repo.vaultId, index);
       aiEngines.set(repo.vaultId, aiEngine);
+      embeddingEngines.set(repo.vaultId, embeddingEngine);
       watcherTeardowns.set(repo.vaultId, teardown);
       useGraphStore.getState().addOpenVault(repo.vaultId);
 
@@ -349,6 +391,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       await invoke('unwatch_vault', { root: repo.root }).catch(() => {});
       aiEngines.get(vaultId)?.dispose();
       aiEngines.delete(vaultId);
+      embeddingEngines.get(vaultId)?.dispose();
+      embeddingEngines.delete(vaultId);
       repos.delete(vaultId);
       searchIndexes.delete(vaultId);
       useGraphStore.getState().removeOpenVault(vaultId);
@@ -432,6 +476,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       const id = get().vaultId;
       return id ? aiEngines.get(id) : undefined;
     },
+    graphSimilarPairs: (vaultIds) =>
+      vaultIds.flatMap((id) => embeddingEngines.get(id)?.similarPairs() ?? []),
 
     aiSuggestionsFor(relPath) {
       return get().getActiveAiEngine()?.suggestionsFor(relPath) ?? [];
@@ -461,6 +507,37 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       const prompt = get().aiConsentPrompt;
       set({ aiConsentPrompt: null });
       if (prompt) await aiEngines.get(prompt.vaultId)?.setTakeoverConsent(choice);
+    },
+
+    routingBackendFor: (task) => sharedRouter.getRouting()[task],
+    aiRoutingTable: () => sharedRouter.getRouting() as Record<string, string>,
+    setTaskRouting: (task, backend) => {
+      sharedRouter.setTask(task as never, backend as never);
+      set((s) => ({ revision: s.revision + 1 }));
+    },
+    async suggestForCapture(text) {
+      const localOnly = get().registry.find((v) => v.id === get().vaultId)?.localOnly ?? false;
+      const firstLine = text.split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || 'Untitled';
+      try {
+        const summarizer = sharedRouter.route('summarize', { localOnly });
+        const enricher = sharedRouter.route('enrich', { localOnly });
+        const [{ summary }, enrich] = await Promise.all([
+          summarizer.summarize({ text, maxWords: 40 }),
+          enricher.enrichNote({
+            text,
+            title: firstLine,
+            folderPath: 'Inbox',
+            existingTopics: [],
+            candidateNotes: [],
+          }),
+        ]);
+        const title = summary ? summary.split(/\s+/).slice(0, 8).join(' ') : firstLine;
+        const tags = enrich.tags.map((t) => t.name).filter(Boolean).slice(0, 6);
+        return { title, summary, tags };
+      } catch {
+        // Backend unavailable / offline without model — capture still works, unassisted.
+        return { title: firstLine, summary: '', tags: [] };
+      }
     },
 
     bumpRevision: () => set((s) => ({ revision: s.revision + 1 })),

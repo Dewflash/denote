@@ -11,11 +11,23 @@ import type { AiBackendKind, AiClient, AiTask } from './types';
 
 export type RoutingTable = Record<AiTask, AiBackendKind>;
 
-/** Pass-06 default: everything routes to the local mock (apple lands pass 7, anthropic pass 9). */
+/** Test/fallback default: everything routes to the local mock (deterministic, no runtime deps).
+ *  Tests that construct their own `AiRouter` rely on this. */
 export const DEFAULT_ROUTING: RoutingTable = {
   summarize: 'mock',
   enrich: 'mock',
   'label-similarity': 'mock',
+  'deep-organize': 'mock',
+};
+
+/** Pass-7 production default: on-device Apple Foundation Models handle the free-tier work; the
+ *  mock stays registered as a fallback and for tests. deep-organize routes to mock until the paid
+ *  Anthropic tier lands (pass 9). If the Apple backend is unavailable the router still returns it
+ *  and its calls fail gracefully (jobs queue) — it is never a network backend, so D18 is moot. */
+export const APPLE_ROUTING: RoutingTable = {
+  summarize: 'apple',
+  enrich: 'apple',
+  'label-similarity': 'apple',
   'deep-organize': 'mock',
 };
 

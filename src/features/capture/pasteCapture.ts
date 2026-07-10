@@ -3,10 +3,18 @@
 // will reuse `uniquePath`/`createUntitledNote` rather than duplicating the naming logic.
 
 import { useVaultStore } from '../../state/vaultStore';
+import { useUiStore } from '../../state/uiStore';
 import { EDITOR_ROOT_ATTR } from '../../app/keymap';
 
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const DEFAULT_INBOX = 'Inbox';
+/** Paste-to-capture that's at least this long opens the on-device summarize review (pass 7/D27);
+ *  shorter pastes file immediately as before. */
+export const CAPTURE_SUMMARIZE_MIN_CHARS = 800;
+
+export function sanitizeCaptureTitle(raw: string): string {
+  return sanitizeTitle(raw);
+}
 
 function sanitizeTitle(raw: string): string {
   const firstLine = raw.split(/\r?\n/, 1)[0]?.trim() ?? '';
@@ -47,10 +55,34 @@ export function renameWithinFolder(oldRelPath: string, newBase: string): string 
 export async function captureFromClipboard(clipboardText: string): Promise<void> {
   const text = clipboardText.trim();
   if (!text) return;
+  // Large pastes: open the review modal for on-device title/summary/tags (D27) instead of filing
+  // blind. The modal calls `fileCapture` on confirm.
+  if (text.length >= CAPTURE_SUMMARIZE_MIN_CHARS) {
+    useUiStore.getState().openCapture(text);
+    return;
+  }
   const title = sanitizeTitle(text);
   const relPath = uniquePath(DEFAULT_INBOX, title);
   const body = text.startsWith('#') ? `${text}\n` : `# ${title}\n\n${text}\n`;
   await useVaultStore.getState().createNote(relPath, body);
+  await useVaultStore.getState().setActiveNote(relPath);
+}
+
+/** File a reviewed capture (from the paste-summarize modal): build a note with the chosen title,
+ *  optional summary, and selected tags, then open it. */
+export async function fileCapture(opts: {
+  title: string;
+  body: string;
+  summary?: string;
+  tags?: string[];
+}): Promise<void> {
+  const title = sanitizeTitle(opts.title || 'Untitled');
+  const relPath = uniquePath(DEFAULT_INBOX, title);
+  const parts = [`# ${title}`, ''];
+  if (opts.summary?.trim()) parts.push(`> ${opts.summary.trim()}`, '');
+  parts.push(opts.body.trim(), '');
+  if (opts.tags && opts.tags.length > 0) parts.push(opts.tags.map((t) => `#${t}`).join(' '), '');
+  await useVaultStore.getState().createNote(relPath, parts.join('\n'));
   await useVaultStore.getState().setActiveNote(relPath);
 }
 

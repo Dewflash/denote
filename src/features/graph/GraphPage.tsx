@@ -35,6 +35,7 @@ export function GraphPage() {
   const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
+  const graphSimilarPairs = useVaultStore((s) => s.graphSimilarPairs);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
 
   const layers = useGraphStore((s) => s.layers);
@@ -60,10 +61,11 @@ export function GraphPage() {
       .filter((r): r is NonNullable<typeof r> => r != null)
       .map((r) => ({ vaultId: r.vaultId, notes: r.index.allNotes() }));
     if (vaults.length === 0) return { nodes: [], edges: [] };
-    // similarPairs/topics are intentionally omitted — pass 6/7/8 own wiring them in (D26).
-    return buildGraph({ vaults });
+    // ai-similar pairs (pass 7, S15) come from the embedding engines; topics arrive pass 8.
+    const similarPairs = graphSimilarPairs(selectedGraphVaultIds);
+    return buildGraph({ vaults, similarPairs });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, revision, useMock]);
+  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, revision, useMock]);
 
   const scopedGraph: Graph = useMemo(() => {
     if (localView.enabled && localView.centerId) {

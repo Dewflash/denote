@@ -11,10 +11,22 @@ export type RightPanelTab = 'backlinks' | 'outgoing' | 'suggestions';
 const THEME_KEY = 'denote:theme';
 const ACCENT_KEY = 'denote:accent';
 const AI_THRESHOLD_KEY = 'denote:aiTakeoverThreshold';
+const SIM_TOPK_KEY = 'denote:similarityTopK';
+const SIM_MINCOS_KEY = 'denote:similarityMinCos';
 
 function loadThreshold(): number {
   const v = Number(localStorage.getItem(AI_THRESHOLD_KEY));
   return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.75; // S10 default
+}
+
+function loadTopK(): number {
+  const v = Number(localStorage.getItem(SIM_TOPK_KEY));
+  return Number.isInteger(v) && v >= 1 && v <= 10 ? v : 3; // S15 default k=3 (range 1–10)
+}
+
+function loadMinCos(): number {
+  const v = Number(localStorage.getItem(SIM_MINCOS_KEY));
+  return Number.isFinite(v) && v >= 0.4 && v <= 0.9 ? v : 0.62; // S15 default cos≥0.62 (0.4–0.9)
 }
 
 function loadTheme(): ThemeMode {
@@ -45,6 +57,9 @@ interface UiState {
   accent: string | null;
   /** Takeover confidence floor (S10). AI setting; persisted (Settings → AI & Models). */
   aiTakeoverThreshold: number;
+  /** ai-similar retrieval params (S15): topK neighbors + cosine floor. Persisted. */
+  similarityTopK: number;
+  similarityMinCos: number;
   viewMode: ViewMode;
   todayViewOpen: boolean;
   graphViewOpen: boolean;
@@ -56,10 +71,15 @@ interface UiState {
   /** The folder cmd-N / paste-capture files a new note into when nothing more specific is
    *  selected in the tree (brief: "untitled note in Inbox/ unless a folder is selected"). */
   selectedFolder: string | null;
+  /** Pending paste-capture review (pass 7, D27): large pastes open a review modal that shows
+   *  on-device title/summary/tag suggestions before filing. `null` when closed. */
+  captureText: string | null;
 
   setTheme: (mode: ThemeMode) => void;
   setAccent: (accent: string | null) => void;
   setAiTakeoverThreshold: (v: number) => void;
+  setSimilarityTopK: (v: number) => void;
+  setSimilarityMinCos: (v: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
   setTodayViewOpen: (open: boolean) => void;
@@ -74,6 +94,8 @@ interface UiState {
   setQuickSwitcherOpen: (open: boolean) => void;
   toggleQuickSwitcher: () => void;
   setSelectedFolder: (folder: string | null) => void;
+  openCapture: (text: string) => void;
+  closeCapture: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => {
@@ -86,6 +108,8 @@ export const useUiStore = create<UiState>((set) => {
     theme,
     accent,
     aiTakeoverThreshold: loadThreshold(),
+    similarityTopK: loadTopK(),
+    similarityMinCos: loadMinCos(),
     viewMode: 'editor',
     todayViewOpen: false,
     graphViewOpen: false,
@@ -95,6 +119,7 @@ export const useUiStore = create<UiState>((set) => {
     searchOpen: false,
     quickSwitcherOpen: false,
     selectedFolder: null,
+    captureText: null,
 
     setTheme(mode) {
       localStorage.setItem(THEME_KEY, mode);
@@ -111,6 +136,16 @@ export const useUiStore = create<UiState>((set) => {
       const clamped = Math.max(0, Math.min(1, v));
       localStorage.setItem(AI_THRESHOLD_KEY, String(clamped));
       set({ aiTakeoverThreshold: clamped });
+    },
+    setSimilarityTopK(v) {
+      const clamped = Math.max(1, Math.min(10, Math.round(v)));
+      localStorage.setItem(SIM_TOPK_KEY, String(clamped));
+      set({ similarityTopK: clamped });
+    },
+    setSimilarityMinCos(v) {
+      const clamped = Math.max(0.4, Math.min(0.9, v));
+      localStorage.setItem(SIM_MINCOS_KEY, String(clamped));
+      set({ similarityMinCos: clamped });
     },
     setViewMode(mode) {
       set({ viewMode: mode });
@@ -153,6 +188,12 @@ export const useUiStore = create<UiState>((set) => {
     },
     setSelectedFolder(folder) {
       set({ selectedFolder: folder });
+    },
+    openCapture(text) {
+      set({ captureText: text });
+    },
+    closeCapture() {
+      set({ captureText: null });
     },
   };
 });
