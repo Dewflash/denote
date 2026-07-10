@@ -30,6 +30,11 @@ export interface EmbeddingNeighbor {
   cos: number;
 }
 
+export interface EmbeddingVectorRow {
+  relPath: string;
+  vector: number[];
+}
+
 export interface EmbedResult {
   model: string;
   dim: number;
@@ -50,6 +55,8 @@ export interface EmbeddingsBackend {
   remove(root: string, relPath: string): Promise<void>;
   remap(root: string, from: string, to: string): Promise<void>;
   topK(root: string, relPath: string, k: number, minCos: number): Promise<EmbeddingNeighbor[]>;
+  /** Stored vectors for a set of relPaths (pass-8 folder-centroid / misfit). Missing paths omitted. */
+  vectors(root: string, relPaths: string[]): Promise<EmbeddingVectorRow[]>;
 }
 
 /** Max characters of a note fed to the embedding model. multilingual-e5-small caps around 512
@@ -108,5 +115,7 @@ export function createTauriEmbeddingsBackend(): EmbeddingsBackend {
     remap: (root, from, to) => invoke('embeddings_remap', { root, from, to }),
     topK: (root, relPath, k, minCos) =>
       invoke<EmbeddingNeighbor[]>('embeddings_topk', { root, relPath, k, minCos }),
+    vectors: (root, relPaths) =>
+      invoke<EmbeddingVectorRow[]>('embeddings_vectors', { root, relPaths }),
   };
 }

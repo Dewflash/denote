@@ -67,6 +67,13 @@ pub struct Neighbor {
     pub cos: f32,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VectorRow {
+    pub rel_path: String,
+    pub vector: Vec<f32>,
+}
+
 /// The in-memory store: a flat f32 matrix (`row_count * dim`, row-major) plus the idx bookkeeping.
 /// Dead rows (in `free`) keep their slot in `data` until a compaction rewrites the file.
 pub struct EmbeddingStore {
@@ -248,6 +255,24 @@ impl EmbeddingStore {
     fn row_slice(&self, row: usize) -> &[f32] {
         let base = row * self.dim;
         &self.data[base..base + self.dim]
+    }
+
+    /// Fetch the stored (L2-normalized) vectors for a set of relPaths, in request order; paths with
+    /// no stored vector are skipped. Used for folder-centroid / misfit math (pass-8) which the TS
+    /// ontology layer computes over raw vectors.
+    pub fn vectors_for(&self, rel_paths: &[String]) -> Vec<VectorRow> {
+        rel_paths
+            .iter()
+            .filter_map(|p| {
+                self.rows
+                    .iter()
+                    .find(|r| &r.rel_path == p)
+                    .map(|r| VectorRow {
+                        rel_path: r.rel_path.clone(),
+                        vector: self.row_slice(r.row).to_vec(),
+                    })
+            })
+            .collect()
     }
 
     /// Brute-force cosine kNN for `rel_path` (D15/pass-7 brief: fine ≤10k notes). Vectors are
@@ -464,6 +489,29 @@ pub fn embeddings_topk(
         .unwrap_or_default())
 }
 
+/// Fetch stored vectors for a set of relPaths (pass-8 folder-centroid / misfit math). Missing
+/// paths are simply omitted from the result.
+#[tauri::command]
+pub fn embeddings_vectors(
+    root: String,
+    rel_paths: Vec<String>,
+    state: tauri::State<'_, EmbeddingsState>,
+    vaults: tauri::State<'_, VaultRoots>,
+) -> Result<Vec<VectorRow>, String> {
+    let roots = vaults.0.lock().unwrap().clone();
+    let (bin_path, idx_path) = store_paths(&roots, &root)?;
+    let mut stores = state.stores.lock().unwrap();
+    if !stores.contains_key(&bin_path) {
+        if let Some(s) = load_store(&bin_path, &idx_path) {
+            stores.insert(bin_path.clone(), s);
+        }
+    }
+    Ok(stores
+        .get(&bin_path)
+        .map(|s| s.vectors_for(&rel_paths))
+        .unwrap_or_default())
+}
+
 /// Embed a batch of texts with the local fastembed model (D24/S14). Model is lazily downloaded
 /// to app support on first call; vectors are L2-normalized. Returns a typed error string if the
 /// model is unavailable (offline + not yet downloaded) — the frontend queues + surfaces a notice.
@@ -661,6 +709,18 @@ mod tests {
         assert!(!s.needs("new.md", "h"));
         let n = s.top_k("new.md", 5, -1.0);
         assert_eq!(n[0].rel_path, "other.md");
+    }
+
+    #[test]
+    fn vectors_for_returns_stored_vectors_and_skips_missing() {
+        let mut s = store();
+        s.put("a.md", "h", &[1.0, 0.0, 0.0, 0.0]);
+        s.put("b.md", "h", &[0.0, 1.0, 0.0, 0.0]);
+        let rows = s.vectors_for(&["a.md".to_string(), "missing.md".to_string(), "b.md".to_string()]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].rel_path, "a.md");
+        assert_eq!(rows[1].rel_path, "b.md");
+        assert_eq!(rows[0].vector, vec![1.0, 0.0, 0.0, 0.0]);
     }
 
     #[test]

@@ -47,6 +47,11 @@ export function CommandPalette() {
         run: () => useUiStore.getState().toggleViewMode(),
       },
       { id: 'open-settings', label: 'Open settings', run: () => useUiStore.getState().setSettingsOpen(true) },
+      {
+        id: 'organize-vault',
+        label: 'Organize vault (topics & clusters)',
+        run: () => useUiStore.getState().setOrganizeVaultOpen(true),
+      },
       ...(activeNotePath
         ? [
             {

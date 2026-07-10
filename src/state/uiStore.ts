@@ -66,6 +66,7 @@ interface UiState {
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
   settingsOpen: boolean;
+  organizeVaultOpen: boolean;
   searchOpen: boolean;
   quickSwitcherOpen: boolean;
   /** The folder cmd-N / paste-capture files a new note into when nothing more specific is
@@ -89,6 +90,7 @@ interface UiState {
   setRightPanelTab: (tab: RightPanelTab) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  setOrganizeVaultOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   toggleSearch: () => void;
   setQuickSwitcherOpen: (open: boolean) => void;
@@ -116,6 +118,7 @@ export const useUiStore = create<UiState>((set) => {
     rightPanelTab: 'backlinks',
     commandPaletteOpen: false,
     settingsOpen: false,
+    organizeVaultOpen: false,
     searchOpen: false,
     quickSwitcherOpen: false,
     selectedFolder: null,
@@ -173,6 +176,9 @@ export const useUiStore = create<UiState>((set) => {
     },
     setSettingsOpen(open) {
       set({ settingsOpen: open });
+    },
+    setOrganizeVaultOpen(open) {
+      set({ organizeVaultOpen: open });
     },
     setSearchOpen(open) {
       set({ searchOpen: open });

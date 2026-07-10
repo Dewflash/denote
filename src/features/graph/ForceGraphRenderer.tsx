@@ -43,7 +43,7 @@ function useContainerSize(): [React.RefObject<HTMLDivElement | null>, { width: n
 // `positioned` (liveGraph.ts) before handing it here — the raw pre-position node list is a
 // GraphView-CONTRACT concept (D25), not something this concrete renderer needs a second copy of.
 export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { positioned: PositionedNode[] }) {
-  const { positioned, edges, groupings, styleTokens, vaultColors, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
+  const { positioned, edges, groupings, styleTokens, vaultColors, nodeColors, nodeRings, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
   const [containerRef, size] = useContainerSize();
   const fgRef = useRef<ForceGraphMethods<PositionedNode, GraphEdge> | undefined>(undefined);
 
@@ -149,9 +149,23 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           switch (node.type) {
             case 'note': {
               const r = NOTE_BASE_R + Math.sqrt(degree.get(String(node.id)) ?? 0) * NOTE_DEGREE_SCALE;
+              // Mixed-membership ring segments (pass-8): a ring of arc segments in each strong
+              // topic's color, drawn just outside the node, before the fill.
+              const rings = nodeRings?.[String(node.id)];
+              if (rings && rings.length >= 2) {
+                const seg = (Math.PI * 2) / rings.length;
+                ctx.lineWidth = 1.5 / globalScale;
+                for (let i = 0; i < rings.length; i++) {
+                  ctx.beginPath();
+                  ctx.arc(x, y, r + 1.5 / globalScale, i * seg, (i + 1) * seg);
+                  ctx.strokeStyle = rings[i];
+                  ctx.stroke();
+                }
+              }
               ctx.beginPath();
               ctx.arc(x, y, r, 0, Math.PI * 2);
-              ctx.fillStyle = styleTokens.noteFill;
+              // Semantic clustering: dominant-topic color (D7 default view) or the flat note fill.
+              ctx.fillStyle = nodeColors?.[String(node.id)] ?? styleTokens.noteFill;
               ctx.fill();
               if (selected) {
                 ctx.lineWidth = 1.5 / globalScale;

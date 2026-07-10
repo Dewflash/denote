@@ -5,3 +5,4 @@
 export { SuggestionsPanel } from './SuggestionsPanel';
 export { AiProvisionalBar } from './AiProvisionalBar';
 export { AiConsentModal } from './AiConsentModal';
+export { OrganizeVaultModal } from './OrganizeVaultModal';

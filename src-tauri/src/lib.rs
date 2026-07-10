@@ -42,6 +42,7 @@ pub fn run() {
             embeddings::embeddings_remove,
             embeddings::embeddings_remap,
             embeddings::embeddings_topk,
+            embeddings::embeddings_vectors,
             sidecar::sidecar_call,
             sidecar::sidecar_capabilities,
         ])

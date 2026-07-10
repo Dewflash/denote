@@ -40,6 +40,7 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
+  const getOntology = useVaultStore((s) => s.getOpenOntologyEngine);
 
   const node = graph.nodes.find((n) => n.id === selectedId);
   if (!node) return null;
@@ -48,6 +49,11 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const noteRepo = node.vaultId ? getOpenRepo(node.vaultId) : undefined;
   const parsed = relPath ? noteRepo?.getParsed(relPath) : undefined;
   const folder = relPath ? folderOf(relPath) || '(vault root)' : null;
+
+  // Topic insights + management (pass-8): description, members, rename/delete.
+  const ontology = node.vaultId ? getOntology(node.vaultId) : undefined;
+  const topicId = node.type === 'topic' ? node.id.replace(/^topic:/, '') : null;
+  const topic = topicId ? ontology?.topicInsights(topicId) : undefined;
 
   const byId = new Map<string, GraphNode>(graph.nodes.map((n) => [n.id, n]));
   const connections: ConnectionRow[] = [];
@@ -90,6 +96,67 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
               #{t}
             </span>
           ))}
+        </div>
+      )}
+
+      {node.type === 'topic' && topic && ontology && (
+        <div className="flex flex-col gap-2">
+          {topic.description && (
+            <div className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+              {topic.description}
+            </div>
+          )}
+          {topic.parentName && (
+            <div className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+              Parent: <span style={{ color: 'var(--fg)' }}>{topic.parentName}</span>
+            </div>
+          )}
+          <div className="text-xs font-medium" style={{ color: 'var(--fg-muted)' }}>
+            {topic.members.length} member{topic.members.length === 1 ? '' : 's'}
+          </div>
+          <div className="flex flex-col gap-1">
+            {topic.members.slice(0, 12).map((m) => (
+              <button
+                key={m.relPath}
+                className="truncate rounded px-2 py-1 text-left text-xs"
+                style={{ border: '1px solid var(--border)', opacity: m.stale ? 0.6 : 1 }}
+                title={m.stale ? 'membership stale — will be re-confirmed on next enrichment' : m.relPath}
+                onClick={() => {
+                  void (async () => {
+                    if (node.vaultId) await switchVault(node.vaultId);
+                    await setActiveNote(m.relPath);
+                    setGraphViewOpen(false);
+                  })();
+                }}
+              >
+                {m.title}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="rounded px-2 py-1 text-xs"
+              style={{ border: '1px solid var(--border)' }}
+              onClick={() => {
+                const name = window.prompt('Rename topic (old name becomes an alias):', topic.name);
+                if (name && name.trim()) void ontology.renameTopic(topic.id, name.trim());
+              }}
+            >
+              Rename
+            </button>
+            <button
+              className="rounded px-2 py-1 text-xs"
+              style={{ border: '1px solid var(--border)', color: 'var(--danger, #c0392b)' }}
+              onClick={() => {
+                if (window.confirm(`Delete topic “${topic.name}”? Memberships return to suggestions.`)) {
+                  void ontology.deleteTopic(topic.id);
+                  setSelectedNode(null);
+                }
+              }}
+            >
+              Delete
+            </button>
+          </div>
         </div>
       )}
 

@@ -8,7 +8,8 @@
 // with zero UI changes).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildGraph, type Graph } from '../../domain';
+import { buildGraph, dominantTopic, strongMemberships, type Graph, type Membership } from '../../domain';
+import { paletteColor } from './layout';
 import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
 import { useUiStore } from '../../state/uiStore';
@@ -36,6 +37,7 @@ export function GraphPage() {
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const graphSimilarPairs = useVaultStore((s) => s.graphSimilarPairs);
+  const graphTopics = useVaultStore((s) => s.graphTopics);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
 
   const layers = useGraphStore((s) => s.layers);
@@ -56,16 +58,52 @@ export function GraphPage() {
 
   const fullGraph: Graph = useMemo(() => {
     if (useMock) return buildMockGraphFixture();
+    const topicsByVault = new Map(graphTopics(selectedGraphVaultIds).map((v) => [v.vaultId, v.topics]));
     const vaults = selectedGraphVaultIds
       .map((id) => getOpenRepo(id))
       .filter((r): r is NonNullable<typeof r> => r != null)
-      .map((r) => ({ vaultId: r.vaultId, notes: r.index.allNotes() }));
+      .map((r) => ({
+        vaultId: r.vaultId,
+        // `_topics/*` hub notes are off-graph by default (D8c) — their concepts are the topic
+        // hub nodes; showing the files too would double them up.
+        notes: r.index.allNotes().filter((n) => !n.relPath.startsWith('_topics/') && n.frontmatter.source !== 'ai'),
+        topics: topicsByVault.get(r.vaultId),
+      }));
     if (vaults.length === 0) return { nodes: [], edges: [] };
-    // ai-similar pairs (pass 7, S15) come from the embedding engines; topics arrive pass 8.
+    // ai-similar pairs (pass 7, S15) come from the embedding engines; topics (pass 8) drive the
+    // semantic-cluster hubs + note-topic edges.
     const similarPairs = graphSimilarPairs(selectedGraphVaultIds);
     return buildGraph({ vaults, similarPairs });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, revision, useMock]);
+  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, graphTopics, revision, useMock]);
+
+  // Semantic clustering (D7 default view): color each note by its dominant topic (matching the
+  // topic hub node's own palette color), plus ring segments for ≥2 strong memberships.
+  const { nodeColors, nodeRings } = useMemo(() => {
+    const colors: Record<string, string> = {};
+    const rings: Record<string, string[]> = {};
+    const palette = styleTokens.hullPalette;
+    const colorFor = (topicId: string) => paletteColor(`topic:${topicId}`, palette);
+    for (const { vaultId, topics } of graphTopics(selectedGraphVaultIds)) {
+      const byNote = new Map<string, Membership[]>();
+      for (const t of topics) {
+        for (const m of t.members) {
+          const nodeId = `${vaultId}/${m.notePath}`;
+          const list = byNote.get(nodeId) ?? [];
+          list.push({ topicId: t.id, name: t.name, weight: m.weight });
+          byNote.set(nodeId, list);
+        }
+      }
+      for (const [nodeId, ms] of byNote) {
+        const dom = dominantTopic(ms);
+        if (dom) colors[nodeId] = colorFor(dom.topicId);
+        const strong = strongMemberships(ms);
+        if (strong.length >= 2) rings[nodeId] = strong.map((s) => colorFor(s.topicId));
+      }
+    }
+    return { nodeColors: colors, nodeRings: rings };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGraphVaultIds, graphTopics, styleTokens, revision]);
 
   const scopedGraph: Graph = useMemo(() => {
     if (localView.enabled && localView.centerId) {
@@ -154,6 +192,8 @@ export function GraphPage() {
             groupings={{ hullsEnabled }}
             styleTokens={styleTokens}
             vaultColors={vaultColors}
+            nodeColors={nodeColors}
+            nodeRings={nodeRings}
             selectedId={selectedNodeId}
             onNodeClick={(node, opts) => void handleNodeClick(node, opts)}
             onBackgroundClick={() => setSelectedNode(null)}

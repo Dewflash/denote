@@ -56,6 +56,12 @@ class MockBackend implements EmbeddingsBackend {
       .slice(0, k)
       .map((p) => ({ relPath: p, cos: 0.7 }));
   }
+  async vectors(_root: string, relPaths: string[]) {
+    return relPaths.flatMap((p) => {
+      const v = this.rows.get(p);
+      return v ? [{ relPath: p, vector: v.vector }] : [];
+    });
+  }
 }
 
 class CountingLlm implements AiClient {

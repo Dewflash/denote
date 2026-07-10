@@ -17,3 +17,5 @@ export * from './aiPayloads';
 export * from './aiApply';
 export * from './tokenBudget';
 export * from './similarity';
+export * from './ontology';
+export * from './topicFile';

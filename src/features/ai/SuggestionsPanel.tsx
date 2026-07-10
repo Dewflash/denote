@@ -126,6 +126,14 @@ export function SuggestionsPanel() {
     return m;
   }, [suggestions]);
 
+  // Misfit observation (pass-8): if Organize-vault flagged this note as not fitting its folder,
+  // surface it here as an OBSERVATION — never an automatic move (D8/brief).
+  const misfit = useMemo(
+    () => useVaultStore.getState().getActiveOntologyEngine()?.misfits().find((m) => m.relPath === activeNotePath),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeNotePath, revision],
+  );
+
   if (!activeNotePath) {
     return (
       <div className="p-3 text-sm" style={{ color: 'var(--fg-muted)' }}>
@@ -161,6 +169,16 @@ export function SuggestionsPanel() {
         )}
       </div>
       <div className="flex-1 overflow-auto p-2">
+        {misfit && (
+          <div
+            className="mb-3 rounded p-2 text-xs"
+            style={{ border: '1px dashed var(--border)', color: 'var(--fg-muted)' }}
+          >
+            <span style={{ color: 'var(--fg)' }}>May belong elsewhere.</span> This note looks like a
+            misfit in <em>{misfit.currentFolder || '(vault root)'}</em> — it may fit{' '}
+            <em>{misfit.suggestedFolder}</em>. {misfit.reason} (Observation only — nothing is moved.)
+          </div>
+        )}
         {suggestions.length === 0 && (
           <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
             No suggestions yet. Edit the note (or run “Enrich now”) and they’ll appear here.

@@ -21,6 +21,7 @@ import { OpLog } from './opLog';
 import { createSearchIndexBinding } from './vaultSearchSync';
 import { createVaultAiBinding, type VaultAiEngine } from './vaultAiEngine';
 import { createVaultEmbeddingBinding, type VaultEmbeddingEngine } from './vaultEmbeddings';
+import { createVaultOntologyBinding, type VaultOntologyEngine, type OrganizeResult, type OrganizePhase, type CancelToken } from './vaultOntologyEngine';
 import { useGraphStore } from './graphStore';
 import { useUiStore } from './uiStore';
 import {
@@ -118,6 +119,17 @@ interface VaultStoreState {
   getActiveAiEngine: () => VaultAiEngine | undefined;
   /** Vetted ai-similar pairs (pass 7, S15) across the given open vaults, for the graph. */
   graphSimilarPairs: (vaultIds: string[]) => SimilarPair[];
+  /** The active vault's ontology engine (pass 8): topics, insights, Organize-vault. */
+  getActiveOntologyEngine: () => VaultOntologyEngine | undefined;
+  /** Any OPEN vault's ontology engine (the combined graph inspector may target another vault). */
+  getOpenOntologyEngine: (vaultId: string) => VaultOntologyEngine | undefined;
+  /** Per-vault domain topics for a set of open vaults (semantic clustering source, pass 8). */
+  graphTopics: (vaultIds: string[]) => { vaultId: string; topics: import('../domain').Topic[] }[];
+  /** Run the on-device Organize-vault sweep (pass 8): re-enrich, profiles, merge, prune, materialize. */
+  organizeActiveVault: (opts?: {
+    onProgress?: (done: number, total: number, phase: OrganizePhase) => void;
+    signal?: CancelToken;
+  }) => Promise<OrganizeResult | undefined>;
 
   // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
   aiSuggestionsFor: (relPath: string) => AiAnnotation[];
@@ -164,6 +176,7 @@ const repos = new Map<string, Repository>();
 const searchIndexes = new Map<string, NoteSearchIndex>();
 const aiEngines = new Map<string, VaultAiEngine>();
 const embeddingEngines = new Map<string, VaultEmbeddingEngine>();
+const ontologyEngines = new Map<string, VaultOntologyEngine>();
 const watcherTeardowns = new Map<string, () => void>();
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -233,10 +246,22 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       // vaultId) exists; both close over this mutable ref instead of a bare `let` reassignment
       // (which some eslint/prefer-const configurations don't recognize across a closure).
       const selfRef: { vaultId?: string } = {};
+      // Ontology engine (pass 8): topics + semantic clustering + `_topics` + folder profiles.
+      // Created BEFORE the AI binding so the AI engine can feed enrichment topics into it.
+      const ontologyBinding = createVaultOntologyBinding({
+        backend: embeddingsBackend,
+        router: sharedRouter,
+        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+        onChange: () => set((s) => ({ revision: s.revision + 1 })),
+        reenrich: (relPath) => aiEngines.get(selfRef.vaultId ?? '')?.enrichNow(relPath) ?? Promise.resolve(),
+      });
       const aiBinding = createVaultAiBinding({
         router: sharedRouter,
         localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
         threshold: () => useUiStore.getState().aiTakeoverThreshold,
+        existingTopics: () => ontologyBinding.getEngine()?.topicStubs() ?? [],
+        onEnrichResult: (relPath, hash, result) =>
+          ontologyBinding.getEngine()?.onEnrichResult(relPath, hash, result) ?? Promise.resolve(),
         // S23: only defer writes to the note that is OPEN and DIRTY in the ACTIVE editor.
         isDirty: (relPath) => {
           const s = get();
@@ -262,6 +287,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         searchBinding.onIndexChange(relPath, note);
         aiBinding.onIndexChange(relPath, note);
         embeddingBinding.onIndexChange(relPath, note);
+        ontologyBinding.onIndexChange(relPath, note);
         set((s) => ({ revision: s.revision + 1 }));
       };
       const onPipeline = (relPath: string): void => {
@@ -277,6 +303,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       await searchBinding.attach(repo);
       const aiEngine = await aiBinding.attach(repo);
       const embeddingEngine = await embeddingBinding.attach(repo);
+      const ontologyEngine = await ontologyBinding.attach(repo);
 
       await invoke('watch_vault', { root });
       const teardown = await startWatcherBridge(root, (evt) => {
@@ -287,6 +314,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       searchIndexes.set(repo.vaultId, index);
       aiEngines.set(repo.vaultId, aiEngine);
       embeddingEngines.set(repo.vaultId, embeddingEngine);
+      ontologyEngines.set(repo.vaultId, ontologyEngine);
       watcherTeardowns.set(repo.vaultId, teardown);
       useGraphStore.getState().addOpenVault(repo.vaultId);
 
@@ -393,6 +421,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       aiEngines.delete(vaultId);
       embeddingEngines.get(vaultId)?.dispose();
       embeddingEngines.delete(vaultId);
+      ontologyEngines.get(vaultId)?.dispose();
+      ontologyEngines.delete(vaultId);
       repos.delete(vaultId);
       searchIndexes.delete(vaultId);
       useGraphStore.getState().removeOpenVault(vaultId);
@@ -478,6 +508,18 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
     graphSimilarPairs: (vaultIds) =>
       vaultIds.flatMap((id) => embeddingEngines.get(id)?.similarPairs() ?? []),
+    getActiveOntologyEngine: () => {
+      const id = get().vaultId;
+      return id ? ontologyEngines.get(id) : undefined;
+    },
+    getOpenOntologyEngine: (vaultId) => ontologyEngines.get(vaultId),
+    graphTopics: (vaultIds) =>
+      vaultIds
+        .map((id) => ({ vaultId: id, topics: ontologyEngines.get(id)?.domainTopics() ?? [] }))
+        .filter((v) => v.topics.length > 0),
+    async organizeActiveVault(opts) {
+      return get().getActiveOntologyEngine()?.organizeVault(opts);
+    },
 
     aiSuggestionsFor(relPath) {
       return get().getActiveAiEngine()?.suggestionsFor(relPath) ?? [];

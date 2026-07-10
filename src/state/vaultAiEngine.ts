@@ -31,7 +31,7 @@ import {
 } from '../domain';
 import { AnnotationStore } from '../services/annotationStore';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
-import type { EnrichResult } from '../services/aiClient';
+import type { EnrichResult, TopicStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
 import type { Op } from './opLog';
 import type { Repository } from './repository';
@@ -55,6 +55,11 @@ export interface VaultAiEngineDeps {
   onChange?: () => void;
   /** Called when the S28 consent prompt should be shown (bulk takeover paused). */
   onConsentNeeded?: (pendingCount: number) => void;
+  /** Existing-topic stubs to feed each enrichNote prompt so the model attaches, not invents
+   *  (D14/R3 mandatory retrieval step). Supplied by the ontology engine (pass 8). */
+  existingTopics?: () => TopicStub[];
+  /** Fold an enrichment result's topics into the persistent ontology (pass 8 canonicalization). */
+  onEnrichResult?: (relPath: string, hash: string, result: EnrichResult) => Promise<void>;
   /** Test hook: disable the internal debounce timer so enqueue() is a no-op timer-wise. */
   disableTimers?: boolean;
 }
@@ -256,9 +261,19 @@ export class VaultAiEngine {
       text: note.bodyText || '',
       title: note.title,
       folderPath: dirOf(relPath),
-      existingTopics: [], // no ontology until pass 8
+      existingTopics: this.deps.existingTopics?.() ?? [], // D14/R3 retrieval (pass 8 ontology)
       candidateNotes: this.candidateNotes(relPath),
     });
+
+    // Fold topics into the persistent ontology (canonicalization + membership, D14). Best-effort:
+    // a failure here must not park the enrichment job or lose the panel suggestions below.
+    if (!opts.linksOnly) {
+      try {
+        await this.deps.onEnrichResult?.(relPath, hash, result);
+      } catch {
+        /* ontology update failed — suggestions still land; Organize-vault can rebuild later */
+      }
+    }
 
     const anns = this.annotationsFromResult(relPath, hash, client.modelId, result, opts.linksOnly);
     // Rejection memory (D10/S11): drop anything rejected for this exact content.

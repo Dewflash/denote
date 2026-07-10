@@ -31,6 +31,10 @@ struct GenTopic: Codable {
     var reason: String
     @Guide(description: "Confidence from 0 to 1.")
     var confidence: Double
+    @Guide(description: "The broader PARENT topic this belongs under (e.g. Banking under Finance), or empty string if none.")
+    var parentName: String
+    @Guide(description: "0-2 closely RELATED topic names (siblings), or empty.")
+    var relatedNames: [String]
 }
 
 @Generable

@@ -41,6 +41,10 @@ export interface SuggestedTopic {
   existingTopicId: string | null;
   reason: string;
   confidence: number;
+  /** Proposed parent topic name (pass-8 hierarchy — applied after it recurs; optional). */
+  parentName?: string;
+  /** Proposed related topic names (pass-8; applied after recurrence; optional). */
+  relatedNames?: string[];
 }
 export interface SuggestedLink {
   target: string; // wikilink target text

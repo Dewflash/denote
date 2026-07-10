@@ -75,7 +75,7 @@ function resolveLinkTarget(
 }
 
 interface RawEnrich {
-  topics?: { name?: string; reason?: string; confidence?: number }[];
+  topics?: { name?: string; reason?: string; confidence?: number; parentName?: string; relatedNames?: string[] }[];
   links?: { target?: string; reason?: string; confidence?: number }[];
   tags?: { name?: string; reason?: string; confidence?: number }[];
   summary?: string;
@@ -137,6 +137,8 @@ export class AppleAiClient implements AiClient {
           existingTopicId: existing?.id ?? null,
           reason: (t.reason ?? '').trim(),
           confidence: clamp01(t.confidence ?? 0),
+          ...(t.parentName?.trim() ? { parentName: t.parentName.trim() } : {}),
+          ...(t.relatedNames?.length ? { relatedNames: t.relatedNames } : {}),
         };
       });
 

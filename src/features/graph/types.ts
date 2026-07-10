@@ -36,6 +36,13 @@ export interface GraphViewProps {
    *  hulls + headers"). Optional and additive: a renderer with no entry for a given vault falls
    *  back to its own single-vault hashed palette, so this never changes single-vault output. */
   vaultColors?: Record<string, string>;
+  /** Semantic clustering (pass-8, D7 default view): note nodeId → its dominant-topic color, so a
+   *  note is painted in its strongest topic's color rather than the flat note fill. Additive — a
+   *  note with no membership falls back to the plain note fill. */
+  nodeColors?: Record<string, string>;
+  /** note nodeId → the colors of its ≥2 strong topic memberships, drawn as ring segments around
+   *  the node (pass-8 mixed-membership visual). */
+  nodeRings?: Record<string, string[]>;
   selectedId?: string | null;
   /** Plain click: open the note (or create+open a ghost) and, by convention, leave the graph.
    *  Cmd-click: open + keep the graph open. Tag/topic clicks just select (no navigation). */
