@@ -54,6 +54,13 @@ The `claude-api` skill / current Anthropic docs — model IDs, Batch API, prompt
 - Respect rejection memory (D10) when assembling the corpus: don't pay to re-ask rejected
   questions.
 
+## Carried-in work (checkpoint C directive)
+Wire **S24 cross-vault ai-similar pairs** (deferred from pass 07, flagged in its deviations):
+app-support `crossvault.json` store + cross-engine topK across open non-localOnly vaults.
+`domain/similarity.ts` already computes `isCrossVault` and vault-scoped pair identity — the
+gates need no rework. Cross-vault pairs render in combined graphs only. This pass also owns
+cross-note THEMES (deep-organize), so the storage lands here where it's first consumed.
+
 ## Owner input
 This pass needs the owner's Anthropic API key for final verification — entered BY THE OWNER
 in Settings → AI (Keychain); never request it in chat, never place it in files or env vars

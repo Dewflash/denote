@@ -222,10 +222,13 @@ reason passes the vacuity gate: length ≥ 15 chars AND not matching the denylis
 discuss topics", "related content"). Failed pairs recorded (pair + both hashes) so they are
 not re-asked until content changes.
 
-**Edge ownership:** an accepted similar-pair within one vault is stored as an annotation
-owned by the lexicographically smaller relPath (payload carries the other endpoint);
-graphBuilder treats pairs as unordered. Failed pairs go to `.denote/ai/rejections.json`
-under a `similarityPairs` key (pair + both hashes). **Cross-vault pairs never touch either
+**Edge ownership & storage (amended at checkpoint C, 2026-07-10, codifying the approved
+pass-07 deviation):** vetted similar-pairs AND failed-pair memory live in a dedicated
+per-vault store `.denote/ai/similar.json` (single-writer — the enrichment pipeline's
+replace-live-annotations semantics would wipe pairs stored in `annotations.json`). Owner =
+lexicographically smaller relPath, record carries the other endpoint + both hashes; dedup
+one edge per unordered pair; failed pairs not re-asked until either endpoint's content
+changes. graphBuilder treats pairs as unordered. **Cross-vault pairs never touch either
 vault's `.denote/`** — they live app-side (S24) so vaults stay self-contained and portable.
 
 ## S16. On-device token budgeting

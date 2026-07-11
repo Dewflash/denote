@@ -36,7 +36,7 @@ review verdict lands here.
 |-----------|-----------|-------|--------|
 | A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | **done 2026-07-08 — PASS w/ 2 architect fixes** |
 | B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | **done 2026-07-10 — PASS w/ 2 architect-added tests** |
-| C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | pending |
+| C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | **done 2026-07-10 — PASS w/ 1 architect-added probe** |
 | D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | pending |
 | E | 11 | Release audit: full-repo sweep, derived-data deletion drill, conflict handling, private-repo default, EXPECTED.md + ACCEPTANCE.md end-to-end | pending |
 
@@ -119,6 +119,34 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   Vitest's node backend cannot exercise tauriStorage→Rust — pass 07 adds Rust surface
   (fastembed, sidecar spawn); its DoD manual steps are the only real-path verification, run
   them in the actual app. Cleared for pass 07 (Opus 4.8, high).
+
+- 2026-07-10 · **CHECKPOINT C (post-08, sweeping 07)** · **verdict: PASS; architect added 1
+  probe + fixed its lint; all 07/08 deviations APPROVED (one codified into SPECS).**
+  Suites independently re-run: 393 TS (42 files) + 17 Rust green, lint/build green, `swift
+  build` green, S1 reference ALL GREEN. **Checkpoint focus verified in code+tests:**
+  canonicalize order exact→alias→centroid≥0.80→create with alias recording (unit-tested at
+  every step incl. bogus existingTopicId fall-through); S17 formulas exact (weight
+  conf+0.1·folder+0.05·min(reconfirm,3), dominant tie lexicographic, misfit 0-overlap AND
+  cos<0.45, resurfacing sim×age/≥90d/max5/dismissals); S18 `_topics` byte-stable render
+  (double-render equality test, no timestamps, weight-desc-then-path member order) +
+  generated_hash freeze; vision-corpus pass-8 test runs the REAL engine wiring and proves
+  every EXPECTED.md pass-8 line incl. Miso-scatter + misfit-never-moved anti-goals; S15
+  vacuity denylist verbatim to spec incl. the 5 phrases + 15-char floor; S14 store
+  (DENV header, model-mismatch invalidation, 0.25 compaction) Rust-tested; S13 sidecar
+  (30s timeout, ≤3 restarts/60s, repair-retry) implemented + REAL on-device generations
+  verified during the pass (incl. hierarchy: parentName "Finance" for a Japanese-banking
+  note). **Architect gap-fix:** the corpus stub always proposed the canonical name
+  "Banking", so the integration anti-sprawl test proved exact-match collapse only — added a
+  variant-name probe driving "Banking"/"banks"/"The Banking System" through the REAL
+  VaultAiEngine→VaultOntologyEngine path → exactly ONE topic, aliases recorded, all three
+  notes members. Passed first-run (mechanism was correct; proof was missing).
+  **Deviation rulings:** SimilarStore dedicated `.denote/ai/similar.json` APPROVED —
+  single-writer reasoning is sound; S15 amended to codify. S24 cross-vault deferral
+  APPROVED as flagged — now a binding carried-in directive in the pass-09 brief (owns the
+  app-support store + cross-engine topK). Token-budget head/tail approximation, APPLE_ROUTING
+  default w/ session-scoped settings routing (persist = pass-10 nicety), SuggestedTopic
+  parentName contract extension, hierarchy-recurrence-in-topic-store, misfits-in-topics.json
+  all APPROVED. Cleared for pass 09 (Opus 4.8, high); checkpoint D follows it.
 
 ## Owner manual-testing findings (post-06) — NON-BLOCKING fix list — **DONE 2026-07-10** (folded into the pass-07 session)
 

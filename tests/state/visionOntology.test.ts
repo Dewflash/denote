@@ -238,3 +238,66 @@ describe('vision corpus — ontology layer (pass 8)', () => {
     expect(await repo.readNote('Japan/Miso Soup Recipe.md')).toContain('Dashi stock');
   });
 });
+
+// ── Architect checkpoint-C addition: variant-name anti-sprawl through the REAL engine wiring.
+// The corpus stub always proposes the canonical name "Banking", which proves exact-match
+// collapse only; the pass-8 brief demands "banking"/"banks"/"the banking system" → ONE topic.
+// This drives the same VaultAiEngine→VaultOntologyEngine path with a variant-emitting stub.
+
+class VariantStub extends StubLlm {
+  private i = 0;
+  override async enrichNote(): ReturnType<StubLlm['enrichNote']> {
+    const variants = ['Banking', 'banks', 'The Banking System'];
+    const name = variants[this.i++ % variants.length];
+    return {
+      topics: [{ name, existingTopicId: null, reason: `discusses ${name} substantively`, confidence: 0.9 }],
+      links: [], tags: [], aliases: [],
+      summary: 'stub',
+    };
+  }
+}
+
+describe('architect probe — variant topic names collapse via the real pipeline (R3)', () => {
+  it('"Banking" / "banks" / "The Banking System" yield exactly ONE topic with aliases', async () => {
+    const holder: { ai?: VaultAiEngine; onto?: VaultOntologyEngine } = {};
+    const repo = await Repository.openVault(storage, root, {
+      onIndexChange: (rel, note) => {
+        holder.ai?.noteChanged(rel, note);
+        holder.onto?.noteChanged(rel, note);
+      },
+    });
+    const backend = new StubBackend();
+    const router = new AiRouter([new VariantStub()], { ...DEFAULT_ROUTING, summarize: 'mock', 'label-similarity': 'mock' });
+    const topicStore = new TopicStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
+    const onto = new VaultOntologyEngine(repo, backend, router, topicStore, {});
+    await onto.attach();
+    const annStore = new AnnotationStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
+    const ai = new VaultAiEngine(repo, router, annStore, {
+      disableTimers: true,
+      existingTopics: () => onto.topicStubs(),
+      onEnrichResult: (rel, hash, result) => onto.onEnrichResult(rel, hash, result),
+    });
+    await ai.attach();
+    holder.ai = ai;
+    holder.onto = onto;
+
+    // Three notes, same finance concept vector, three different proposed names.
+    const bodies = [
+      ['a.md', '# A\nThe banking sector consolidates under zero rates.\n'],
+      ['b.md', '# B\nJapanese banks merge as monetary policy bites.\n'],
+      ['c.md', '# C\nThe banking system faces a structural interest rate squeeze.\n'],
+    ] as const;
+    for (const [rel, body] of bodies) {
+      await repo.createNote(rel, body);
+      await backend.put(repo.root, MODEL, 6, [{ relPath: rel, contentHash: repo.getHash(rel)!, vector: [1, 0, 0, 0, 0, 0] }]);
+    }
+    for (const [rel] of bodies) await ai.enrichNow(rel);
+
+    const bankish = topicStore.all().filter((t) => /bank/i.test(t.name) || t.aliases.some((a) => /bank/i.test(a)));
+    expect(bankish).toHaveLength(1);
+    const topic = bankish[0];
+    // All three notes are members of the ONE topic; variant names became aliases.
+    for (const [rel] of bodies) expect(topic.members.some((m) => m.notePath === rel)).toBe(true);
+    expect(topic.aliases.length).toBeGreaterThanOrEqual(1);
+  });
+});
