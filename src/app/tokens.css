@@ -7,6 +7,7 @@
   --fg: #1c1c1a;
   --fg-muted: #6b6b66;
   --accent: #3b6fd6;
+  --danger: #c0392b;
   --border: #e2e1dd;
   --radius: 6px;
   --font-ui: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -37,6 +38,7 @@
     --fg: #e8e7e3;
     --fg-muted: #93928c;
     --accent: #6f9bef;
+    --danger: #ff7666;
     --border: #33332f;
     --graph-node-note: #7fa0d4;
     --graph-node-ghost: #6f6f68;
@@ -51,6 +53,7 @@
   --fg: #1c1c1a;
   --fg-muted: #6b6b66;
   --accent: #3b6fd6;
+  --danger: #c0392b;
   --border: #e2e1dd;
   --graph-node-note: #5b7cae;
   --graph-node-ghost: #9a9a94;
@@ -63,6 +66,7 @@
   --fg: #e8e7e3;
   --fg-muted: #93928c;
   --accent: #6f9bef;
+  --danger: #ff7666;
   --border: #33332f;
   --graph-node-note: #7fa0d4;
   --graph-node-ghost: #6f6f68;

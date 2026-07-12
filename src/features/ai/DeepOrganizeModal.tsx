@@ -80,7 +80,7 @@ export function DeepOrganizeModal() {
           </Dialog.Description>
 
           {!keyPresent && (
-            <p className="mt-3 text-xs" style={{ color: '#c0392b' }}>
+            <p className="mt-3 text-xs" style={{ color: 'var(--danger)' }}>
               No Anthropic API key set. Add one in Settings → AI &amp; Models first.
             </p>
           )}
@@ -107,10 +107,10 @@ export function DeepOrganizeModal() {
               </div>
               <div className="flex justify-between">
                 <span>Remaining budget this month</span>
-                <span style={{ color: plan.withinBudget ? 'var(--fg)' : '#c0392b' }}>${plan.remainingUsd.toFixed(2)}</span>
+                <span style={{ color: plan.withinBudget ? 'var(--fg)' : 'var(--danger)' }}>${plan.remainingUsd.toFixed(2)}</span>
               </div>
               {plan.trimmed && <div className="mt-1">Some lower-priority notes were trimmed to fit the budget.</div>}
-              {!plan.withinBudget && <div className="mt-1" style={{ color: '#c0392b' }}>Over budget — raise the cap in Settings to run.</div>}
+              {!plan.withinBudget && <div className="mt-1" style={{ color: 'var(--danger)' }}>Over budget — raise the cap in Settings to run.</div>}
             </div>
           )}
 
@@ -126,7 +126,7 @@ export function DeepOrganizeModal() {
             </p>
           )}
 
-          {phase === 'error' && <p className="mt-3 text-xs" style={{ color: '#c0392b' }}>{error}</p>}
+          {phase === 'error' && <p className="mt-3 text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
 
           <div className="mt-5 flex justify-end gap-2">
             <button

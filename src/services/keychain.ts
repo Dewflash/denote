@@ -8,6 +8,7 @@ const invoke = <T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> 
   import('@tauri-apps/api/core').then((m) => m.invoke<T>(cmd, args));
 
 export const KEYCHAIN_ACCOUNT = 'anthropic-api-key';
+export const GITHUB_KEYCHAIN_ACCOUNT = 'github-token';
 
 /** Store (or replace) the Anthropic API key in the Keychain. */
 export function setAnthropicKey(key: string): Promise<void> {
@@ -27,4 +28,20 @@ export function clearAnthropicKey(): Promise<void> {
 /** Fetch the key for a backend call. NOT exposed to UI — only the anthropic transport uses it. */
 export function readAnthropicKey(): Promise<string | null> {
   return invoke<string | null>('keychain_get', { account: KEYCHAIN_ACCOUNT }).catch(() => null);
+}
+
+export function setGitHubToken(token: string): Promise<void> {
+  return invoke('keychain_set', { account: GITHUB_KEYCHAIN_ACCOUNT, secret: token });
+}
+
+export function hasGitHubToken(): Promise<boolean> {
+  return invoke<boolean>('keychain_has', { account: GITHUB_KEYCHAIN_ACCOUNT });
+}
+
+export function clearGitHubToken(): Promise<void> {
+  return invoke('keychain_delete', { account: GITHUB_KEYCHAIN_ACCOUNT });
+}
+
+export function readGitHubToken(): Promise<string | null> {
+  return invoke<string | null>('keychain_get', { account: GITHUB_KEYCHAIN_ACCOUNT }).catch(() => null);
 }

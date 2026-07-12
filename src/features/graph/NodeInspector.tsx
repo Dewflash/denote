@@ -147,7 +147,7 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
             </button>
             <button
               className="rounded px-2 py-1 text-xs"
-              style={{ border: '1px solid var(--border)', color: 'var(--danger, #c0392b)' }}
+              style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}
               onClick={() => {
                 if (window.confirm(`Delete topic “${topic.name}”? Memberships return to suggestions.`)) {
                   void ontology.deleteTopic(topic.id);
@@ -239,4 +239,3 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
     </div>
   );
 }
-

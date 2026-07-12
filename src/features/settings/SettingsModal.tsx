@@ -4,12 +4,28 @@
 // section structure never needs to be reshuffled.
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUiStore, type ThemeMode } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { pickFolder } from '../../services/dialogs';
 import { appKeymap } from '../../app/keymap';
 import { VAULT_COLOR_PALETTE } from '../../services/vaultRegistry';
+import {
+  gitCommitAll,
+  gitFileHistory,
+  gitHistoryEnable,
+  gitHistoryStatus,
+  gitPullFastForward,
+  gitPushOrigin,
+  gitReadFileAt,
+  gitSetRemote,
+  githubRepoVisibility,
+  type GitCommitInfo,
+  type GitStatusInfo,
+} from '../../services/nativeGit';
+import { clearGitHubToken, hasGitHubToken, setGitHubToken } from '../../services/keychain';
+import { planFolderImport } from '../../services/nativeImport';
+import type { ImportPlanItem } from '../../services/importer';
 
 const ACCENT_PRESETS = ['#3b6fd6', '#6f9bef', '#d6763b', '#3bd6a0', '#a03bd6', '#d63b6f'];
 
@@ -38,7 +54,7 @@ function RelocateRow({ vaultId, expectedPath }: { vaultId: string; expectedPath:
   return (
     <div
       className="flex flex-col gap-2 rounded p-2 text-sm"
-      style={{ border: '1px solid #c0392b' }}
+      style={{ border: '1px solid var(--danger)' }}
     >
       <div>
         Couldn&apos;t open <strong>{name}</strong> at <code>{expectedPath}</code>. Did you move
@@ -164,7 +180,7 @@ function VaultsSection() {
 
       {relocateError && <RelocateRow vaultId={relocateError.vaultId} expectedPath={relocateError.expectedPath} />}
       {error && !relocateError && (
-        <p className="text-xs" style={{ color: '#c0392b' }}>
+        <p className="text-xs" style={{ color: 'var(--danger)' }}>
           {error}
         </p>
       )}
@@ -343,7 +359,7 @@ function CloudSection() {
           >
             Test key
           </button>
-          <button disabled={!present} style={{ color: '#c0392b' }} onClick={() => void clearKey()}>
+          <button disabled={!present} style={{ color: 'var(--danger)' }} onClick={() => void clearKey()}>
             Remove key
           </button>
           {test && <span style={{ color: 'var(--fg-muted)' }}>{test}</span>}
@@ -393,7 +409,7 @@ function CloudSection() {
                   <span>
                     {r.at.slice(0, 10)} · {r.kind} · {r.model.replace('claude-', '')}
                   </span>
-                  <span style={{ color: r.status === 'lost' ? '#c0392b' : 'var(--fg-muted)' }}>
+                  <span style={{ color: r.status === 'lost' ? 'var(--danger)' : 'var(--fg-muted)' }}>
                     ${r.costUsd.toFixed(3)} {r.status === 'lost' ? '(lost)' : r.status === 'estimated' ? '(pending)' : ''}
                   </span>
                 </div>
@@ -555,6 +571,463 @@ function HotkeysSection() {
   );
 }
 
+function DataSection() {
+  const root = useVaultStore((s) => s.root);
+  const repo = useVaultStore((s) => s.repo);
+  const activeNotePath = useVaultStore((s) => s.activeNotePath);
+  const revision = useVaultStore((s) => s.revision);
+  const [message, setMessage] = useState<string | null>(null);
+  const [gitStatus, setGitStatus] = useState<GitStatusInfo | null>(null);
+  const [remote, setRemote] = useState('');
+  const [token, setToken] = useState('');
+  const [tokenPresent, setTokenPresent] = useState(false);
+  const [importReview, setImportReview] = useState<ImportPlanItem[]>([]);
+
+  const snapshots = useMemo(() => {
+    void revision;
+    return activeNotePath && repo ? repo.listSnapshotVersions(activeNotePath) : Promise.resolve([]);
+  }, [activeNotePath, repo, revision]);
+
+  useEffect(() => {
+    if (!root) return;
+    let cancelled = false;
+    void gitHistoryStatus(root)
+      .then((s) => {
+        if (cancelled) return;
+        setGitStatus(s);
+        setRemote(s.remoteUrl ?? '');
+      })
+      .catch(() => {
+        if (!cancelled) setGitStatus(null);
+      });
+    void hasGitHubToken().then((present) => {
+      if (!cancelled) setTokenPresent(present);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, revision]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Derived data
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Indexes and cache files are rebuildable from Markdown source files.
+        </p>
+        <button
+          className="rounded px-3 py-1.5 text-sm"
+          style={{ border: '1px solid var(--border)' }}
+          disabled={!repo}
+          onClick={() => {
+            void repo?.rebuildDerivedCaches().then(() => setMessage('Rebuilt derived indexes from note files.'));
+          }}
+        >
+          Rebuild indexes
+        </button>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Import
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Import a Markdown/text folder or Obsidian vault. Exact duplicates are skipped; near
+          duplicates are held for review and never silently dropped.
+        </p>
+        <button
+          className="rounded px-3 py-1.5 text-sm"
+          style={{ border: '1px solid var(--border)' }}
+          disabled={!repo}
+          onClick={() => {
+            if (!repo) return;
+            void pickFolder('Import Markdown folder').then(async (folder) => {
+              if (!folder) return;
+              const plan = await planFolderImport(repo, folder);
+              let imported = 0;
+              const reviewItems = plan.items.filter((item) => item.decision === 'review-near');
+              for (const item of plan.items) {
+                if (item.decision === 'skip-exact' || item.decision === 'review-near') continue;
+                try {
+                  await useVaultStore.getState().createNote(item.incoming.relPath, item.incoming.content);
+                  imported += 1;
+                } catch {
+                  /* collision or invalid path: leave it in the report rather than overwriting */
+                }
+              }
+              setImportReview(reviewItems);
+              setMessage(`Imported ${imported}; skipped ${plan.exactSkipped} exact duplicates; ${plan.nearReview} near duplicates need review.`);
+              void repo.rebuildDerivedCaches();
+            }).catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+          }}
+        >
+          Import folder...
+        </button>
+        {importReview.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {importReview.map((item) => (
+              <div
+                key={`${item.incoming.relPath}:${item.duplicateOf ?? ''}`}
+                className="rounded p-2 text-xs"
+                style={{ border: '1px solid var(--border)' }}
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{item.incoming.relPath}</span>
+                  <span style={{ color: 'var(--fg-muted)' }}>
+                    {Math.round((item.similarity ?? 0) * 100)}% similar
+                  </span>
+                </div>
+                <div className="mb-2 truncate" style={{ color: 'var(--fg-muted)' }}>
+                  Matches {item.duplicateOf ?? 'an existing note'}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="rounded px-2 py-1"
+                    style={{ border: '1px solid var(--border)' }}
+                    onClick={() => {
+                      void useVaultStore.getState().createNote(item.incoming.relPath, item.incoming.content)
+                        .then(() => {
+                          setImportReview((items) => items.filter((i) => i !== item));
+                          setMessage(`Imported ${item.incoming.relPath}.`);
+                          void repo?.rebuildDerivedCaches();
+                        })
+                        .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                    }}
+                  >
+                    Import anyway
+                  </button>
+                  <button
+                    style={{ color: 'var(--fg-muted)' }}
+                    onClick={() => {
+                      setImportReview((items) => items.filter((i) => i !== item));
+                      setMessage(`Skipped ${item.incoming.relPath}.`);
+                    }}
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Vault history
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          History is opt-in per vault. DeNote ignores machine-local `.denote` data except portable
+          metadata and topics.
+        </p>
+        <div className="flex gap-2">
+          <button
+            className="rounded px-3 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!root}
+            onClick={() => {
+              if (!root) return;
+              void gitHistoryEnable(root)
+                .then((s) => {
+                  setGitStatus(s);
+                  setMessage('History enabled for this vault.');
+                })
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+            }}
+          >
+            Enable history
+          </button>
+          <button
+            className="rounded px-3 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!root || !repo}
+            onClick={() => {
+              if (!root || !repo) return;
+              void gitCommitAll(root, `Edited ${repo.listNotePaths().length} notes`)
+                .then((c) => setMessage(c ? `Recorded commit ${c.oid.slice(0, 8)}.` : 'No note changes to commit.'))
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+            }}
+          >
+            Record checkpoint
+          </button>
+        </div>
+        {gitStatus && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+            {gitStatus.enabled ? 'Enabled' : 'Not enabled'} · {gitStatus.dirty ? 'uncommitted changes' : 'clean'}
+            {gitStatus.head ? ` · ${gitStatus.head.slice(0, 8)}` : ''}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          GitHub sync
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Pushes are manual unless you explicitly run them. New GitHub repositories should be
+          private; paste only a token you created for this app.
+        </p>
+        <div className="mb-2 flex gap-2">
+          <input
+            className="min-w-0 flex-1 rounded px-2 py-1 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+            placeholder="https://github.com/you/private-vault.git"
+            value={remote}
+            onChange={(e) => setRemote(e.target.value)}
+          />
+          <button
+            className="rounded px-3 py-1 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!root || !remote.trim()}
+            onClick={() => {
+              if (!root) return;
+              void gitSetRemote(root, remote.trim())
+                .then((s) => {
+                  setGitStatus(s);
+                  setMessage('Remote saved.');
+                })
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+            }}
+          >
+            Save remote
+          </button>
+        </div>
+        <div className="mb-2 flex gap-2">
+          <input
+            className="min-w-0 flex-1 rounded px-2 py-1 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+            type="password"
+            placeholder={tokenPresent ? 'GitHub token stored in Keychain' : 'GitHub token'}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <button
+            className="rounded px-3 py-1 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!token.trim()}
+            onClick={() => {
+              void setGitHubToken(token.trim()).then(() => {
+                setToken('');
+                setTokenPresent(true);
+                setMessage('GitHub token stored in Keychain.');
+              });
+            }}
+          >
+            Save token
+          </button>
+          <button
+            className="rounded px-3 py-1 text-sm"
+            style={{ color: 'var(--danger)' }}
+            disabled={!tokenPresent}
+            onClick={() => void clearGitHubToken().then(() => setTokenPresent(false))}
+          >
+            Remove
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="rounded px-3 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!root || !gitStatus?.remoteUrl}
+            onClick={() => {
+              if (!root) return;
+              void (async () => {
+                // First-push gate (checkpoint E / pass-11 brief): before a vault's first-ever
+                // push, show the remote's visibility and require explicit confirmation — a
+                // private-notes vault silently pushed to a public repo is unrecoverable.
+                const pushedKey = `denote:git:pushed:${root}`;
+                if (!localStorage.getItem(pushedKey)) {
+                  const url = gitStatus?.remoteUrl ?? '';
+                  setMessage('Checking remote visibility…');
+                  const vis = await githubRepoVisibility(url);
+                  const visText =
+                    vis === 'private'
+                      ? 'a PRIVATE repository'
+                      : vis === 'public'
+                        ? 'a PUBLIC repository — anyone can read it'
+                        : 'a repository of UNKNOWN visibility (could not verify)';
+                  const ok = window.confirm(
+                    `First push of this vault.\n\nRemote: ${url}\nThis is ${visText}.\n\nYour notes will be uploaded. Continue?`,
+                  );
+                  if (!ok) {
+                    setMessage('Push cancelled.');
+                    return;
+                  }
+                }
+                try {
+                  await gitPushOrigin(root);
+                  localStorage.setItem(pushedKey, new Date().toISOString());
+                  setMessage('Pushed to origin.');
+                } catch (err) {
+                  setMessage(err instanceof Error ? err.message : String(err));
+                }
+              })();
+            }}
+          >
+            Push
+          </button>
+          <button
+            className="rounded px-3 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!root || !gitStatus?.remoteUrl}
+            onClick={() => {
+              if (!root) return;
+              void gitPullFastForward(root)
+                .then((result) => {
+                  setGitStatus(result.status);
+                  void repo?.rebuildDerivedCaches();
+                  setMessage(result.conflicts.length > 0
+                    ? `Remote changes were written as ${result.conflicts.length} conflict note${result.conflicts.length === 1 ? '' : 's'}; local notes were left untouched.`
+                    : 'Pulled from origin.');
+                })
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+            }}
+          >
+            Pull
+          </button>
+        </div>
+      </div>
+
+      {activeNotePath && (
+        <div>
+          <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+            Active note history
+          </div>
+          <VersionTimeline snapshots={snapshots} root={root} relPath={activeNotePath} />
+        </div>
+      )}
+
+      {message && <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{message}</p>}
+    </div>
+  );
+}
+
+type VersionEntry =
+  | { id: string; kind: 'snapshot'; label: string; at: number; size: number; name: string }
+  | { id: string; kind: 'git'; label: string; at: number; oid: string; summary: string };
+
+function VersionTimeline({ snapshots, root, relPath }: { snapshots: Promise<{ name: string; at: number; size: number }[]>; root: string | null; relPath: string }) {
+  const repo = useVaultStore((s) => s.repo);
+  const revision = useVaultStore((s) => s.revision);
+  const [entries, setEntries] = useState<VersionEntry[]>([]);
+  const [preview, setPreview] = useState<{ entry: VersionEntry; content: string; diff: string } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      snapshots,
+      root ? gitFileHistory(root, relPath).catch(() => [] as GitCommitInfo[]) : Promise.resolve([] as GitCommitInfo[]),
+    ])
+      .then(([snapshotItems, commits]) => {
+        if (cancelled) return;
+        const combined: VersionEntry[] = [
+          ...snapshotItems.map((s) => ({
+            id: `snapshot:${s.name}`,
+            kind: 'snapshot' as const,
+            label: new Date(s.at).toLocaleString(),
+            at: s.at,
+            size: s.size,
+            name: s.name,
+          })),
+          ...commits.map((c) => ({
+            id: `git:${c.oid}`,
+            kind: 'git' as const,
+            label: new Date(c.time * 1000).toLocaleString(),
+            at: c.time * 1000,
+            oid: c.oid,
+            summary: c.summary,
+          })),
+        ].sort((a, b) => b.at - a.at).slice(0, 12);
+        setEntries(combined);
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [root, relPath, revision, snapshots]);
+
+  const readEntry = async (entry: VersionEntry): Promise<string> => {
+    if (!repo) throw new Error('vault not open');
+    if (entry.kind === 'snapshot') return repo.readSnapshot(relPath, entry.name);
+    if (!root) throw new Error('history is not enabled');
+    return gitReadFileAt(root, relPath, entry.oid);
+  };
+
+  if (entries.length === 0) return <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No versions yet.</p>;
+  return (
+    <div className="mt-3 flex flex-col gap-1 text-xs">
+      {entries.map((entry) => (
+        <div key={entry.id} className="flex items-center justify-between gap-2">
+          <span className="truncate">
+            {entry.label} · {entry.kind === 'git' ? entry.summary : `${Math.round(entry.size / 1024)} KB snapshot`}
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <button
+              style={{ color: 'var(--fg-muted)' }}
+              onClick={() => {
+                void readEntry(entry)
+                  .then(async (content) => {
+                    const current = await repo?.readNote(relPath).catch(() => '') ?? '';
+                    setPreview({ entry, content, diff: lineDiff(current, content) });
+                  })
+                  .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+              }}
+            >
+              Diff
+            </button>
+            <button
+              style={{ color: 'var(--fg-muted)' }}
+              onClick={() => {
+                void readEntry(entry)
+                  .then((content) => repo?.restoreNoteVersion(relPath, content))
+                  .then(() => setMessage(`Restored ${entry.kind === 'git' ? entry.oid.slice(0, 8) : entry.name}.`))
+                  .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+              }}
+            >
+              Restore
+            </button>
+          </div>
+        </div>
+      ))}
+      {preview && (
+        <div className="mt-2 rounded p-2" style={{ border: '1px solid var(--border)' }}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="truncate">{preview.entry.label}</span>
+            <button style={{ color: 'var(--fg-muted)' }} onClick={() => setPreview(null)}>Close</button>
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap" style={{ color: 'var(--fg-muted)' }}>
+            {preview.diff || preview.content}
+          </pre>
+        </div>
+      )}
+      {message && <div style={{ color: 'var(--fg-muted)' }}>{message}</div>}
+    </div>
+  );
+}
+
+function lineDiff(current: string, older: string): string {
+  if (current === older) return 'No textual differences.';
+  const a = current.split(/\r?\n/);
+  const b = older.split(/\r?\n/);
+  const max = Math.max(a.length, b.length);
+  const out: string[] = [];
+  for (let i = 0; i < max; i++) {
+    if (a[i] === b[i]) continue;
+    if (a[i] !== undefined) out.push(`- ${a[i]}`);
+    if (b[i] !== undefined) out.push(`+ ${b[i]}`);
+    if (out.length > 120) {
+      out.push('...');
+      break;
+    }
+  }
+  return out.join('\n');
+}
+
 export function SettingsModal() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
@@ -596,7 +1069,7 @@ export function SettingsModal() {
             {section === 'ai' && <AiSection />}
             {section === 'graph' && <Stub text="Graph settings arrive in pass 04." />}
             {section === 'hotkeys' && <HotkeysSection />}
-            {section === 'data' && <Stub text="Data management (snapshots, export, migrations) arrives in later passes." />}
+            {section === 'data' && <DataSection />}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

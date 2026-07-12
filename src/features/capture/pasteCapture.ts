@@ -5,6 +5,8 @@
 import { useVaultStore } from '../../state/vaultStore';
 import { useUiStore } from '../../state/uiStore';
 import { EDITOR_ROOT_ATTR } from '../../app/keymap';
+import { yamlScalar } from '../../domain/frontmatterText';
+import { captureCurrentContext } from '../../services/nativeCapture';
 
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const DEFAULT_INBOX = 'Inbox';
@@ -75,15 +77,42 @@ export async function fileCapture(opts: {
   body: string;
   summary?: string;
   tags?: string[];
+  folder?: string;
+  sourceUrl?: string;
+  sourceApp?: string;
+  sourceTitle?: string;
+  capturedAt?: string;
 }): Promise<void> {
   const title = sanitizeTitle(opts.title || 'Untitled');
-  const relPath = uniquePath(DEFAULT_INBOX, title);
-  const parts = [`# ${title}`, ''];
+  const relPath = uniquePath(opts.folder || DEFAULT_INBOX, title);
+  const frontmatter = captureFrontmatter(opts);
+  const parts = [...frontmatter, `# ${title}`, ''];
   if (opts.summary?.trim()) parts.push(`> ${opts.summary.trim()}`, '');
   parts.push(opts.body.trim(), '');
   if (opts.tags && opts.tags.length > 0) parts.push(opts.tags.map((t) => `#${t}`).join(' '), '');
   await useVaultStore.getState().createNote(relPath, parts.join('\n'));
   await useVaultStore.getState().setActiveNote(relPath);
+}
+
+export async function globalCaptureFromClipboard(): Promise<void> {
+  await captureCurrentContext();
+}
+
+function captureFrontmatter(opts: {
+  sourceUrl?: string;
+  sourceApp?: string;
+  sourceTitle?: string;
+  capturedAt?: string;
+}): string[] {
+  const lines: string[] = [];
+  if (!opts.sourceUrl && !opts.sourceApp && !opts.capturedAt) return lines;
+  lines.push('---');
+  if (opts.sourceUrl) lines.push(`source_url: ${yamlScalar(opts.sourceUrl)}`);
+  if (opts.sourceApp) lines.push(`source_app: ${yamlScalar(opts.sourceApp)}`);
+  if (opts.sourceTitle) lines.push(`source_title: ${yamlScalar(opts.sourceTitle)}`);
+  lines.push(`captured_at: ${yamlScalar(opts.capturedAt ?? new Date().toISOString())}`);
+  lines.push('---');
+  return lines;
 }
 
 /** True when "nothing is focused" in the paste-capture sense: not a text input and not the

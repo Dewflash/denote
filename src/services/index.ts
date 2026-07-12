@@ -4,6 +4,13 @@
 export * from './storage';
 export * from './errors';
 export * from './snapshots';
+export * from './themeSettings';
+export * from './snippets';
+export * from './migrations';
+export * from './importer';
+export * from './nativeCapture';
+export * from './nativeGit';
+export * from './nativeImport';
 export * from './vaultRegistry';
 export { tauriStorage } from './tauriStorage';
 export { startWatcherBridge, FS_EVENT, WATCH_DEBOUNCE_MS } from './watcherBridge';

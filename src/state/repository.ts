@@ -26,7 +26,7 @@ import {
   type SnapshotGate,
   type VaultSnapshotFile,
 } from '../services/snapshots';
-import { AppWriteRegistry } from './appWriteRegistry';
+import { AppWriteRegistry, type WriteKind } from './appWriteRegistry';
 import { VaultIndex } from './vaultIndex';
 
 /** Why the enrichment pipeline should run for a note (pass 6 consumes this). */
@@ -140,6 +140,11 @@ export class Repository {
   }
 
   private async reindexAll(): Promise<void> {
+    this.index.notes.clear();
+    this.index.hashes.clear();
+    this.index.mtimes.clear();
+    this.index.btimes.clear();
+    this.index.assets.clear();
     const entries = await this.backend.listVaultFiles(this.root);
     for (const e of entries) {
       if (e.isDir || isIgnoredPath(e.relPath)) continue;
@@ -158,6 +163,13 @@ export class Repository {
       }
     }
     this.index.rebuildDerived();
+  }
+
+  /** Rebuild every derived in-memory index from the source files. Used after deleting
+   *  `.denote/cache/` live: note bytes remain the only source of truth (D2/D3). */
+  async rebuildDerivedCaches(): Promise<void> {
+    await this.reindexAll();
+    for (const note of this.index.allNotes()) this.onIndexChange?.(note.relPath, note);
   }
 
   // ── hooks ──────────────────────────────────────────────────────────────────
@@ -267,6 +279,30 @@ export class Repository {
   async snapshotNote(relPath: string, content?: string): Promise<void> {
     const text = content ?? (await this.backend.readNote(this.root, relPath));
     await this.writeSnapshot(relPath, text, content === undefined);
+  }
+
+  async listSnapshotVersions(relPath: string): Promise<SnapshotFile[]> {
+    return this.listSnapshotFiles(`${SNAPSHOT_ROOT}/${relPath}`);
+  }
+
+  async readSnapshot(relPath: string, snapshotName: string): Promise<string> {
+    if (parseSnapshotName(snapshotName) === null) {
+      throw new DenoteError('fs', `invalid snapshot name: ${snapshotName}`, { path: snapshotName });
+    }
+    return this.backend.readNote(this.root, `${SNAPSHOT_ROOT}/${relPath}/${snapshotName}`);
+  }
+
+  /** Restore old content into the live note. This is a content-changing app write: the watcher
+   *  echo is tagged as `app-write-content-change` so the normal pipeline runs exactly once (S8). */
+  async restoreNoteVersion(relPath: string, content: string): Promise<void> {
+    return this.withLock(relPath, async () => {
+      if (await this.backend.exists(this.root, relPath)) {
+        await this.snapshotNote(relPath);
+      }
+      await this.writeTagged(relPath, content, 'app-write-content-change');
+      this.reindexNote(relPath, content);
+      await this.snapshotNote(relPath, content);
+    });
   }
 
   // ── watcher event handling (S8 classify, S9/D4a reconcile) ──────────────────
@@ -445,8 +481,8 @@ export class Repository {
 
   // ── internal: primitives ────────────────────────────────────────────────────
 
-  private async writeTagged(relPath: string, content: string): Promise<void> {
-    this.appWrites.recordWrite(relPath, contentHash(content), 'app-write');
+  private async writeTagged(relPath: string, content: string, kind: WriteKind = 'app-write'): Promise<void> {
+    this.appWrites.recordWrite(relPath, contentHash(content), kind);
     await this.backend.writeNote(this.root, relPath, content);
   }
 

@@ -8,6 +8,15 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type ViewMode = 'editor' | 'reading';
 export type RightPanelTab = 'backlinks' | 'outgoing' | 'suggestions';
 
+export interface CaptureDraft {
+  text: string;
+  sourceUrl?: string;
+  sourceApp?: string;
+  sourceTitle?: string;
+  warning?: string;
+  capturedAt: string;
+}
+
 const THEME_KEY = 'denote:theme';
 const ACCENT_KEY = 'denote:accent';
 const AI_THRESHOLD_KEY = 'denote:aiTakeoverThreshold';
@@ -76,7 +85,7 @@ interface UiState {
   selectedFolder: string | null;
   /** Pending paste-capture review (pass 7, D27): large pastes open a review modal that shows
    *  on-device title/summary/tag suggestions before filing. `null` when closed. */
-  captureText: string | null;
+  captureDraft: CaptureDraft | null;
 
   setTheme: (mode: ThemeMode) => void;
   setAccent: (accent: string | null) => void;
@@ -99,7 +108,7 @@ interface UiState {
   setQuickSwitcherOpen: (open: boolean) => void;
   toggleQuickSwitcher: () => void;
   setSelectedFolder: (folder: string | null) => void;
-  openCapture: (text: string) => void;
+  openCapture: (text: string, provenance?: Partial<Omit<CaptureDraft, 'text'>>) => void;
   closeCapture: () => void;
 }
 
@@ -126,7 +135,7 @@ export const useUiStore = create<UiState>((set) => {
     searchOpen: false,
     quickSwitcherOpen: false,
     selectedFolder: null,
-    captureText: null,
+    captureDraft: null,
 
     setTheme(mode) {
       localStorage.setItem(THEME_KEY, mode);
@@ -202,11 +211,20 @@ export const useUiStore = create<UiState>((set) => {
     setSelectedFolder(folder) {
       set({ selectedFolder: folder });
     },
-    openCapture(text) {
-      set({ captureText: text });
+    openCapture(text, provenance) {
+      set({
+        captureDraft: {
+          text,
+          sourceUrl: provenance?.sourceUrl,
+          sourceApp: provenance?.sourceApp,
+          sourceTitle: provenance?.sourceTitle,
+          warning: provenance?.warning,
+          capturedAt: provenance?.capturedAt ?? new Date().toISOString(),
+        },
+      });
     },
     closeCapture() {
-      set({ captureText: null });
+      set({ captureDraft: null });
     },
   };
 });

@@ -1,5 +1,5 @@
 import "./app/main.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useVaultStore } from "./state/vaultStore";
 import { useUiStore } from "./state/uiStore";
 import { VaultRail } from "./app/VaultRail";
@@ -12,9 +12,14 @@ import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { SearchPanel, QuickSwitcher } from "./features/search";
 import { AiProvisionalBar, AiConsentModal, OrganizeVaultModal, DeepOrganizeModal } from "./features/ai";
-import { createUntitledNote, CaptureModal } from "./features/capture";
+import { createUntitledNote, CaptureModal, globalCaptureFromClipboard } from "./features/capture";
 import { appKeymap, installGlobalKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
+import { appSupportRoot } from "./services/appSupport";
+import { createAppSupportIO } from "./services/appSupportStore";
+import { SnippetStore } from "./services/snippets";
+import { tauriStorage } from "./services/tauriStorage";
+import { installNativeCaptureListener } from "./services/nativeCapture";
 
 function ConflictBar() {
   const conflict = useVaultStore((s) => s.conflict);
@@ -98,7 +103,7 @@ function Welcome() {
         </button>
       </div>
       {error && (
-        <p className="text-sm" style={{ color: "#c0392b" }}>
+        <p className="text-sm" style={{ color: "var(--danger)" }}>
           {error}
         </p>
       )}
@@ -132,6 +137,8 @@ function CenterPane() {
 }
 
 function Shell() {
+  useEffect(() => installNativeCaptureListener(), []);
+
   useEffect(() => {
     appKeymap.setHandler("new-note", () => {
       useUiStore.getState().setTodayViewOpen(false);
@@ -151,13 +158,15 @@ function Shell() {
     appKeymap.setHandler("search", () => useUiStore.getState().toggleSearch());
     appKeymap.setHandler("search-alias", () => useUiStore.getState().toggleSearch());
     appKeymap.setHandler("quick-switcher", () => useUiStore.getState().toggleQuickSwitcher());
+    appKeymap.setHandler("global-capture", () => void globalCaptureFromClipboard());
     appKeymap.setHandler("undo", () => void useVaultStore.getState().opLog.undo());
     return installGlobalKeymap(appKeymap);
   }, []);
 
   return (
+    <>
     <div
-      className="grid h-screen"
+      className="snippet-scope grid h-screen"
       style={{
         gridTemplateColumns: "56px 260px 1fr 300px",
         gridTemplateRows: "1fr 24px",
@@ -195,15 +204,38 @@ function Shell() {
         <StatusBar />
       </div>
       <CommandPalette />
-      <SettingsModal />
       <SearchPanel />
       <QuickSwitcher />
       <AiConsentModal />
       <OrganizeVaultModal />
       <DeepOrganizeModal />
       <CaptureModal />
+      <SnippetStyleInjector />
     </div>
+    <SettingsModal />
+    </>
   );
+}
+
+function SnippetStyleInjector() {
+  const [css, setCss] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const root = await appSupportRoot();
+        const store = new SnippetStore(createAppSupportIO(tauriStorage, root));
+        const next = await store.enabledCss();
+        if (!cancelled) setCss(next);
+      } catch {
+        if (!cancelled) setCss('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return <style data-denote-snippets>{css}</style>;
 }
 
 /** Dev-only escape hatch (never reachable in a production build — the `import.meta.env.DEV`

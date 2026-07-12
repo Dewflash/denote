@@ -14,5 +14,13 @@ export function memIO(): AppSupportIO & { files: Map<string, string> } {
     async write(name, content) {
       files.set(name, content);
     },
+    async list(prefix) {
+      return [...files.keys()]
+        .filter((name) => name.startsWith(prefix))
+        .map((name) => ({ name, isDir: false }));
+    },
+    async delete(name) {
+      files.delete(name);
+    },
   };
 }

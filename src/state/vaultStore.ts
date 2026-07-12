@@ -40,6 +40,7 @@ import type { AiAnnotation, SimilarPair } from '../domain';
 import type { TakeoverConsent } from './enrichmentQueue';
 import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
+import { gitCommitAll, gitHistoryStatus } from '../services/nativeGit';
 import { appSupportRoot } from '../services/appSupport';
 import { NoteSearchIndex } from '../services/searchIndex';
 import { createAppSupportIO } from '../services/appSupportStore';
@@ -65,6 +66,7 @@ import {
 } from '../services/vaultRegistry';
 
 export const AUTOSAVE_MS = 800;
+export const AUTO_CHECKPOINT_MS = 10 * 60 * 1000;
 
 export interface OpenBuffer {
   relPath: string;
@@ -217,6 +219,8 @@ const aiEngines = new Map<string, VaultAiEngine>();
 const embeddingEngines = new Map<string, VaultEmbeddingEngine>();
 const ontologyEngines = new Map<string, VaultOntologyEngine>();
 const watcherTeardowns = new Map<string, () => void>();
+const checkpointTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const checkpointPaths = new Map<string, Set<string>>();
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 // One AI router shared across all open vaults (routing is global; localOnly is enforced per call
@@ -304,6 +308,46 @@ async function persistRegistry(vaults: VaultRegistryEntry[]): Promise<void> {
 function dirOf(relPath: string): string {
   const i = relPath.lastIndexOf('/');
   return i < 0 ? '' : relPath.slice(0, i);
+}
+
+function generatedCheckpointMessage(paths: string[]): string {
+  const clean = [...new Set(paths)].filter(Boolean).sort();
+  if (clean.length === 0) return 'Edited vault';
+  const folders = new Set(clean.map((p) => dirOf(p) || 'Inbox'));
+  if (folders.size === 1) return `Edited ${clean.length} note${clean.length === 1 ? '' : 's'} in ${[...folders][0]}/`;
+  return `Edited ${clean.length} notes across ${folders.size} folders`;
+}
+
+function clearCheckpointTimer(vaultId: string): void {
+  const timer = checkpointTimers.get(vaultId);
+  if (timer) clearTimeout(timer);
+  checkpointTimers.delete(vaultId);
+}
+
+async function flushHistoryCheckpoint(vaultId: string): Promise<void> {
+  clearCheckpointTimer(vaultId);
+  const repo = repos.get(vaultId);
+  const paths = [...(checkpointPaths.get(vaultId) ?? new Set<string>())];
+  checkpointPaths.delete(vaultId);
+  if (!repo || paths.length === 0) return;
+  try {
+    const status = await gitHistoryStatus(repo.root);
+    if (!status.enabled) return;
+    await gitCommitAll(repo.root, generatedCheckpointMessage(paths));
+  } catch {
+    // History is opt-in and should never make editing fail.
+  }
+}
+
+function scheduleHistoryCheckpoint(vaultId: string, relPath: string): void {
+  if (relPath.startsWith('.denote/') || relPath.startsWith('.git/')) return;
+  const paths = checkpointPaths.get(vaultId) ?? new Set<string>();
+  paths.add(relPath);
+  checkpointPaths.set(vaultId, paths);
+  clearCheckpointTimer(vaultId);
+  checkpointTimers.set(vaultId, setTimeout(() => {
+    void flushHistoryCheckpoint(vaultId);
+  }, AUTO_CHECKPOINT_MS));
 }
 
 function isEnrichable(relPath: string, source: unknown): boolean {
@@ -504,6 +548,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         aiBinding.onIndexChange(relPath, note);
         embeddingBinding.onIndexChange(relPath, note);
         ontologyBinding.onIndexChange(relPath, note);
+        scheduleHistoryCheckpoint(selfRef.vaultId ?? repo.vaultId, relPath);
         set((s) => ({ revision: s.revision + 1 }));
       };
       const onPipeline = (relPath: string): void => {
@@ -631,6 +676,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       if (cur.vaultId === vaultId && cur.buffer?.dirty) {
         await repo.saveNote(cur.buffer.relPath, cur.buffer.content).catch(() => {});
       }
+      await flushHistoryCheckpoint(vaultId);
       watcherTeardowns.get(vaultId)?.();
       watcherTeardowns.delete(vaultId);
       await invoke('unwatch_vault', { root: repo.root }).catch(() => {});
@@ -642,6 +688,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       ontologyEngines.delete(vaultId);
       repos.delete(vaultId);
       searchIndexes.delete(vaultId);
+      checkpointPaths.delete(vaultId);
+      clearCheckpointTimer(vaultId);
       useGraphStore.getState().removeOpenVault(vaultId);
 
       const after = get();

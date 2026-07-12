@@ -5,23 +5,24 @@
 
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { useUiStore } from '../../state/uiStore';
+import { useUiStore, type CaptureDraft } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { fileCapture } from './pasteCapture';
 
 /** Gate: only mounted while a capture is pending, keyed on the text so each paste gets a fresh
  *  component (state seeds from the text synchronously, no setState-in-effect). */
 export function CaptureModal() {
-  const text = useUiStore((s) => s.captureText);
-  if (text == null) return null;
-  return <CaptureReview key={text} text={text} />;
+  const draft = useUiStore((s) => s.captureDraft);
+  if (draft == null) return null;
+  return <CaptureReview key={`${draft.capturedAt}:${draft.text}`} draft={draft} />;
 }
 
 function seedTitle(text: string): string {
   return text.split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || 'Untitled';
 }
 
-function CaptureReview({ text }: { text: string }) {
+function CaptureReview({ draft }: { draft: CaptureDraft }) {
+  const text = draft.text;
   const closeCapture = useUiStore((s) => s.closeCapture);
   const suggestForCapture = useVaultStore((s) => s.suggestForCapture);
   const routingBackendFor = useVaultStore((s) => s.routingBackendFor);
@@ -30,6 +31,7 @@ function CaptureReview({ text }: { text: string }) {
   const [summary, setSummary] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [enabledTags, setEnabledTags] = useState<Set<string>>(() => new Set());
+  const [folder, setFolder] = useState('Inbox');
   const [loading, setLoading] = useState(true);
 
   const backend = routingBackendFor('summarize');
@@ -65,6 +67,11 @@ function CaptureReview({ text }: { text: string }) {
       body: text,
       summary: summary || undefined,
       tags: tags.filter((t) => enabledTags.has(t)),
+      folder,
+      sourceUrl: draft.sourceUrl,
+      sourceApp: draft.sourceApp,
+      sourceTitle: draft.sourceTitle,
+      capturedAt: draft.capturedAt,
     });
     closeCapture();
   }
@@ -97,6 +104,16 @@ function CaptureReview({ text }: { text: string }) {
             style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+          />
+
+          <label className="mb-1 block text-xs" style={{ color: 'var(--fg-muted)' }}>
+            Folder
+          </label>
+          <input
+            className="mb-3 w-full rounded px-2 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
           />
 
           <label className="mb-1 block text-xs" style={{ color: 'var(--fg-muted)' }}>
@@ -145,6 +162,14 @@ function CaptureReview({ text }: { text: string }) {
             {preview}
             {text.length > preview.length ? '…' : ''}
           </div>
+
+          {(draft.sourceApp || draft.sourceUrl || draft.warning) && (
+            <div className="mb-4 truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
+              {draft.sourceApp ? `Source: ${draft.sourceApp}` : 'Source captured'}
+              {draft.sourceUrl ? ` · ${draft.sourceUrl}` : ''}
+              {draft.warning ? ` · ${draft.warning}` : ''}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <button

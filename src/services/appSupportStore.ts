@@ -9,6 +9,8 @@ import type { StorageBackend } from './storage';
 export interface AppSupportIO {
   read(name: string): Promise<string | null>;
   write(name: string, content: string): Promise<void>;
+  list?(prefix: string): Promise<{ name: string; isDir: boolean }[]>;
+  delete?(name: string): Promise<void>;
 }
 
 /** Adapt a StorageBackend + resolved app-support root into the AppSupportIO the stores consume. */
@@ -23,5 +25,13 @@ export function createAppSupportIO(backend: StorageBackend, appRoot: string): Ap
       }
     },
     write: (name, content) => backend.writeNote(appRoot, name, content),
+    async list(prefix) {
+      const entries = await backend.listDir(appRoot, prefix);
+      return entries.map((e) => ({
+        name: e.relPath,
+        isDir: e.isDir,
+      }));
+    },
+    delete: (name) => backend.deletePath(appRoot, name),
   };
 }

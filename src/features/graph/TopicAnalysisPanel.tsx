@@ -82,7 +82,7 @@ export function TopicAnalysisPanel({
           Add an Anthropic key in Settings to enable.
         </span>
       )}
-      {error && <span className="text-xs" style={{ color: '#c0392b' }}>{error}</span>}
+      {error && <span className="text-xs" style={{ color: 'var(--danger)' }}>{error}</span>}
       {result && (
         <div className="flex flex-col gap-2 text-xs" style={{ color: 'var(--fg)' }}>
           {result.stanceEvolution && (

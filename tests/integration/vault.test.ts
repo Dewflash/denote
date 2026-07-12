@@ -195,4 +195,18 @@ describe('repository writes are atomic + snapshotted (S7/D21)', () => {
     const onDisk = await backend.readNote(root, 'note.md');
     expect(contentHash(onDisk)).toBe(contentHash('# Note'));
   });
+
+  it('restores old content as app-write-content-change so the watcher runs the pipeline once', async () => {
+    const onPipeline = vi.fn();
+    const repo = await Repository.openVault(backend, root, { onPipeline });
+    await repo.createNote('note.md', '# Note\nv1');
+    await repo.saveNote('note.md', '# Note\nv2');
+
+    await repo.restoreNoteVersion('note.md', '# Note\nv1');
+    await repo.onWatcherEvent({ relPath: 'note.md', kind: 'modify' });
+
+    expect(await backend.readNote(root, 'note.md')).toBe('# Note\nv1');
+    expect(onPipeline).toHaveBeenCalledTimes(1);
+    expect(onPipeline).toHaveBeenCalledWith('note.md', 'app-write-content-change');
+  });
 });
