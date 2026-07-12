@@ -252,11 +252,158 @@ const AI_TASKS: { id: string; label: string }[] = [
   { id: 'deep-organize', label: 'Deep organize (vault)' },
 ];
 
+// Per-note tasks route only to the free/local backends. The paid Anthropic backend is deliberately
+// NOT a per-task routing option: its only paths are the CAPPED deep-organize + insights flows, so
+// there is no uncapped path to the paid tier (S27). It stays registered in the router so D18 still
+// blocks it for localOnly vaults if ever routed (proven in tests).
 const AI_BACKENDS: { id: string; label: string; enabled: boolean; note?: string }[] = [
   { id: 'mock', label: 'Mock', enabled: true },
   { id: 'apple', label: 'Apple (on-device)', enabled: true },
-  { id: 'anthropic', label: 'Anthropic (cloud)', enabled: false, note: 'pass 9' },
+  { id: 'anthropic', label: 'Anthropic (cloud)', enabled: false, note: 'deep-organize only' },
 ];
+
+function CloudSection() {
+  const present = useVaultStore((s) => s.anthropicKeyPresent);
+  const setKey = useVaultStore((s) => s.setAnthropicApiKey);
+  const clearKey = useVaultStore((s) => s.clearAnthropicApiKey);
+  const testKey = useVaultStore((s) => s.testAnthropicKey);
+  const setSpendCap = useVaultStore((s) => s.setSpendCap);
+  const revision = useVaultStore((s) => s.revision);
+  const [draft, setDraft] = useState('');
+  const [test, setTest] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const cap = useMemo(() => {
+    void revision;
+    return useVaultStore.getState().spendCap();
+  }, [revision]);
+  const remaining = useMemo(() => {
+    void revision;
+    return useVaultStore.getState().spendRemaining();
+  }, [revision]);
+  const runs = useMemo(() => {
+    void revision;
+    return useVaultStore.getState().spendRuns();
+  }, [revision]);
+
+  useMemo(() => {
+    void useVaultStore.getState().refreshAnthropicKeyPresence();
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Anthropic API key (cloud tier)
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Stored in the macOS Keychain only — never written to a file (D13). Deep-organize and topic
+          Analysis run on the cloud under a hard monthly budget cap.
+        </p>
+        <div className="flex items-center gap-2 text-sm">
+          <span style={{ color: present ? 'var(--fg)' : 'var(--fg-muted)' }}>
+            {present ? '● Key present' : '○ No key set'}
+          </span>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="password"
+            placeholder="sk-ant-..."
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="flex-1 rounded px-2 py-1 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+          />
+          <button
+            className="rounded px-3 py-1 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+            disabled={!draft.trim() || busy}
+            onClick={() => {
+              setBusy(true);
+              void setKey(draft.trim()).finally(() => {
+                setDraft('');
+                setBusy(false);
+              });
+            }}
+          >
+            Save
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-3 text-xs">
+          <button
+            disabled={!present || busy}
+            style={{ color: 'var(--fg-muted)' }}
+            onClick={() => {
+              setBusy(true);
+              setTest('Testing…');
+              void testKey()
+                .then((r) => setTest(r.ok ? '✓ Key works' : `✗ ${r.detail ?? 'failed'}`))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Test key
+          </button>
+          <button disabled={!present} style={{ color: '#c0392b' }} onClick={() => void clearKey()}>
+            Remove key
+          </button>
+          {test && <span style={{ color: 'var(--fg-muted)' }}>{test}</span>}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Monthly budget cap
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          A hard cap (S27): the cloud submission path is physically unable to exceed it. Remaining
+          this month: <strong>${remaining.toFixed(2)}</strong>.
+        </p>
+        <div className="flex items-center gap-2 text-sm">
+          <span>$</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            defaultValue={cap}
+            key={cap}
+            className="w-24 rounded px-2 py-1 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+            onBlur={(e) => void setSpendCap(Number(e.target.value))}
+          />
+          <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>/ month</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Spend history
+        </div>
+        {runs.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+            No cloud runs yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1 text-xs">
+            {[...runs]
+              .slice()
+              .reverse()
+              .slice(0, 12)
+              .map((r) => (
+                <div key={r.id} className="flex items-center justify-between">
+                  <span>
+                    {r.at.slice(0, 10)} · {r.kind} · {r.model.replace('claude-', '')}
+                  </span>
+                  <span style={{ color: r.status === 'lost' ? '#c0392b' : 'var(--fg-muted)' }}>
+                    ${r.costUsd.toFixed(3)} {r.status === 'lost' ? '(lost)' : r.status === 'estimated' ? '(pending)' : ''}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AiSection() {
   const threshold = useUiStore((s) => s.aiTakeoverThreshold);
@@ -277,13 +424,16 @@ function AiSection() {
 
   return (
     <div className="flex flex-col gap-5">
+      <CloudSection />
+
       <div>
         <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
           Task routing
         </div>
         <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-          Each task runs on a backend. Apple runs on-device (free, offline); the Anthropic cloud
-          tier arrives in pass 9. The Mock backend stays available for testing.
+          Per-note tasks run on-device (Apple, free & offline) or the Mock backend. The paid
+          Anthropic tier is reached only through the capped “Deep organize” job and topic Analysis,
+          never per keystroke — so cloud spend always passes the monthly budget gate.
         </p>
         <div className="flex flex-col gap-1.5">
           {AI_TASKS.map((t) => (

@@ -31,6 +31,12 @@ notify = "6"
 # WITHOUT it, so `cargo test --lib` verifies the S14 format everywhere. Production enables it.
 fastembed = { version = "4", optional = true }
 
+# security-framework: macOS Keychain storage for the BYO Anthropic API key (D13 — keys in the
+# Keychain, never in files). macOS-only; keychain.rs is cfg-guarded so non-macOS builds still
+# compile (the commands return a typed "macOS only" error there).
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
 [features]
 # On by default so `pnpm tauri dev`/`build` ship real embeddings; disable
 # (`--no-default-features`) in constrained environments to build the store/commands without the

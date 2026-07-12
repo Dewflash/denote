@@ -265,9 +265,34 @@ export class VaultAiEngine {
       candidateNotes: this.candidateNotes(relPath),
     });
 
+    await this.ingestResult(relPath, hash, client.modelId, result, opts.linksOnly);
+  }
+
+  /**
+   * Land a cloud (deep-organize) enrich result for a note (D13/pass-9). Cloud output gets NO
+   * bypass of canonicalization (D14) or takeover (D9) — it flows through the exact same ingest
+   * path as on-device enrichment: annotations (suggested, rejection-filtered) + ontology fold +
+   * takeover. Hash-gate is bypassed (the batch already decided to spend on this note).
+   */
+  async applyEnrichResult(relPath: string, result: EnrichResult, modelId: string): Promise<void> {
+    const hash = this.repo.getHash(relPath);
+    const note = this.repo.getParsed(relPath);
+    if (!hash || !note || this.shouldSkip(relPath, note)) return;
+    await this.ingestResult(relPath, hash, modelId, result, false);
+  }
+
+  /** Shared post-enrichment ingest: ontology fold (D14) → annotations (D10 rejection filter) →
+   *  takeover (D9). Used by both on-device enrichment and cloud deep-organize. */
+  private async ingestResult(
+    relPath: string,
+    hash: string,
+    modelId: string,
+    result: EnrichResult,
+    linksOnly?: boolean,
+  ): Promise<void> {
     // Fold topics into the persistent ontology (canonicalization + membership, D14). Best-effort:
     // a failure here must not park the enrichment job or lose the panel suggestions below.
-    if (!opts.linksOnly) {
+    if (!linksOnly) {
       try {
         await this.deps.onEnrichResult?.(relPath, hash, result);
       } catch {
@@ -275,11 +300,11 @@ export class VaultAiEngine {
       }
     }
 
-    const anns = this.annotationsFromResult(relPath, hash, client.modelId, result, opts.linksOnly);
+    const anns = this.annotationsFromResult(relPath, hash, modelId, result, linksOnly);
     // Rejection memory (D10/S11): drop anything rejected for this exact content.
     const kept = anns.filter((a) => !this.store.isRejected(rejectionFingerprint(a.kind, a.payload), hash));
 
-    if (opts.linksOnly) {
+    if (linksOnly) {
       // Merge: keep existing non-link live annotations, replace links only.
       const existing = this.store.liveFor(relPath, hash).filter((a) => a.kind !== 'link');
       await this.store.replaceLiveFor(relPath, [...existing, ...kept]);

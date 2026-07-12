@@ -931,6 +931,7 @@ version = "0.1.0"
 dependencies = [
  "fastembed",
  "notify",
+ "security-framework",
  "serde",
  "serde_json",
  "tauri",

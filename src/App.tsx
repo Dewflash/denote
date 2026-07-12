@@ -11,7 +11,7 @@ import { Editor, ReadingView } from "./features/editor";
 import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { SearchPanel, QuickSwitcher } from "./features/search";
-import { AiProvisionalBar, AiConsentModal, OrganizeVaultModal } from "./features/ai";
+import { AiProvisionalBar, AiConsentModal, OrganizeVaultModal, DeepOrganizeModal } from "./features/ai";
 import { createUntitledNote, CaptureModal } from "./features/capture";
 import { appKeymap, installGlobalKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
@@ -200,6 +200,7 @@ function Shell() {
       <QuickSwitcher />
       <AiConsentModal />
       <OrganizeVaultModal />
+      <DeepOrganizeModal />
       <CaptureModal />
     </div>
   );

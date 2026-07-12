@@ -8,6 +8,7 @@ import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
 import { useUiStore } from '../../state/uiStore';
 import { folderOf, noteRelPath } from './hulls';
+import { TopicAnalysisPanel } from './TopicAnalysisPanel';
 
 function sourceBadgeColor(source: GraphEdge['source']): string {
   switch (source) {
@@ -157,6 +158,14 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
               Delete
             </button>
           </div>
+          {node.vaultId && topicId && (
+            <TopicAnalysisPanel
+              vaultId={node.vaultId}
+              topicId={topicId}
+              topicName={topic.name}
+              members={topic.members.map((m) => ({ relPath: m.relPath, title: m.title }))}
+            />
+          )}
         </div>
       )}
 

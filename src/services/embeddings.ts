@@ -55,6 +55,8 @@ export interface EmbeddingsBackend {
   remove(root: string, relPath: string): Promise<void>;
   remap(root: string, from: string, to: string): Promise<void>;
   topK(root: string, relPath: string, k: number, minCos: number): Promise<EmbeddingNeighbor[]>;
+  /** topK for an external query VECTOR against a vault's store (S24 cross-vault retrieval). */
+  topKVector(root: string, vector: number[], k: number, minCos: number): Promise<EmbeddingNeighbor[]>;
   /** Stored vectors for a set of relPaths (pass-8 folder-centroid / misfit). Missing paths omitted. */
   vectors(root: string, relPaths: string[]): Promise<EmbeddingVectorRow[]>;
 }
@@ -115,6 +117,8 @@ export function createTauriEmbeddingsBackend(): EmbeddingsBackend {
     remap: (root, from, to) => invoke('embeddings_remap', { root, from, to }),
     topK: (root, relPath, k, minCos) =>
       invoke<EmbeddingNeighbor[]>('embeddings_topk', { root, relPath, k, minCos }),
+    topKVector: (root, vector, k, minCos) =>
+      invoke<EmbeddingNeighbor[]>('embeddings_topk_vector', { root, vector, k, minCos }),
     vectors: (root, relPaths) =>
       invoke<EmbeddingVectorRow[]>('embeddings_vectors', { root, relPaths }),
   };

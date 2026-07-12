@@ -52,6 +52,11 @@ export function CommandPalette() {
         label: 'Organize vault (topics & clusters)',
         run: () => useUiStore.getState().setOrganizeVaultOpen(true),
       },
+      {
+        id: 'deep-organize',
+        label: 'Deep organize (cloud) — themes & budget',
+        run: () => useUiStore.getState().setDeepOrganizeOpen(true),
+      },
       ...(activeNotePath
         ? [
             {

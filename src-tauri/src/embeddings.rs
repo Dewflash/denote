@@ -302,6 +302,33 @@ impl EmbeddingStore {
         scored.truncate(k);
         scored
     }
+
+    /// Cosine topK for an EXTERNAL query vector (S24 cross-vault: a note in vault A queries vault
+    /// B's store). The query note is not in this store, so nothing is excluded by relPath. The
+    /// query is L2-normalized so cosine == dot even if the caller passed a raw vector.
+    pub fn top_k_vector(&self, query: &[f32], k: usize, min_cos: f32) -> Vec<Neighbor> {
+        if query.len() != self.dim {
+            return Vec::new();
+        }
+        let q = l2_normalize(query);
+        let mut scored: Vec<Neighbor> = self
+            .rows
+            .iter()
+            .map(|r| Neighbor {
+                rel_path: r.rel_path.clone(),
+                cos: dot(&q, self.row_slice(r.row)),
+            })
+            .filter(|n| n.cos >= min_cos)
+            .collect();
+        scored.sort_by(|a, b| {
+            b.cos
+                .partial_cmp(&a.cos)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.rel_path.cmp(&b.rel_path))
+        });
+        scored.truncate(k);
+        scored
+    }
 }
 
 fn dot(a: &[f32], b: &[f32]) -> f32 {
@@ -486,6 +513,31 @@ pub fn embeddings_topk(
     Ok(stores
         .get(&bin_path)
         .map(|s| s.top_k(&rel_path, k, min_cos))
+        .unwrap_or_default())
+}
+
+/// Cosine topK for an external query vector against a vault's store (S24 cross-vault: vault A's
+/// note vector retrieves neighbors in vault B). Feeds `labelSimilarity` like `embeddings_topk`.
+#[tauri::command]
+pub fn embeddings_topk_vector(
+    root: String,
+    vector: Vec<f32>,
+    k: usize,
+    min_cos: f32,
+    state: tauri::State<'_, EmbeddingsState>,
+    vaults: tauri::State<'_, VaultRoots>,
+) -> Result<Vec<Neighbor>, String> {
+    let roots = vaults.0.lock().unwrap().clone();
+    let (bin_path, idx_path) = store_paths(&roots, &root)?;
+    let mut stores = state.stores.lock().unwrap();
+    if !stores.contains_key(&bin_path) {
+        if let Some(s) = load_store(&bin_path, &idx_path) {
+            stores.insert(bin_path.clone(), s);
+        }
+    }
+    Ok(stores
+        .get(&bin_path)
+        .map(|s| s.top_k_vector(&vector, k, min_cos))
         .unwrap_or_default())
 }
 
@@ -745,6 +797,20 @@ mod tests {
         let n = s.top_k("n2.md", 5, -1.0);
         assert_eq!(n.len(), 1);
         assert_eq!(n[0].rel_path, "n3.md");
+    }
+
+    #[test]
+    fn top_k_vector_queries_an_external_vector_and_includes_all_rows() {
+        // S24 cross-vault: a note in vault A queries vault B's store; the query note is not in
+        // this store, so NOTHING is excluded by relPath. A non-normalized query still works.
+        let mut s = store();
+        s.put("same.md", "h", &[1.0, 0.0, 0.0, 0.0]); // cos 1 with the query direction
+        s.put("half.md", "h", &[1.0, 1.0, 0.0, 0.0]); // cos ~0.707
+        s.put("orth.md", "h", &[0.0, 1.0, 0.0, 0.0]); // cos 0
+        let n = s.top_k_vector(&[5.0, 0.0, 0.0, 0.0], 10, 0.6); // deliberately un-normalized
+        assert_eq!(n.iter().map(|x| x.rel_path.as_str()).collect::<Vec<_>>(), vec!["same.md", "half.md"]);
+        // Dimension mismatch → empty (safe).
+        assert!(s.top_k_vector(&[1.0, 0.0], 10, -1.0).is_empty());
     }
 
     #[test]

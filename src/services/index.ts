@@ -13,3 +13,8 @@ export { appSupportRoot } from './appSupport';
 export * from './searchIndex';
 export * from './aiClient';
 export * from './annotationStore';
+export * from './appSupportStore';
+export * from './spendLedger';
+export * from './batchStore';
+export * from './crossVaultStore';
+export * from './keychain';

@@ -296,6 +296,78 @@ export class VaultOntologyEngine {
     return id;
   }
 
+  /**
+   * Land a cross-note THEME from deep-organize (D13/pass-9) as a topic in THIS vault. The theme's
+   * member titles were already resolved to relPaths in this vault by the caller. Cloud output gets
+   * NO canonicalization bypass (D14): the theme name flows through exact→alias→centroid→create
+   * like any other topic, so a cloud theme can't spawn a near-duplicate of an existing topic.
+   */
+  async applyTheme(theme: {
+    name: string;
+    description: string;
+    reason: string;
+    confidence: number;
+    members: string[];
+  }): Promise<void> {
+    const members = theme.members.filter((rel) => this.repo.getParsed(rel) && !this.shouldSkip(rel, this.repo.getParsed(rel)!));
+    if (members.length < 2) return; // a theme needs ≥2 member notes to be a theme
+    const vec = await this.embedName(theme.name, theme.description);
+    const match = canonicalizeTopic({ name: theme.name }, this.store.matchInputs(), vec);
+    let topicId: string;
+    if (match.kind === 'create') {
+      topicId = crypto.randomUUID();
+      this.store.createTopic({
+        id: topicId,
+        name: theme.name,
+        description: theme.description || theme.reason,
+        aliases: [],
+        parentId: null,
+        relatedIds: [],
+        source: 'ai',
+        centroid: vec,
+      });
+    } else {
+      topicId = match.topicId;
+      if (match.kind === 'centroid') this.store.addAlias(topicId, match.addAlias);
+    }
+    for (const rel of members) {
+      const hash = this.repo.getHash(rel);
+      if (hash) this.applyMembership(topicId, rel, hash, theme.confidence, theme.reason);
+    }
+    await this.materializeTopic(topicId);
+    await this.store.persist();
+    this.deps.onChange?.();
+  }
+
+  /** Resolve note TITLES (as the cloud cited them) to relPaths in this vault, for theme members. */
+  relPathsForTitles(titles: string[]): string[] {
+    const want = new Set(titles.map((t) => t.trim().toLowerCase()));
+    const out: string[] = [];
+    for (const n of this.repo.index.allNotes()) {
+      if (this.shouldSkip(n.relPath, n)) continue;
+      if (want.has(n.title.trim().toLowerCase())) out.push(n.relPath);
+    }
+    return out;
+  }
+
+  /** Time-ordered member stubs for a topic (deep insights, D13). Summary = cached or body head. */
+  insightMembers(topicId: string): { relPath: string; title: string; summary: string; time: number }[] {
+    const t = this.store.get(topicId);
+    if (!t) return [];
+    return t.members
+      .map((m) => {
+        const note = this.repo.getParsed(m.notePath);
+        const body = (note?.bodyText ?? '').trim();
+        return {
+          relPath: m.notePath,
+          title: note?.title ?? basename(m.notePath),
+          summary: m.reason || (body ? body.split(/\s+/).slice(0, 40).join(' ') : ''),
+          time: this.repo.index.mtimes.get(m.notePath) ?? 0,
+        };
+      })
+      .sort((a, b) => a.time - b.time);
+  }
+
   // ── `_topics/` materialization (D8c/S18) ─────────────────────────────────────────
 
   /** Regenerate a topic's hub note if it has ≥3 members and the ontology moved; freeze if the user

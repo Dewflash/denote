@@ -19,3 +19,4 @@ export * from './tokenBudget';
 export * from './similarity';
 export * from './ontology';
 export * from './topicFile';
+export * from './corpus';

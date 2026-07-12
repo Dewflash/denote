@@ -29,7 +29,11 @@ import {
   APPLE_ROUTING,
   AppleAiClient,
   MockAiClient,
+  AnthropicAiClient,
   createTauriSidecarTransport,
+  createAnthropicTransport,
+  DEFAULT_DEEP_MODEL,
+  type EnrichResult,
 } from '../services/aiClient';
 import { createTauriEmbeddingsBackend } from '../services/embeddings';
 import type { AiAnnotation, SimilarPair } from '../domain';
@@ -38,6 +42,19 @@ import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
 import { appSupportRoot } from '../services/appSupport';
 import { NoteSearchIndex } from '../services/searchIndex';
+import { createAppSupportIO } from '../services/appSupportStore';
+import { SpendLedger, type SpendRun } from '../services/spendLedger';
+import { BatchStore } from '../services/batchStore';
+import { CrossVaultStore } from '../services/crossVaultStore';
+import {
+  readAnthropicKey,
+  setAnthropicKey as kcSet,
+  hasAnthropicKey as kcHas,
+  clearAnthropicKey as kcClear,
+} from '../services/keychain';
+import { DeepOrganizeJob, type DeepOrganizePlan, type ThemeResult, type RawNoteResult } from './deepOrganize';
+import { DeepInsights, type TopicAnalysis } from './deepInsights';
+import { CrossVaultEngine } from './crossVaultEngine';
 import {
   loadVaultsFile,
   nextVaultColor,
@@ -131,6 +148,28 @@ interface VaultStoreState {
     signal?: CancelToken;
   }) => Promise<OrganizeResult | undefined>;
 
+  // ── Cloud tier (pass 9): Anthropic key, budget, deep-organize, insights ──────────────
+  /** Whether an Anthropic API key is present in the Keychain (Settings presence indicator). */
+  anthropicKeyPresent: boolean;
+  refreshAnthropicKeyPresence: () => Promise<void>;
+  setAnthropicApiKey: (key: string) => Promise<void>;
+  clearAnthropicApiKey: () => Promise<void>;
+  /** "Test key" button — a cheap round-trip that verifies the stored key. */
+  testAnthropicKey: () => Promise<{ ok: boolean; detail?: string }>;
+  /** Spend ledger reads (S27): remaining budget this month, the cap, and the run history. */
+  spendRemaining: () => number;
+  spendCap: () => number;
+  setSpendCap: (usd: number) => Promise<void>;
+  spendRuns: () => readonly SpendRun[];
+  /** Deep-organize (D12/D13): plan (estimate + item count, no submission) then run under the cap. */
+  planDeepOrganize: () => Promise<DeepOrganizePlan>;
+  runDeepOrganize: (
+    plan: DeepOrganizePlan,
+    onProgress?: (p: { phase: string; message: string }) => void,
+  ) => Promise<{ notes: number; themes: number; costUsd: number; lost: boolean }>;
+  /** On-demand topic Analysis (D13): synthesize over a topic's member notes ordered by time. */
+  analyzeTopic: (vaultId: string, topicId: string, topicName: string) => Promise<TopicAnalysis>;
+
   // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
   aiSuggestionsFor: (relPath: string) => AiAnnotation[];
   acceptSuggestion: (id: string) => Promise<void>;
@@ -185,11 +224,66 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 // (APPLE_ROUTING); the mock stays registered as a fallback + for tests. Anthropic (pass 9) registers
 // here later with no other change. Both apple + embeddings talk to the Rust core lazily, so
 // constructing them at module load costs nothing until first use.
+// Anthropic (pass 9): network-class. The key is read from the macOS Keychain on each call (D13),
+// so entering/replacing it in Settings takes effect without a restart. Registering it here lets a
+// task be routed to it; the router refuses it for a localOnly vault (D18), and the deep-organize
+// assembler refuses it a second time (S27).
+const anthropicTransport = createAnthropicTransport(readAnthropicKey);
 const sharedRouter = new AiRouter(
-  [new MockAiClient(), new AppleAiClient(createTauriSidecarTransport())],
+  [new MockAiClient(), new AppleAiClient(createTauriSidecarTransport()), new AnthropicAiClient(anthropicTransport)],
   APPLE_ROUTING,
 );
 const embeddingsBackend = createTauriEmbeddingsBackend();
+
+// App-support-level stores (spend ledger S27, batch durability S27, cross-vault ai-similar S24).
+// One instance each, loaded once from disk; `appStoresReady` gates any action that needs them.
+const spendLedger = new SpendLedger({ read: async () => null, write: async () => {} });
+const batchStore = new BatchStore({ read: async () => null, write: async () => {} });
+const crossVaultStore = new CrossVaultStore({ read: async () => null, write: async () => {} });
+let appStoresReady: Promise<void> | null = null;
+
+function ensureAppStores(): Promise<void> {
+  if (!appStoresReady) {
+    appStoresReady = (async () => {
+      const io = createAppSupportIO(tauriStorage, await appSupportRoot());
+      // Rebind each store's IO to the real app-support directory, then load.
+      spendLedger.setIo(io);
+      batchStore.setIo(io);
+      crossVaultStore.setIo(io);
+      await Promise.all([spendLedger.load(), batchStore.load(), crossVaultStore.load()]);
+    })();
+  }
+  return appStoresReady;
+}
+
+// Explicit type annotation breaks the crossVaultEngine ↔ useVaultStore inference cycle (the
+// engine's `vaults`/`onChange` closures read the store, and the store's `graphSimilarPairs` reads
+// the engine — annotating both ends lets TS resolve each independently).
+const crossVaultEngine: CrossVaultEngine = new CrossVaultEngine({
+  backend: embeddingsBackend,
+  router: sharedRouter,
+  store: crossVaultStore,
+  k: () => useUiStore.getState().similarityTopK,
+  minCos: () => useUiStore.getState().similarityMinCos,
+  vaults: () =>
+    [...repos.values()].map((r) => ({
+      vaultId: r.vaultId,
+      root: r.root,
+      localOnly: useVaultStore.getState().registry.find((v) => v.id === r.vaultId)?.localOnly ?? false,
+      notePaths: () =>
+        r.index
+          .allNotes()
+          .filter((n) => !n.relPath.startsWith('_topics/') && !n.relPath.startsWith('.denote/') && n.frontmatter.source !== 'ai')
+          .map((n) => n.relPath),
+      getHash: (rel: string) => r.getHash(rel),
+      stub: (rel: string) => {
+        const note = r.getParsed(rel);
+        const body = (note?.bodyText ?? '').trim();
+        return { relPath: rel, title: note?.title ?? rel, summary: body ? body.split(/\s+/).slice(0, 40).join(' ') : undefined };
+      },
+    })),
+  onChange: () => useVaultStore.setState((s) => ({ revision: s.revision + 1 })),
+});
 
 function clearAutosaveTimer(): void {
   if (autosaveTimer) {
@@ -205,6 +299,124 @@ function vaultLabelFromPath(root: string): string {
 async function persistRegistry(vaults: VaultRegistryEntry[]): Promise<void> {
   const appRoot = await appSupportRoot();
   await saveVaultsFile(tauriStorage, appRoot, { version: 1, vaults });
+}
+
+function dirOf(relPath: string): string {
+  const i = relPath.lastIndexOf('/');
+  return i < 0 ? '' : relPath.slice(0, i);
+}
+
+function isEnrichable(relPath: string, source: unknown): boolean {
+  return !relPath.startsWith('_topics/') && !relPath.startsWith('.denote/') && source !== 'ai';
+}
+
+/** An on-device "summary" proxy for the corpus (D12: never whole-vault text). Uses the note's
+ *  cached membership reason if the ontology has one, else the first ~40 words of the body. */
+function summaryProxy(repo: Repository, ontology: VaultOntologyEngine | undefined, relPath: string): string {
+  const membered = ontology?.membershipsForNote(relPath) ?? [];
+  const note = repo.getParsed(relPath);
+  const body = (note?.bodyText ?? '').trim();
+  const head = body ? body.split(/\s+/).slice(0, 40).join(' ') : '';
+  return head || (membered[0]?.name ? `Relates to ${membered.map((m) => m.name).join(', ')}.` : note?.title ?? relPath);
+}
+
+/** Build one non-localOnly vault's corpus contribution for deep-organize. */
+function collectVaultCorpus(vaultId: string, localOnly: boolean) {
+  const repo = repos.get(vaultId);
+  const ontology = ontologyEngines.get(vaultId);
+  const notes: import('../domain').CorpusNote[] = [];
+  const topics: import('../domain').CorpusTopic[] = [];
+  if (repo) {
+    for (const n of repo.index.allNotes()) {
+      if (!isEnrichable(n.relPath, n.frontmatter.source)) continue;
+      const memberships = ontology?.membershipsForNote(n.relPath) ?? [];
+      notes.push({
+        vaultId,
+        relPath: n.relPath,
+        title: n.title,
+        folder: dirOf(n.relPath),
+        summary: summaryProxy(repo, ontology, n.relPath),
+        stale: memberships.some((m) => m.stale),
+        enriched: memberships.length > 0,
+      });
+    }
+  }
+  for (const t of ontology?.domainTopics() ?? []) {
+    topics.push({
+      vaultId,
+      name: t.name,
+      memberTitles: t.members
+        .slice()
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, 6)
+        .map((m) => repo?.getParsed(m.notePath)?.title ?? m.notePath),
+    });
+  }
+  return { vaultId, localOnly, notes, topics };
+}
+
+/** Convert a cloud RawNoteResult into the EnrichResult shape the AI engine ingests. */
+function rawToEnrichResult(raw: RawNoteResult): EnrichResult {
+  const clamp01 = (n: number | undefined): number => (Number.isFinite(n) ? Math.max(0, Math.min(1, n as number)) : 0);
+  const normTag = (s: string): string =>
+    s.trim().toLowerCase().replace(/^#+/, '').replace(/[^\p{L}\p{N}_/-]+/gu, '-').replace(/^-+|-+$/g, '');
+  return {
+    topics: (raw.topics ?? [])
+      .filter((t) => (t.name ?? '').trim())
+      .map((t) => ({
+        name: t.name!.trim(),
+        existingTopicId: null,
+        reason: (t.reason ?? '').trim(),
+        confidence: clamp01(t.confidence),
+        ...(t.parentName?.trim() ? { parentName: t.parentName.trim() } : {}),
+      })),
+    links: (raw.links ?? [])
+      .filter((l) => (l.target ?? '').trim())
+      .map((l) => ({ target: l.target!.trim(), reason: (l.reason ?? '').trim(), confidence: clamp01(l.confidence) })),
+    tags: (raw.tags ?? [])
+      .map((t) => ({ name: normTag(t.name ?? ''), reason: (t.reason ?? '').trim(), confidence: clamp01(t.confidence) }))
+      .filter((t) => t.name.length > 0),
+    summary: (raw.summary ?? '').trim() ? { text: raw.summary!.trim(), reason: 'Cloud deep-organize summary.', confidence: 0.85 } : null,
+    aliases: [],
+  };
+}
+
+/** Construct a DeepOrganizeJob wired to the current open vaults + apply sinks (D13/S27). */
+function buildDeepOrganizeJob(onProgress?: (p: { phase: string; message: string }) => void): DeepOrganizeJob {
+  return new DeepOrganizeJob({
+    transport: anthropicTransport,
+    ledger: spendLedger,
+    batches: batchStore,
+    model: DEFAULT_DEEP_MODEL,
+    onProgress,
+    vaults: () =>
+      [...repos.keys()].map((id) => {
+        const localOnly = useVaultStore.getState().registry.find((v) => v.id === id)?.localOnly ?? false;
+        return collectVaultCorpus(id, localOnly);
+      }),
+    async applyNoteResult(vaultId, relPath, raw) {
+      await aiEngines.get(vaultId)?.applyEnrichResult(relPath, rawToEnrichResult(raw), `anthropic:${DEFAULT_DEEP_MODEL}`);
+    },
+    async applyThemes(themes: ThemeResult[]) {
+      // A theme's cited note titles may span vaults; each vault that holds ≥2 of them gets the theme
+      // as a topic (S25 merges them visually in the combined graph).
+      for (const theme of themes) {
+        for (const [vaultId, ontology] of ontologyEngines) {
+          const members = ontology.relPathsForTitles(theme.memberTitles);
+          if (members.length >= 2) {
+            void vaultId;
+            await ontology.applyTheme({
+              name: theme.name,
+              description: theme.description,
+              reason: theme.reason,
+              confidence: theme.confidence,
+              members,
+            });
+          }
+        }
+      }
+    },
+  });
 }
 
 export const useVaultStore = create<VaultStoreState>((set, get) => {
@@ -281,7 +493,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
         k: () => useUiStore.getState().similarityTopK,
         minCos: () => useUiStore.getState().similarityMinCos,
-        onChange: () => set((s) => ({ revision: s.revision + 1 })),
+        onChange: () => {
+          set((s) => ({ revision: s.revision + 1 }));
+          // A note's vectors just changed — (re)compute cross-vault edges (S24), debounced.
+          crossVaultEngine.schedule();
+        },
       });
       const onIndexChange: IndexChangeHook = (relPath, note) => {
         searchBinding.onIndexChange(relPath, note);
@@ -365,6 +581,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     openVaultIds: [],
     relocateError: null,
     aiConsentPrompt: null,
+    anthropicKeyPresent: false,
 
     openVaultAt: (root) => openAndActivate(root, 'open'),
     createVaultAt: (root) => openAndActivate(root, 'create'),
@@ -448,6 +665,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
     async removeVaultFromRegistry(vaultId) {
       await get().closeVault(vaultId);
+      // Cross-vault edges are app-side (S24/D36): drop this vault's when it leaves the registry.
+      await ensureAppStores().then(() => crossVaultStore.removeForVault(vaultId)).catch(() => {});
       const registry = removeVaultEntry({ version: 1, vaults: get().registry }, vaultId).vaults;
       await persistRegistry(registry);
       set({ registry });
@@ -506,8 +725,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       const id = get().vaultId;
       return id ? aiEngines.get(id) : undefined;
     },
-    graphSimilarPairs: (vaultIds) =>
-      vaultIds.flatMap((id) => embeddingEngines.get(id)?.similarPairs() ?? []),
+    graphSimilarPairs: (vaultIds) => [
+      ...vaultIds.flatMap((id) => embeddingEngines.get(id)?.similarPairs() ?? []),
+      // Cross-vault ai-similar edges (S24) render only when BOTH endpoints are in the selected set.
+      ...crossVaultEngine.pairs(vaultIds),
+    ],
     getActiveOntologyEngine: () => {
       const id = get().vaultId;
       return id ? ontologyEngines.get(id) : undefined;
@@ -519,6 +741,57 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         .filter((v) => v.topics.length > 0),
     async organizeActiveVault(opts) {
       return get().getActiveOntologyEngine()?.organizeVault(opts);
+    },
+
+    // ── Cloud tier (pass 9) ────────────────────────────────────────────────────────
+    async refreshAnthropicKeyPresence() {
+      try {
+        set({ anthropicKeyPresent: await kcHas() });
+      } catch {
+        set({ anthropicKeyPresent: false });
+      }
+    },
+    async setAnthropicApiKey(key) {
+      await kcSet(key);
+      set({ anthropicKeyPresent: true });
+    },
+    async clearAnthropicApiKey() {
+      await kcClear();
+      set({ anthropicKeyPresent: false });
+    },
+    async testAnthropicKey() {
+      try {
+        return await anthropicTransport.testKey();
+      } catch (err) {
+        return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      }
+    },
+    spendRemaining: () => spendLedger.remaining(),
+    spendCap: () => spendLedger.monthlyCap(),
+    async setSpendCap(usd) {
+      await ensureAppStores();
+      await spendLedger.setMonthlyCap(usd);
+      set((s) => ({ revision: s.revision + 1 }));
+    },
+    spendRuns: () => spendLedger.allRuns(),
+    async planDeepOrganize() {
+      await ensureAppStores();
+      return buildDeepOrganizeJob().plan();
+    },
+    async runDeepOrganize(plan, onProgress) {
+      await ensureAppStores();
+      const outcome = await buildDeepOrganizeJob(onProgress).run(plan);
+      set((s) => ({ revision: s.revision + 1 }));
+      return { notes: outcome.applied.notes, themes: outcome.applied.themes, costUsd: outcome.actualCostUsd, lost: outcome.lost };
+    },
+    async analyzeTopic(vaultId, topicId, topicName) {
+      await ensureAppStores();
+      const ontology = ontologyEngines.get(vaultId);
+      if (!ontology) throw new Error('vault not open');
+      const insights = new DeepInsights({ transport: anthropicTransport, ledger: spendLedger, model: DEFAULT_DEEP_MODEL });
+      const result = await insights.analyze(topicName, ontology.insightMembers(topicId));
+      set((s) => ({ revision: s.revision + 1 }));
+      return result;
     },
 
     aiSuggestionsFor(relPath) {
@@ -732,4 +1005,16 @@ void (async () => {
   } catch {
     /* no Tauri runtime (e.g. a plain-browser dev preview) — registry stays empty */
   }
+  // Cloud tier (pass 9): reflect key presence + resume any batch left non-terminal by a prior
+  // session (S27 durability). Both swallow the "no Tauri runtime" rejection in a dev preview.
+  void useVaultStore.getState().refreshAnthropicKeyPresence();
+  void (async () => {
+    try {
+      await ensureAppStores();
+      await buildDeepOrganizeJob().resume();
+      useVaultStore.setState((s) => ({ revision: s.revision + 1 }));
+    } catch {
+      /* no runtime / no pending batches */
+    }
+  })();
 })();

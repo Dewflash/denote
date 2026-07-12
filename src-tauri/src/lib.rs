@@ -4,6 +4,7 @@
 mod containment;
 mod embeddings;
 mod fs_commands;
+mod keychain;
 mod sidecar;
 mod watcher;
 
@@ -42,9 +43,14 @@ pub fn run() {
             embeddings::embeddings_remove,
             embeddings::embeddings_remap,
             embeddings::embeddings_topk,
+            embeddings::embeddings_topk_vector,
             embeddings::embeddings_vectors,
             sidecar::sidecar_call,
             sidecar::sidecar_capabilities,
+            keychain::keychain_set,
+            keychain::keychain_get,
+            keychain::keychain_has,
+            keychain::keychain_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

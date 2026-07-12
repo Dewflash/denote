@@ -12,3 +12,19 @@ export {
   createTauriSidecarTransport,
   type SidecarTransport,
 } from './apple';
+export {
+  AnthropicAiClient,
+  DEFAULT_ANTHROPIC_MODELS,
+  ENRICH_SCHEMA,
+  safeJson,
+  createAnthropicTransport,
+  type AnthropicTransport,
+  type AnthropicMessageRequest,
+  type AnthropicMessageResponse,
+  type BatchRequestItem,
+  type BatchResultItem,
+  type BatchLifecycle,
+  type AnthropicModels,
+  type CacheableText,
+} from './anthropic';
+export * from './pricing';
