@@ -371,11 +371,20 @@ the registry).
 
 - EVERY Anthropic-backend call (deep-organize batches AND on-demand insights) records to
   `spend.json` and respects the monthly cap — there is no uncapped path to the paid backend.
-- Batch jobs persist `{batchId, submittedAt, estimatedCost, custom_id manifest}` BEFORE
-  submission. Batches take up to 24h; the app must resume polling on next launch for any
-  non-terminal persisted batch and reconcile actual usage into the ledger. A batch whose
-  results are fetched is marked terminal; unfetched-but-expired batches are logged as losses
-  (visible in the spend UI) — money must never disappear silently.
+  Consequently (codified at checkpoint D, approving the stricter pass-09 reading): the paid
+  backend is NOT offerable as a per-task routing option in Settings unless that task's call
+  path gates on the ledger first; until then it is reachable only via the capped
+  deep-organize and insights flows.
+- Batch durability is **stage-before-submit** (amended at checkpoint D, 2026-07-12 — the
+  original "persist batchId before submission" was impossible as written since the API
+  assigns the id): BEFORE calling createBatch, persist a `submitting` staging record
+  (manifest + estimate) AND reserve the estimate in the ledger; on submit success, swap in
+  the real batchId and set `submitted`; on submit failure, unwind both completely (no charge
+  existed). A `submitting` record found at launch is a crash leftover whose outcome is
+  unknowable — mark batch and spend `lost` (estimate stays counted against the cap,
+  visible). Batches take up to 24h; resume polling on next launch for any non-terminal
+  batch and reconcile actuals; unfetched-but-expired batches are logged as losses. Money
+  must never disappear silently.
 - Local estimate (chars/3.5) is used for corpus trimming; `count_tokens` verifies the final
   assembled batch before submission (free endpoint; still respects the 1.2× margin, S19).
 - Corpus assembly excludes localOnly vaults entirely (D18) — enforced in the assembler, not

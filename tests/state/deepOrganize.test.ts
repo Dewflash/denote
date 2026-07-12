@@ -212,3 +212,58 @@ describe('budget gate error type', () => {
     expect(err.kind).toBe('budget-exceeded');
   });
 });
+
+// ── Architect checkpoint-D additions: the submit crash-window (stage-before-submit) ──────────
+
+describe('S27 crash-window hardening (architect checkpoint D)', () => {
+  it('a failed createBatch unwinds completely: no batch record, reserve dropped, cap untouched', async () => {
+    const ledger = new SpendLedger(memIO(), () => NOW);
+    await ledger.load();
+    const batches = new BatchStore(memIO());
+    await batches.load();
+    const t = transport([]);
+    (t.createBatch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('network down'));
+    const job = new DeepOrganizeJob({
+      transport: t,
+      ledger,
+      batches,
+      model: 'claude-opus-4-8',
+      vaults,
+      applyNoteResult: async () => {},
+      applyThemes: async () => {},
+      now: () => NOW,
+    });
+    const remainingBefore = ledger.remaining();
+    const plan = await job.plan();
+    await expect(job.run(plan)).rejects.toThrow('network down');
+    expect(batches.all()).toHaveLength(0);
+    expect(ledger.remaining()).toBe(remainingBefore);
+  });
+
+  it('a crash-leftover `submitting` record is marked lost on resume — money stays visible', async () => {
+    const ledger = new SpendLedger(memIO(), () => NOW);
+    await ledger.load();
+    const batches = new BatchStore(memIO());
+    await batches.load();
+    // Simulate the crash window: staged record + reserved estimate, no real batchId ever learned.
+    await batches.add({ batchId: 'submitting-123', submittedAt: new Date(NOW).toISOString(), estimatedCostUsd: 0.42, model: 'claude-opus-4-8', status: 'submitting', manifest: [] });
+    await ledger.record({ id: 'submitting-123', kind: 'deep-organize', model: 'claude-opus-4-8', at: new Date(NOW).toISOString(), inputTokens: 1000, outputTokens: 200, costUsd: 0.42, status: 'estimated' });
+    const t = transport([]);
+    const job = new DeepOrganizeJob({
+      transport: t,
+      ledger,
+      batches,
+      model: 'claude-opus-4-8',
+      vaults,
+      applyNoteResult: async () => {},
+      applyThemes: async () => {},
+      now: () => NOW,
+    });
+    const remainingBefore = ledger.remaining();
+    await job.resume();
+    expect(batches.get('submitting-123')?.status).toBe('lost');
+    // The reserved estimate is NOT refunded — it stays counted against the cap, visibly.
+    expect(ledger.remaining()).toBe(remainingBefore);
+    expect(t.retrieveBatch).not.toHaveBeenCalled(); // nothing pollable — we never got an id
+  });
+});

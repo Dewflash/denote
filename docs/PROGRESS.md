@@ -37,7 +37,7 @@ review verdict lands here.
 | A | 02 | Foundation: domain purity, S1 port vs reference script, parser fixtures quality, watcher echo/tagging (S8), fs containment (S22), move reconciliation (S9) | **done 2026-07-08 — PASS w/ 2 architect fixes** |
 | B | 06 | AI plumbing: R1 loop test legitimacy, takeover state machine (S10), dirty-buffer deferral + op-log undo (S23), annotation/rejection stores, router localOnly enforcement | **done 2026-07-10 — PASS w/ 2 architect-added tests** |
 | C | 08 | Flagship quality: canonicalization behavior vs EXPECTED.md, topic sprawl check on a real vault, folder profiles/misfit, `_topics` byte-stability + freeze | **done 2026-07-10 — PASS w/ 1 architect-added probe** |
-| D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | pending |
+| D | 09 | Money & privacy: budget gate is physically-uncrossable, batch durability (S27), spend reconciliation, localOnly in assembler AND router, Keychain handling | **done 2026-07-12 — PASS w/ 1 architect fix (crash window)** |
 | E | 11 | Release audit: full-repo sweep, derived-data deletion drill, conflict handling, private-repo default, EXPECTED.md + ACCEPTANCE.md end-to-end | pending |
 
 Unscheduled trigger: summon the architect immediately whenever anything sits in **Blocked**,
@@ -147,6 +147,39 @@ Review outcomes are logged under this table (date, verdict, corrective commands 
   default w/ session-scoped settings routing (persist = pass-10 nicety), SuggestedTopic
   parentName contract extension, hierarchy-recurrence-in-topic-store, misfits-in-topics.json
   all APPROVED. Cleared for pass 09 (Opus 4.8, high); checkpoint D follows it.
+
+- 2026-07-12 · **CHECKPOINT D (post-09)** · **verdict: PASS with 1 architect fix; all six
+  deviations APPROVED (two codified into SPECS).**
+  Verified: 430 TS (51 files) + 18 Rust green, lint/build green, S1 reference ALL GREEN.
+  **Money:** the hard budget gate is the only submission path (assertion + $0.01 block
+  test); insights share the SAME ledger with their own hard gate; no other code path reaches
+  the Anthropic transport (grep-verified). **Privacy:** localOnly excluded in the assembler
+  (with defense-in-depth assert + test) AND at the router (D18 recheck); crossVaultEngine
+  skips localOnly vaults. **Keychain:** security-framework, key read per call, never in
+  files/JS state; presence-only UI. **S24 carried-in directive fulfilled** (crossvault.json
+  app-side + cross-engine topK + two-gate + combined-graph-only, tested). Cloud output gets
+  no canonicalization bypass (applyEnrichResult shares the on-device path).
+  **Architect fix — submit crash window:** submission ran BEFORE the ledger reserve and
+  batch record were persisted; a crash in that window = a billable batch with no local
+  record and no reserved spend (silent money loss, the exact S27 pitfall). Fixed to
+  stage-before-submit: `submitting` staging record + reserve precede createBatch; success
+  swaps in the real batchId; failure unwinds both; a `submitting` leftover at launch is
+  marked LOST with its estimate still counted against the cap. Two tests added (failed
+  submit unwinds fully; crash leftover → lost, money visible, nothing polled). S27 amended
+  to codify (the original wording was impossible as written — API assigns the id).
+  **Deviation rulings:** paid-backend-not-per-task-routable APPROVED as the stricter correct
+  S27 reading — codified into S27; sdk/security-framework deps OK; model-tier UI picker
+  deferral OK (pass-10 nicety with routing-persist); rejection-memory at ingest-time OK
+  (net behavior identical, marginal token cost — acceptable); body-head summary proxy OK
+  (real cached-summary store noted as additive future work); per-vault theme materialization
+  + S25 visual merge APPROVED (correct under D14/D36 portability). **Owner still owes the
+  real-key end-to-end** (enter key in Settings → run a small deep-organize → verify estimate
+  → confirm → spend matches → set cap $0.01 → refusal), marked awaiting-owner.
+  **Handoff note:** passes 10–11 will be executed by a non-Claude model (GPT 5.5). The
+  contract is unchanged and executor-agnostic: read CLAUDE.md → DECISIONS → SPECS →
+  PROGRESS → the pass brief; SPECS is normative (D31); log deviations here; two DoD failures
+  = stop and summon the architect. Checkpoint E (final release audit, architect) follows
+  pass 11.
 
 ## Owner manual-testing findings (post-06) — NON-BLOCKING fix list — **DONE 2026-07-10** (folded into the pass-07 session)
 

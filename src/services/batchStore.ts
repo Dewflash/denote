@@ -24,7 +24,11 @@ export interface ManifestItem {
   vaultId: string;
 }
 
-export type PersistedBatchStatus = 'submitted' | 'reconciled' | 'expired';
+/** `submitting` = staged BEFORE the createBatch call (checkpoint-D fix: a crash between
+ *  submit-success and persistence must not orphan a billable batch — the staged record makes
+ *  the window observable). A `submitting` record found at launch becomes `lost`.
+ *  `lost` = outcome unknowable; its reserved estimate stays visible in the ledger. */
+export type PersistedBatchStatus = 'submitting' | 'submitted' | 'reconciled' | 'expired' | 'lost';
 
 export interface PersistedBatch {
   batchId: string;
@@ -68,6 +72,26 @@ export class BatchStore {
   /** Batches still needing a poll on launch (submitted, not yet terminal). */
   pending(): PersistedBatch[] {
     return this.batches.filter((b) => b.status === 'submitted');
+  }
+
+  /** Crash leftovers: staged before submission, never confirmed. Resolved to `lost` at launch. */
+  staleSubmitting(): PersistedBatch[] {
+    return this.batches.filter((b) => b.status === 'submitting');
+  }
+
+  /** Swap the provisional staging id for the real batchId returned by the API. */
+  async replaceId(oldId: string, newId: string): Promise<void> {
+    const b = this.get(oldId);
+    if (!b) return;
+    b.batchId = newId;
+    await this.persist();
+  }
+
+  /** Remove a staged record whose submission failed before any charge existed. */
+  async remove(batchId: string): Promise<void> {
+    const before = this.batches.length;
+    this.batches = this.batches.filter((b) => b.batchId !== batchId);
+    if (this.batches.length !== before) await this.persist();
   }
 
   get(batchId: string): PersistedBatch | undefined {

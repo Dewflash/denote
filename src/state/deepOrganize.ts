@@ -205,28 +205,51 @@ export class DeepOrganizeJob {
       maxTokens: item.maxTokens,
       jsonSchema: item.schema,
     }));
-    const { batchId } = await this.deps.transport.createBatch(requests);
-
-    // ── DURABILITY: persist batchId + manifest + reserve spend BEFORE the poll loop (S27) ────
+    // ── DURABILITY (S27, hardened at checkpoint D): stage the record + reserve spend BEFORE
+    // the createBatch call. Previously submit ran first, so a crash between submit-success and
+    // persistence left a billable batch with no local record and no reserved spend — money
+    // vanishing silently. The staged `submitting` record makes that window observable:
+    // resume() marks any leftover as `lost` and its estimate stays counted against the cap.
     const manifest: ManifestItem[] = plan.items.map((i) => ({ customId: i.customId, kind: i.kind, ref: i.ref, vaultId: i.vaultId }));
     const submittedAt = new Date(this.now()).toISOString();
-    await this.deps.batches.add({ batchId, submittedAt, estimatedCostUsd: plan.estimatedCostUsd, model: this.deps.model, status: 'submitted', manifest });
-    await this.deps.ledger.record({
-      id: batchId,
-      kind: 'deep-organize',
+    const stagingId = `submitting-${this.now()}`;
+    const runRecord = {
+      kind: 'deep-organize' as const,
       model: this.deps.model,
       at: submittedAt,
       inputTokens: plan.inputTokens,
       outputTokens: plan.outputTokens,
       costUsd: plan.estimatedCostUsd,
-      status: 'estimated',
-    });
+      status: 'estimated' as const,
+    };
+    await this.deps.batches.add({ batchId: stagingId, submittedAt, estimatedCostUsd: plan.estimatedCostUsd, model: this.deps.model, status: 'submitting', manifest });
+    await this.deps.ledger.record({ id: stagingId, ...runRecord });
+
+    let batchId: string;
+    try {
+      ({ batchId } = await this.deps.transport.createBatch(requests));
+    } catch (e) {
+      // Submission failed before any charge existed: unwind the stage completely (S27).
+      await this.deps.batches.remove(stagingId);
+      await this.deps.ledger.drop(stagingId);
+      throw e;
+    }
+    await this.deps.batches.replaceId(stagingId, batchId);
+    await this.deps.batches.setStatus(batchId, 'submitted');
+    await this.deps.ledger.drop(stagingId);
+    await this.deps.ledger.record({ id: batchId, ...runRecord });
 
     return this.pollAndApply(batchId);
   }
 
-  /** Resume any batch left non-terminal by a previous session (S27 launch reconciliation). */
+  /** Resume any batch left non-terminal by a previous session (S27 launch reconciliation).
+   *  Crash leftovers staged as `submitting` are unknowable (the API may or may not hold a
+   *  billable batch — we never got its id): mark batch + spend `lost`, visibly. */
   async resume(): Promise<DeepOrganizeOutcome[]> {
+    for (const stale of this.deps.batches.staleSubmitting()) {
+      await this.deps.batches.setStatus(stale.batchId, 'lost');
+      await this.deps.ledger.markLost(stale.batchId);
+    }
     const out: DeepOrganizeOutcome[] = [];
     for (const b of this.deps.batches.pending()) {
       try {
