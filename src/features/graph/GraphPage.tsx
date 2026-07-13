@@ -169,9 +169,9 @@ export function GraphPage() {
   // render itself.
   const registryRef = useRef(new Map<string, PositionedNode>());
   const [positioned, setPositioned] = useState<PositionedNode[]>([]);
-  const [notesIndexOpen, setNotesIndexOpen] = useState(() =>
-    typeof window === 'undefined' || window.innerWidth > 720,
-  );
+  // The map is the primary graph surface. Keep the addressable note list available, but do not
+  // spend the first 240px of a desktop graph on a second sidebar before the user asks for it.
+  const [notesIndexOpen, setNotesIndexOpen] = useState(false);
   useEffect(() => {
     setPositioned(reconcileNodePositions(registryRef.current, visibleGraph.nodes));
   }, [visibleGraph.nodes]);

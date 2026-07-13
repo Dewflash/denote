@@ -2,7 +2,7 @@
 // appearance, AI/cloud, graph, hotkeys, import, history, and sync controls.
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useUiStore, type ThemeMode, type UiDensity } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { pickFolder } from '../../services/dialogs';
@@ -870,7 +870,8 @@ function DataSection() {
   const repo = useVaultStore((s) => s.repo);
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
   const revision = useVaultStore((s) => s.revision);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessageText] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatusInfo | null>(null);
   const [remote, setRemote] = useState('');
   const [token, setToken] = useState('');
@@ -879,10 +880,62 @@ function DataSection() {
   const [pushConfirmation, setPushConfirmation] = useState<{ url: string; visibility: 'private' | 'public' | 'unknown' } | null>(null);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importingPath, setImportingPath] = useState<string | null>(null);
+  const [tokenBusy, setTokenBusy] = useState<'save' | 'remove' | null>(null);
   const autoSyncMinutes = useUiStore((s) => s.autoSyncMinutes);
   const setAutoSyncMinutes = useUiStore((s) => s.setAutoSyncMinutes);
   const activeVaultId = useVaultStore((s) => s.vaultId);
   const activeLocalOnly = useVaultStore((s) => s.registry.find((v) => v.id === activeVaultId)?.localOnly ?? false);
+
+  const setMessage = useCallback((next: string, isError = false): void => {
+    setMessageError(isError);
+    setMessageText(next);
+  }, []);
+
+  async function rebuildIndexes(): Promise<void> {
+    if (!repo || rebuilding) return;
+    setRebuilding(true);
+    try {
+      await repo.rebuildDerivedCaches();
+      setMessage('Rebuilt derived indexes from note files.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      setRebuilding(false);
+    }
+  }
+
+  async function saveToken(): Promise<void> {
+    const value = token.trim();
+    if (!value || tokenBusy) return;
+    setTokenBusy('save');
+    try {
+      await setGitHubToken(value);
+      setToken('');
+      setTokenPresent(true);
+      setMessage('GitHub token stored in Keychain.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      setTokenBusy(null);
+    }
+  }
+
+  async function removeToken(): Promise<void> {
+    if (!tokenPresent || tokenBusy) return;
+    setTokenBusy('remove');
+    try {
+      await clearGitHubToken();
+      setTokenPresent(false);
+      setMessage('GitHub token removed from Keychain.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      setTokenBusy(null);
+    }
+  }
 
   async function pushToOrigin(): Promise<void> {
     if (!root) return;
@@ -932,15 +985,22 @@ function DataSection() {
         setRemote(s.remoteUrl ?? '');
       })
       .catch(() => {
-        if (!cancelled) setGitStatus(null);
+        if (!cancelled) {
+          setGitStatus(null);
+          setMessage('Could not read vault history status.', true);
+        }
       });
-    void hasGitHubToken().then((present) => {
-      if (!cancelled) setTokenPresent(present);
-    });
+    void hasGitHubToken()
+      .then((present) => {
+        if (!cancelled) setTokenPresent(present);
+      })
+      .catch((err) => {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : String(err), true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [root, revision]);
+  }, [root, revision, setMessage]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -954,12 +1014,10 @@ function DataSection() {
         <button
           className="rounded px-3 py-1.5 text-sm"
           style={{ border: '1px solid var(--border)' }}
-          disabled={!repo}
-          onClick={() => {
-            void repo?.rebuildDerivedCaches().then(() => setMessage('Rebuilt derived indexes from note files.'));
-          }}
+          disabled={!repo || rebuilding}
+          onClick={() => void rebuildIndexes()}
         >
-          Rebuild indexes
+          {rebuilding ? 'Rebuilding…' : 'Rebuild indexes'}
         </button>
       </div>
 
@@ -974,9 +1032,10 @@ function DataSection() {
         <button
           className="rounded px-3 py-1.5 text-sm"
           style={{ border: '1px solid var(--border)' }}
-          disabled={!repo}
+          disabled={!repo || importing}
           onClick={() => {
-            if (!repo) return;
+            if (!repo || importing) return;
+            setImporting(true);
             void pickFolder('Import Markdown folder').then(async (folder) => {
               if (!folder) return;
               const plan = await planFolderImport(repo, folder);
@@ -993,11 +1052,11 @@ function DataSection() {
               }
               setImportReview(reviewItems);
               setMessage(`Imported ${imported}; skipped ${plan.exactSkipped} exact duplicates; ${reviewItems.length} incoming file${reviewItems.length === 1 ? '' : 's'} need review.`);
-              void repo.rebuildDerivedCaches();
-            }).catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+              await repo.rebuildDerivedCaches();
+            }).catch((err) => setMessage(err instanceof Error ? err.message : String(err), true)).finally(() => setImporting(false));
           }}
         >
-          Import folder...
+          {importing ? 'Importing…' : 'Import folder...'}
         </button>
         {importReview.length > 0 && (
           <div className="mt-3 flex flex-col gap-2">
@@ -1020,17 +1079,21 @@ function DataSection() {
                   <button
                     className="rounded px-2 py-1"
                     style={{ border: '1px solid var(--border)' }}
+                    disabled={importingPath === item.incoming.relPath}
                     onClick={() => {
+                      if (importingPath) return;
+                      setImportingPath(item.incoming.relPath);
                       void useVaultStore.getState().createNote(item.incoming.relPath, item.incoming.content)
                         .then(() => {
                           setImportReview((items) => items.filter((i) => i !== item));
                           setMessage(`Imported ${item.incoming.relPath}.`);
-                          void repo?.rebuildDerivedCaches();
+                          return repo?.rebuildDerivedCaches();
                         })
-                        .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                        .catch((err) => setMessage(err instanceof Error ? err.message : String(err), true))
+                        .finally(() => setImportingPath(null));
                     }}
                   >
-                    Import anyway
+                    {importingPath === item.incoming.relPath ? 'Importing…' : 'Import anyway'}
                   </button>
                   <button
                     style={{ color: 'var(--fg-muted)' }}
@@ -1068,7 +1131,7 @@ function DataSection() {
                   setGitStatus(s);
                   setMessage('History enabled for this vault.');
                 })
-                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err), true));
             }}
           >
             Enable history
@@ -1081,7 +1144,7 @@ function DataSection() {
               if (!root || !repo) return;
               void gitCommitAll(root, `Edited ${repo.listNotePaths().length} notes`)
                 .then((c) => setMessage(c ? `Recorded commit ${c.oid.slice(0, 8)}.` : 'No note changes to commit.'))
-                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err), true));
             }}
           >
             Record checkpoint
@@ -1123,7 +1186,7 @@ function DataSection() {
                   setGitStatus(s);
                   setMessage('Remote saved.');
                 })
-                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err), true));
             }}
           >
             Save remote
@@ -1141,24 +1204,18 @@ function DataSection() {
           <button
             className="rounded px-3 py-1 text-sm"
             style={{ border: '1px solid var(--border)' }}
-            disabled={!token.trim()}
-            onClick={() => {
-              void setGitHubToken(token.trim()).then(() => {
-                setToken('');
-                setTokenPresent(true);
-                setMessage('GitHub token stored in Keychain.');
-              });
-            }}
+            disabled={!token.trim() || tokenBusy !== null}
+            onClick={() => void saveToken()}
           >
-            Save token
+            {tokenBusy === 'save' ? 'Saving…' : 'Save token'}
           </button>
           <button
             className="rounded px-3 py-1 text-sm"
             style={{ color: 'var(--danger)' }}
-            disabled={!tokenPresent}
-            onClick={() => void clearGitHubToken().then(() => setTokenPresent(false))}
+            disabled={!tokenPresent || tokenBusy !== null}
+            onClick={() => void removeToken()}
           >
-            Remove
+            {tokenBusy === 'remove' ? 'Removing…' : 'Remove'}
           </button>
         </div>
         <div className="flex gap-2">
@@ -1177,14 +1234,14 @@ function DataSection() {
             onClick={() => {
               if (!root) return;
               void gitPullFastForward(root)
-                .then((result) => {
+                .then(async (result) => {
                   setGitStatus(result.status);
-                  void repo?.rebuildDerivedCaches();
+                  await repo?.rebuildDerivedCaches();
                   setMessage(result.conflicts.length > 0
                     ? `Remote changes were written as ${result.conflicts.length} conflict note${result.conflicts.length === 1 ? '' : 's'}; local notes were left untouched.`
                     : 'Pulled from origin.');
                 })
-                .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+                .catch((err) => setMessage(err instanceof Error ? err.message : String(err), true));
             }}
           >
             Pull
@@ -1210,7 +1267,7 @@ function DataSection() {
         </div>
       )}
 
-      {message && <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{message}</p>}
+      {message && <p role={messageError ? 'alert' : undefined} className="text-xs" style={{ color: messageError ? 'var(--danger)' : 'var(--fg-muted)' }}>{message}</p>}
 
       <Dialog.Root
         open={pushConfirmation !== null}

@@ -42,6 +42,11 @@ test('graph view keeps isolated notes discoverable', async ({ page }) => {
   await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-node-count', '8');
   await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-note-count', '4');
   const noteIndex = page.getByTestId('graph-notes-index');
+  await expect(noteIndex).toBeHidden();
+  const mapBox = await page.getByTestId('graph-canvas').boundingBox();
+  expect(mapBox).not.toBeNull();
+  expect(mapBox!.width).toBeGreaterThan(1000);
+  await page.getByRole('button', { name: 'Show note list' }).click();
   await expect(noteIndex).toBeVisible();
   await expect(noteIndex).toContainText('Notes in map');
   await expect(noteIndex.locator('[data-testid="graph-note-index-item"]')).toHaveCount(4);
@@ -86,6 +91,7 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   await expect(page.getByText(sparseCopy, { exact: true })).toBeHidden();
 
   await page.getByRole('button', { name: 'Reset view' }).click();
+  await page.getByRole('button', { name: 'Show note list' }).click();
   await page.getByTestId('graph-note-index-item').filter({ hasText: 'Miso Soup Recipe' }).click();
   await expect(page.getByTestId('graph-canvas')).toBeVisible();
   await expect(page.getByText("This note isn't connected to anything yet. Open it and type [[ to link it to another note.", { exact: true })).toBeVisible();

@@ -1016,6 +1016,16 @@ what is needed and why, and continues with the rest of the pass if independent.
   processes were stopped and a final process check was empty. Native screenshot capture and owner
   Safari/private-GitHub acceptance remain the external checks listed above.
 
+- 2026-07-13 · graph/sync usability follow-up · **made the graph map-first and hardened Data/Sync
+  actions.** The desktop graph no longer spends its first 240px on the note index; the full note
+  list remains available through `Show note list`, with the inspector still opening as an explicit
+  second surface. Rebuild, import, review-import, Keychain, history, remote, and pull failures now
+  surface visibly; long-running rebuild/import/token actions disable themselves and show progress,
+  and pull waits for derived-cache rebuild completion. Added browser coverage for the full-width
+  desktop map and the explicit note-list flow. **Verification:** 474 TypeScript tests / 60 files,
+  `pnpm lint`, `tsc --noEmit`, production build, Playwright smoke 6/6, and `git diff --check` are
+  green. Native screenshot capture and owner Tauri/Safari/private-GitHub checks remain external.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual
