@@ -86,6 +86,25 @@ describe('VaultAiEngine — enrichment + takeover', () => {
     ]);
   });
 
+  it('publishes resolvable AI link suggestions for the graph without editing markdown', async () => {
+    await backend.writeNote(root, 'Yen.md', '# Yen\nThe BOJ discussed interest rates and the yen.\n');
+    await backend.writeNote(root, 'Rates.md', '# Rates\nInterest rates and bond yields.\n');
+    const { repo, engine } = await open();
+    const before = await repo.readNote('Yen.md');
+
+    await engine.enrichNow('Yen.md', { linksOnly: true });
+
+    expect(engine.graphLinkSuggestions()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        relPath: 'Yen.md',
+        targetPath: 'Rates.md',
+        vaultId: repo.vaultId,
+        reason: expect.stringContaining('Interest Rates'),
+      }),
+    ]));
+    expect(await repo.readNote('Yen.md')).toBe(before);
+  });
+
   it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
     const unavailable = new CountingClient(new MockAiClient(), 'apple');
     unavailable.available = false;

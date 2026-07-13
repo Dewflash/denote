@@ -56,17 +56,25 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
+  const enrichActiveNote = useVaultStore((s) => s.enrichActiveNote);
+  const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
   const getOntology = useVaultStore((s) => s.getOpenOntologyEngine);
   const [topicAction, setTopicAction] = useState<{ mode: 'rename' | 'delete'; topicId: string; topicName: string } | null>(null);
   const [topicNameDraft, setTopicNameDraft] = useState('');
   const [topicActionError, setTopicActionError] = useState<string | null>(null);
+  const [linkScan, setLinkScan] = useState<{ nodeId: string | null; status: 'idle' | 'running' | 'done' }>({ nodeId: null, status: 'idle' });
+  const [linkScanError, setLinkScanError] = useState<{ nodeId: string; message: string } | null>(null);
 
   const node = graph.nodes.find((n) => n.id === selectedId);
   if (!node) return null;
 
+  const scanStatus = linkScan.nodeId === node.id ? linkScan.status : 'idle';
+  const scanError = linkScanError?.nodeId === node.id ? linkScanError.message : null;
+
   const relPath = relPathOf(node);
   const noteRepo = node.vaultId ? getOpenRepo(node.vaultId) : undefined;
+  const canFindRelated = node.type === 'note' && !!node.vaultId && !!noteRepo;
   const parsed = relPath ? noteRepo?.getParsed(relPath) : undefined;
   const folder = relPath ? folderOf(relPath) || '(vault root)' : null;
 
@@ -114,6 +122,33 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
       setGraphViewOpen(false);
     })();
   };
+
+  const findRelatedNotes = () => {
+    if (!relPath || !node.vaultId || !canFindRelated || scanStatus === 'running') return;
+    void (async () => {
+      setLinkScan({ nodeId: node.id, status: 'running' });
+      setLinkScanError(null);
+      try {
+        // The inspector can target a background vault. Make that vault/note active for the
+        // existing bounded enrichment path, but keep graph mode visible while the result lands.
+        await switchVault(node.vaultId!);
+        await setActiveNote(relPath, { reveal: false });
+        await enrichActiveNote({ linksOnly: true });
+        setLinkScan({ nodeId: node.id, status: 'done' });
+      } catch (error) {
+        setLinkScan({ nodeId: node.id, status: 'idle' });
+        setLinkScanError({ nodeId: node.id, message: error instanceof Error ? error.message : String(error) });
+      }
+    })();
+  };
+
+  const backendLabel = enrichBackend === 'apple'
+    ? 'on-device AI'
+    : enrichBackend === 'anthropic'
+      ? 'Cloud AI'
+      : enrichBackend === 'mock'
+        ? 'the test backend preview'
+        : enrichBackend;
 
   return (
     <div
@@ -230,14 +265,33 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
         </button>
       )}
 
-      {node.type === 'note' && relPath && connections.length > 0 && (
-        <button
-          className="rounded px-2 py-1 text-xs"
-          style={{ border: '1px solid var(--border)', width: 'fit-content' }}
-          onClick={openNote}
-        >
-          Open note
-        </button>
+      {canFindRelated && relPath && (
+        <div className="flex flex-col items-start gap-2">
+          {connections.length > 0 && (
+            <button
+              className="rounded px-2 py-1 text-xs"
+              style={{ border: '1px solid var(--border)', width: 'fit-content' }}
+              onClick={openNote}
+            >
+              Open note
+            </button>
+          )}
+          <button
+            type="button"
+            className="rounded px-2 py-1 text-xs"
+            style={{ border: '1px solid var(--accent)', color: 'var(--accent)', width: 'fit-content' }}
+            disabled={scanStatus === 'running'}
+            onClick={findRelatedNotes}
+          >
+            {scanStatus === 'running' ? 'Finding related notes…' : connections.length > 0 ? 'Suggest more links' : 'Find related notes'}
+          </button>
+          <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+            {scanStatus === 'done'
+              ? 'AI scan finished. Any suggestions now appear as dashed edges; nothing was written.'
+              : `Ask ${backendLabel} to compare this note with nearby notes. Nothing is written until you accept a suggestion.`}
+          </span>
+          {scanError && <span role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{scanError}</span>}
+        </div>
       )}
 
       <div className="text-xs" style={{ color: 'var(--fg-muted)' }}>

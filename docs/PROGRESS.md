@@ -990,6 +990,19 @@ what is needed and why, and continues with the rest of the pass if independent.
   remains unavailable in this headless session, and owner Tauri/Safari/private-GitHub checks remain
   the external acceptance items listed above.
 
+- 2026-07-13 · UI action and AI graph follow-up · **made note/folder actions fail visibly and made
+  in-map linking actionable.** Rename, open, move, delete, and drag-to-folder now share one visible
+  error surface instead of dropping rejected async operations; top-level folder creation keeps its
+  validation beside the form, and a typed `.md` suffix is normalized during rename. Selecting an
+  isolated real note in the graph now offers `Find related notes` / `Suggest more links`, runs the
+  existing bounded `linksOnly` enrichment path without leaving graph mode, and explains that dashed
+  edges are suggestions until accepted. Added an integration assertion that a resolvable AI link
+  reaches graph data while the note body remains unchanged. **Deviation:** no new automatic
+  note-body writes were introduced; AI suggestions remain explicit accept actions per D10/D22.
+  **Verification:** 470 TypeScript tests / 60 files, `pnpm lint`, `tsc --noEmit`, production build,
+  Playwright smoke 6/6, and `git diff --check` green. Native Tauri/WKWebView owner interaction and
+  native screenshot capture remain external in this headless session.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

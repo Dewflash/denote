@@ -35,16 +35,19 @@ function NoteRow({
   isRenaming,
   onRequestRename,
   onRenameDone,
+  onOpen,
+  onRename,
   onContextMenu,
 }: {
   node: TreeNode;
   isRenaming: boolean;
   onRequestRename: (path: string) => void;
   onRenameDone: () => void;
+  onOpen: (path: string) => void;
+  onRename: (oldRel: string, newRel: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, displayName: string) => void;
 }) {
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
-  const renameNote = useVaultStore((s) => s.renameNote);
 
   const isActive = activeNotePath === node.path;
   const isAsset = node.kind === 'asset';
@@ -55,11 +58,11 @@ function NoteRow({
   // is uncontrolled (defaultValue) — the committed value is read from the DOM on blur/Enter.
   const commitRename = (value: string): void => {
     onRenameDone();
-    const newBase = value.trim();
+    const newBase = value.trim().replace(/\.md$/i, '');
     if (!newBase || newBase === displayName) return;
     const dir = node.path.includes('/') ? node.path.slice(0, node.path.lastIndexOf('/')) : '';
     const newRel = `${dir ? `${dir}/` : ''}${newBase}.md`;
-    void renameNote(node.path, newRel);
+    onRename(node.path, newRel);
   };
 
   return (
@@ -76,13 +79,13 @@ function NoteRow({
       tabIndex={isAsset || isRenaming ? undefined : 0}
       aria-current={isActive ? 'page' : undefined}
       onClick={() => {
-        if (!isAsset) void useVaultStore.getState().setActiveNote(node.path);
+        if (!isAsset) onOpen(node.path);
       }}
       onKeyDown={(e) => {
         if (isAsset || e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          void useVaultStore.getState().setActiveNote(node.path);
+          onOpen(node.path);
         }
       }}
       onDoubleClick={() => {
@@ -126,6 +129,8 @@ function FolderRow({
   renameTarget,
   onRequestRename,
   onRenameDone,
+  onOpen,
+  onRename,
   onContextMenu,
   onDropNote,
 }: {
@@ -134,6 +139,8 @@ function FolderRow({
   renameTarget: string | null;
   onRequestRename: (path: string) => void;
   onRenameDone: () => void;
+  onOpen: (path: string) => void;
+  onRename: (oldRel: string, newRel: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, displayName: string) => void;
   onDropNote: TreeActions['onDropNote'];
 }) {
@@ -195,6 +202,8 @@ function FolderRow({
             renameTarget={renameTarget}
             onRequestRename={onRequestRename}
             onRenameDone={onRenameDone}
+            onOpen={onOpen}
+            onRename={onRename}
             onContextMenu={onContextMenu}
             onDropNote={onDropNote}
           />
@@ -210,6 +219,8 @@ function TreeChildren({
   renameTarget,
   onRequestRename,
   onRenameDone,
+  onOpen,
+  onRename,
   onContextMenu,
   onDropNote,
 }: {
@@ -218,6 +229,8 @@ function TreeChildren({
   renameTarget: string | null;
   onRequestRename: (path: string) => void;
   onRenameDone: () => void;
+  onOpen: (path: string) => void;
+  onRename: (oldRel: string, newRel: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, displayName: string) => void;
   onDropNote: TreeActions['onDropNote'];
 }) {
@@ -232,6 +245,8 @@ function TreeChildren({
             renameTarget={renameTarget}
             onRequestRename={onRequestRename}
             onRenameDone={onRenameDone}
+            onOpen={onOpen}
+            onRename={onRename}
             onContextMenu={onContextMenu}
             onDropNote={onDropNote}
           />
@@ -242,6 +257,8 @@ function TreeChildren({
             isRenaming={renameTarget === n.path}
             onRequestRename={onRequestRename}
             onRenameDone={onRenameDone}
+            onOpen={onOpen}
+            onRename={onRename}
             onContextMenu={onContextMenu}
           />
         ),
@@ -256,7 +273,10 @@ function NoteContextMenu({
   menu,
   folders,
   onClose,
+  onOpen,
   onRename,
+  onMove,
+  onDelete,
   onSetMode,
   onHistory,
   onCreateFolderAndMove,
@@ -264,7 +284,10 @@ function NoteContextMenu({
   menu: MenuState;
   folders: string[];
   onClose: () => void;
+  onOpen: (path: string) => void;
   onRename: (path: string) => void;
+  onMove: (oldRel: string, newRel: string) => void;
+  onDelete: (path: string) => void;
   onSetMode: (mode: MenuState['mode']) => void;
   onHistory: (path: string) => void;
   onCreateFolderAndMove: (notePath: string, baseName: string, currentDir: string) => void;
@@ -293,7 +316,7 @@ function NoteContextMenu({
             <button
               className={MENU_ITEM_CLASS}
               onClick={() => {
-                void useVaultStore.getState().setActiveNote(menu.path);
+                onOpen(menu.path);
                 onClose();
               }}
             >
@@ -332,7 +355,7 @@ function NoteContextMenu({
                 className={MENU_ITEM_CLASS}
                 onClick={() => {
                   const newRel = `${folder ? `${folder}/` : ''}${baseName}`;
-                  void useVaultStore.getState().moveNote(menu.path, newRel);
+                  onMove(menu.path, newRel);
                   onClose();
                 }}
               >
@@ -361,7 +384,7 @@ function NoteContextMenu({
               className={MENU_ITEM_CLASS}
               style={{ color: 'var(--danger)' }}
               onClick={() => {
-                void useVaultStore.getState().deleteNote(menu.path);
+                onDelete(menu.path);
                 onClose();
               }}
             >
@@ -388,6 +411,16 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
   const [folderMoveDraft, setFolderMoveDraft] = useState<FolderMoveDraft | null>(null);
   const [folderName, setFolderName] = useState('New folder');
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function runAction(action: () => Promise<void>): Promise<void> {
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   function rememberFolder(path: string): void {
     setSessionFolders((current) => current.includes(path) ? current : [...current, path]);
@@ -429,7 +462,7 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
     const baseName = notePath.split('/').pop() ?? notePath;
     const nextPath = `${folder ? `${folder}/` : ''}${baseName}`;
     if (nextPath === notePath) return;
-    void useVaultStore.getState().moveNote(notePath, nextPath);
+    void runAction(() => useVaultStore.getState().moveNote(notePath, nextPath));
   }
 
   const tree = useMemo(() => {
@@ -495,6 +528,8 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
         renameTarget={renameTarget}
         onRequestRename={(path) => setRenameTarget(path)}
         onRenameDone={() => setRenameTarget(null)}
+        onOpen={(path) => { void runAction(() => useVaultStore.getState().setActiveNote(path)); }}
+        onRename={(oldRel, newRel) => { void runAction(() => useVaultStore.getState().renameNote(oldRel, newRel)); }}
         onContextMenu={(e, path, displayName) =>
           setMenu({ x: e.clientX, y: e.clientY, path, displayName, mode: 'main' })
         }
@@ -519,8 +554,16 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
             setMenu(null);
             setRenameTarget(path);
           }}
+          onOpen={(path) => { void runAction(() => useVaultStore.getState().setActiveNote(path)); }}
+          onMove={(oldRel, newRel) => { void runAction(() => useVaultStore.getState().moveNote(oldRel, newRel)); }}
+          onDelete={(path) => { void runAction(() => useVaultStore.getState().deleteNote(path)); }}
           onSetMode={(mode) => setMenu((m) => (m ? { ...m, mode } : m))}
         />
+      )}
+      {actionError && (
+        <button type="button" role="alert" className="mt-1 rounded px-2 py-1 text-left text-xs" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }} onClick={() => setActionError(null)}>
+          {actionError}
+        </button>
       )}
       <NoteHistoryDialog open={historyPath !== null} onOpenChange={(open) => { if (!open) setHistoryPath(null); }} relPath={historyPath} />
       <Dialog.Root

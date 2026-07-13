@@ -128,6 +128,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
   const fgRef = useRef<ForceGraphMethods<PositionedNode, GraphEdge> | undefined>(undefined);
   const fittedGraphKeyRef = useRef<string | null>(null);
   const cameraDirtyRef = useRef(false);
+  const layoutSettledRef = useRef(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const labelLayoutsRef = useRef(new Map<string, LabelLayout>());
   const positionedRef = useRef(positioned);
@@ -178,21 +179,16 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
   }, [containerRef]);
 
   useEffect(() => {
-    if (positioned.length === 0) {
-      fittedGraphKeyRef.current = null;
-      return;
-    }
-    cameraDirtyRef.current = false;
     fittedGraphKeyRef.current = null;
-    const frame = requestAnimationFrame(() => {
-      const graph = fgRef.current;
-      graph?.zoomToFit(400, fitPadding);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [fitPadding, graphKey, positioned.length]);
+    layoutSettledRef.current = false;
+    if (positioned.length === 0) cameraDirtyRef.current = false;
+  }, [graphKey, positioned.length]);
 
   useEffect(() => {
-    if (positioned.length === 0 || cameraDirtyRef.current) return;
+    // A resize before the first simulation stop must not fit the tiny seed ring and zoom the
+    // opening view into clipped circles. The engine-stop handler owns the initial fit; this path
+    // only keeps an already-settled map framed after a real viewport resize.
+    if (positioned.length === 0 || !layoutSettledRef.current || cameraDirtyRef.current) return;
     const frame = requestAnimationFrame(() => {
       if (!cameraDirtyRef.current) fgRef.current?.zoomToFit(250, fitPadding);
     });
@@ -280,6 +276,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           // smaller. Fit once per node set after the force simulation settles so isolated notes
           // cannot end up outside the initial camera, and do not steal the user's zoom on drag.
           if (positioned.length === 0 || cameraDirtyRef.current || fittedGraphKeyRef.current === graphKey) return;
+          layoutSettledRef.current = true;
           fittedGraphKeyRef.current = graphKey;
           fgRef.current?.zoomToFit(300, fitPadding);
         }}

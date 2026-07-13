@@ -66,6 +66,7 @@ export function ExplorerPanel() {
   const [dropMessage, setDropMessage] = useState<string | null>(null);
   const [folderDraftOpen, setFolderDraftOpen] = useState(false);
   const [folderName, setFolderName] = useState('');
+  const [folderError, setFolderError] = useState<string | null>(null);
   const [createdFolders, setCreatedFolders] = useState<string[]>([]);
 
   async function handleDrop(files: FileList | null): Promise<void> {
@@ -83,8 +84,12 @@ export function ExplorerPanel() {
 
   async function submitFolder(): Promise<void> {
     const name = folderName.trim();
-    if (!name) return;
+    if (!name) {
+      setFolderError('Enter a folder name.');
+      return;
+    }
     const path = `${selectedFolder ? `${selectedFolder}/` : ''}${name}`;
+    setFolderError(null);
     try {
       const createdPath = await createFolder(path);
       setCreatedFolders((current) => current.includes(createdPath) ? current : [...current, createdPath]);
@@ -92,7 +97,7 @@ export function ExplorerPanel() {
       setFolderName('');
       setFolderDraftOpen(false);
     } catch (error) {
-      setDropMessage(error instanceof Error ? error.message : String(error));
+      setFolderError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -173,20 +178,23 @@ export function ExplorerPanel() {
       </div>
       <div className="flex flex-col gap-2 p-2">
         {folderDraftOpen && (
-          <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); void submitFolder(); }}>
-            <input
-              autoFocus
-              aria-label="New folder name"
-              className="min-w-0 flex-1 rounded px-2 py-1 text-xs"
-              style={{ border: '1px solid var(--accent)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
-              placeholder="Folder name"
-              value={folderName}
-              onChange={(event) => setFolderName(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Escape') { setFolderDraftOpen(false); setFolderName(''); } }}
-            />
-            <button type="submit" className="rounded px-1.5 py-1 text-xs" style={{ border: '1px solid var(--border)' }}>Create</button>
-            <button type="button" className="rounded px-1.5 py-1 text-xs" style={{ color: 'var(--fg-muted)' }} onClick={() => { setFolderDraftOpen(false); setFolderName(''); }}>Cancel</button>
-          </form>
+          <div className="flex flex-col gap-1">
+            <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); void submitFolder(); }}>
+              <input
+                autoFocus
+                aria-label="New folder name"
+                className="min-w-0 flex-1 rounded px-2 py-1 text-xs"
+                style={{ border: '1px solid var(--accent)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+                placeholder="Folder name"
+                value={folderName}
+                onChange={(event) => { setFolderName(event.target.value); setFolderError(null); }}
+                onKeyDown={(event) => { if (event.key === 'Escape') { setFolderDraftOpen(false); setFolderName(''); setFolderError(null); } }}
+              />
+              <button type="submit" className="rounded px-1.5 py-1 text-xs" style={{ border: '1px solid var(--border)' }}>Create</button>
+              <button type="button" className="rounded px-1.5 py-1 text-xs" style={{ color: 'var(--fg-muted)' }} onClick={() => { setFolderDraftOpen(false); setFolderName(''); setFolderError(null); }}>Cancel</button>
+            </form>
+            {folderError && <div role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{folderError}</div>}
+          </div>
         )}
         {dropActive && <div className="rounded p-2 text-xs" style={{ border: '1px dashed var(--accent)', color: 'var(--accent)' }}>Drop notes to import</div>}
         {dropMessage && <button type="button" className="text-left text-xs" style={{ color: 'var(--fg-muted)' }} onClick={() => setDropMessage(null)}>{dropMessage}</button>}
