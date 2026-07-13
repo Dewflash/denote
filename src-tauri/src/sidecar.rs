@@ -54,6 +54,11 @@ struct Process {
     next_id: u64,
 }
 
+enum CallError {
+    Transport(String),
+    Backend(String),
+}
+
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -123,7 +128,8 @@ impl Supervisor {
     /// Record a restart; disable the backend if the budget is blown (S13).
     fn note_restart(&mut self) {
         let now = Instant::now();
-        self.restarts.retain(|t| now.duration_since(*t) < RESTART_WINDOW);
+        self.restarts
+            .retain(|t| now.duration_since(*t) < RESTART_WINDOW);
         self.restarts.push(now);
         if self.restarts.len() > MAX_RESTARTS_PER_WINDOW {
             self.disabled_reason = Some(
@@ -151,17 +157,23 @@ impl Supervisor {
             self.spawn()?;
         }
 
-        let result = self.call_inner(method, params);
-        if result.is_err() {
-            // Transport-level failure (write/read/timeout): tear down and count a restart.
-            self.proc = None;
-            self.note_restart();
+        match self.call_inner(method, params) {
+            Ok(value) => Ok(value),
+            Err(CallError::Backend(reason)) => Err(reason),
+            Err(CallError::Transport(reason)) => {
+                // Transport-level failure (write/read/timeout): tear down and count a restart.
+                self.proc = None;
+                self.note_restart();
+                Err(reason)
+            }
         }
-        result
     }
 
-    fn call_inner(&mut self, method: &str, params: Value) -> Result<Value, String> {
-        let proc = self.proc.as_mut().ok_or("sidecar not running")?;
+    fn call_inner(&mut self, method: &str, params: Value) -> Result<Value, CallError> {
+        let proc = self
+            .proc
+            .as_mut()
+            .ok_or_else(|| CallError::Transport("sidecar not running".to_string()))?;
         let id = proc.next_id;
         proc.next_id += 1;
 
@@ -170,18 +182,21 @@ impl Supervisor {
             method: method.to_string(),
             params,
         };
-        let line = serde_json::to_string(&req).map_err(|e| format!("encode request: {e}"))?;
+        let line = serde_json::to_string(&req)
+            .map_err(|e| CallError::Transport(format!("encode request: {e}")))?;
         proc.stdin
             .write_all(line.as_bytes())
             .and_then(|_| proc.stdin.write_all(b"\n"))
             .and_then(|_| proc.stdin.flush())
-            .map_err(|e| format!("sidecar write failed: {e}"))?;
+            .map_err(|e| CallError::Transport(format!("sidecar write failed: {e}")))?;
 
         let deadline = Instant::now() + CALL_TIMEOUT;
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err("sidecar call timed out (30s)".to_string());
+                return Err(CallError::Transport(
+                    "sidecar call timed out (30s)".to_string(),
+                ));
             }
             match proc.lines.recv_timeout(remaining) {
                 Ok(raw) => {
@@ -198,15 +213,19 @@ impl Supervisor {
                             .get("message")
                             .and_then(Value::as_str)
                             .unwrap_or("sidecar error");
-                        return Err(m.to_string());
+                        return Err(CallError::Backend(m.to_string()));
                     }
                     return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    return Err("sidecar call timed out (30s)".to_string());
+                    return Err(CallError::Transport(
+                        "sidecar call timed out (30s)".to_string(),
+                    ));
                 }
                 Err(RecvTimeoutError::Disconnected) => {
-                    return Err("sidecar closed unexpectedly".to_string());
+                    return Err(CallError::Transport(
+                        "sidecar closed unexpectedly".to_string(),
+                    ));
                 }
             }
         }

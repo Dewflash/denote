@@ -815,6 +815,41 @@ what is needed and why, and continues with the rest of the pass if independent.
   production build, Playwright e2e 6/6, and `git diff --check` green. The e2e smoke Settings
   screen remains a fixture-only shell path; native Tauri Settings still requires owner acceptance.
 
+- 2026-07-13 · graph/AI + vault persistence audit · **the missing relationship path was real and
+  is now fixed.** AI takeover suggestions were persisted in `ai:` frontmatter but `graphBuilder`
+  ignored that namespace, so accepted/provisional AI links and tags could never appear on the map.
+  The graph now renders them as explicitly AI-suggested dashed relationships with provenance, and
+  the graph keeps note-to-note edges limited to authored wikilinks, accepted provisional AI links,
+  and the vetted S15 similarity pipeline; no heuristic shared-word edges are fabricated. Body
+  wikilinks remain the user's durable authored links.
+  `Settings → AI & Models` now reports Apple Foundation Models availability and offers Retry; the
+  suggestions panel explains when the browser/native bridge is unavailable instead of implying
+  that an empty queue means success. Direct sidecar capability probe on this Mac reports
+  `apple-fm@1` and `available: true` before generation. A follow-up generation probe exposed a
+  Model Manager 1008 runtime failure; the continuation audit below fixes the false-positive health
+  state.
+  Empty folders are now indexed by the Repository and returned by the native recursive walker, so
+  they remain visible and usable after reopening a vault. **Verification:** focused graph, queue,
+  embedding, and repository tests pass; TypeScript type-check passes; Rust library tests 19/19; browser
+  audit shows all four fixture notes and titled connected nodes at desktop and 320px with no
+  console errors. The Apple embedding model is still lazy/native-only and may take time to obtain
+  on first use; that limitation is now visible rather than silently presented as a working AI map.
+
+- 2026-07-13 · continuation runtime audit · **two substantive defects fixed.** Removed the
+  heuristic shared-word note-to-note graph layer because it violated D6/S15's no-fabricated-edge
+  contract; the map now links notes only through authored wikilinks, hub structure, provisional AI
+  structure, or the vetted embedding + model similarity pipeline. Similarity now preflights backend
+  capabilities once per sync, stops on the first unavailable-model response, uses bounded retries,
+  and resumes unresolved work after Settings Retry or a routing change. Settings Retry now wakes
+  parked enrichment jobs too. The suggestions panel shows an in-flight state and an actionable
+  error instead of swallowing a failed AI request. The Apple sidecar classifies Model Manager 1008
+  as `ai-unavailable`, exposes the reason on the next capability check, and the Rust supervisor no
+  longer restarts the process for a model response error. **Native probe:** generation failure is
+  now reported as `ai-unavailable`, followed by `capabilities.available=false`; the failure is
+  honest on this Mac because the Apple model is not currently ready. **Verification:** 452
+  TypeScript tests / 57 files, lint, type-check, production build, Playwright e2e 6/6, Rust 19/19,
+  Swift sidecar build, S1 hash reference, and `git diff --check` green.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with

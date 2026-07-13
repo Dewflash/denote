@@ -93,6 +93,12 @@ export interface AiConsentPrompt {
   count: number;
 }
 
+export interface AppleAiHealth {
+  status: 'unknown' | 'available' | 'unavailable';
+  reason?: string;
+  modelVersion?: string;
+}
+
 interface VaultStoreState {
   // ── the ACTIVE vault ────────────────────────────────────────────────────
   root: string | null;
@@ -117,6 +123,8 @@ interface VaultStoreState {
   relocateError: RelocateError | null;
   /** S28 consent prompt, when bulk takeover is paused awaiting the owner's answer. */
   aiConsentPrompt: AiConsentPrompt | null;
+  /** Live Apple Foundation Models capability, surfaced so queued work is explainable. */
+  appleAiHealth: AppleAiHealth;
 
   openVaultAt: (root: string) => Promise<void>;
   createVaultAt: (root: string) => Promise<void>;
@@ -191,6 +199,7 @@ interface VaultStoreState {
   /** Re-route a task to a backend (Settings → AI). Session-scoped; resets to APPLE_ROUTING on
    *  launch (the sensible default). */
   setTaskRouting: (task: string, backend: string) => void;
+  refreshAppleAiStatus: (retry?: boolean) => Promise<void>;
 
   /** Opens a note in the editor. By default this also REVEALS the editor (closes the graph /
    *  today overlays) so a click on any note affordance is always visibly answered; pass
@@ -630,6 +639,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     openVaultIds: [],
     relocateError: null,
     aiConsentPrompt: null,
+    appleAiHealth: { status: 'unknown' },
     anthropicKeyPresent: false,
 
     openVaultAt: (root) => openAndActivate(root, 'open'),
@@ -818,6 +828,36 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         return { ok: false, detail: err instanceof Error ? err.message : String(err) };
       }
     },
+    async refreshAppleAiStatus(retry = false) {
+      const client = sharedRouter.getClient('apple');
+      if (!client) {
+        set({ appleAiHealth: { status: 'unavailable', reason: 'Apple backend is not registered.' } });
+        return;
+      }
+      try {
+        const capabilities = retry && client instanceof AppleAiClient
+          ? await client.retry()
+          : await client.capabilities();
+        set({
+          appleAiHealth: {
+            status: capabilities.available ? 'available' : 'unavailable',
+            reason: capabilities.reason,
+            modelVersion: capabilities.modelVersion,
+          },
+        });
+      } catch (err) {
+        set({
+          appleAiHealth: {
+            status: 'unavailable',
+            reason: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+      if (retry) {
+        for (const engine of aiEngines.values()) engine.retry();
+        for (const engine of embeddingEngines.values()) engine.retry();
+      }
+    },
     spendRemaining: () => spendLedger.remaining(),
     spendCap: () => spendLedger.monthlyCap(),
     async setSpendCap(usd) {
@@ -867,7 +907,12 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       if (!engine || !s.activeNotePath) return;
       // Flush any unsaved edits first so enrichment sees the note the user actually wrote.
       if (s.buffer?.dirty) await s.flushAutosave();
-      await engine.enrichNow(s.activeNotePath, opts);
+      try {
+        await engine.enrichNow(s.activeNotePath, opts);
+      } catch (err) {
+        await get().refreshAppleAiStatus().catch(() => {});
+        throw err;
+      }
       set((cur) => ({ revision: cur.revision + 1 }));
     },
     async resolveAiConsent(choice) {
@@ -880,6 +925,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     aiRoutingTable: () => sharedRouter.getRouting() as Record<string, string>,
     setTaskRouting: (task, backend) => {
       sharedRouter.setTask(task as never, backend as never);
+      for (const engine of aiEngines.values()) engine.retry();
+      for (const engine of embeddingEngines.values()) engine.retry();
       set((s) => ({ revision: s.revision + 1 }));
     },
     async suggestForCapture(text) {
@@ -903,6 +950,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         return { title, summary, tags };
       } catch {
         // Backend unavailable / offline without model — capture still works, unassisted.
+        await get().refreshAppleAiStatus().catch(() => {});
         return { title: firstLine, summary: '', tags: [] };
       }
     },
@@ -1073,6 +1121,7 @@ void (async () => {
   // Cloud tier (pass 9): reflect key presence + resume any batch left non-terminal by a prior
   // session (S27 durability). Both swallow the "no Tauri runtime" rejection in a dev preview.
   void useVaultStore.getState().refreshAnthropicKeyPresence();
+  void useVaultStore.getState().refreshAppleAiStatus();
   void (async () => {
     try {
       await ensureAppStores();

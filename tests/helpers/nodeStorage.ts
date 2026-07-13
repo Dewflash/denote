@@ -105,6 +105,15 @@ async function walk(root: string, dir: string, out: DirEntry[]): Promise<void> {
     const relPath = toRel(root, full);
     if (isIgnoredPath(relPath)) continue;
     if (d.isDirectory()) {
+      const st = await fs.stat(full).catch(() => null);
+      out.push({
+        relPath,
+        isDir: true,
+        isMarkdown: false,
+        mtime: st ? st.mtimeMs : 0,
+        btime: st ? st.birthtimeMs : 0,
+        size: 0,
+      });
       await walk(root, full, out);
     } else {
       const st = await fs.stat(full).catch(() => null);

@@ -139,6 +139,19 @@ describe('graphBuilder (D6/D6a/D7/D17)', () => {
     expect(g.edges.filter((e) => e.type === 'ai-similar')).toHaveLength(0);
   });
 
+  it('renders AI provisional links and tags without pretending the user typed them', () => {
+    const notes = [
+      parseNote('Japan.md', `---\nai:\n  v: 1\n  links: ["Bank of Japan"]\n  tags: [macro]\n  model: apple-fm@1\n---\n# Japan`),
+      parseNote('Bank.md', '# Bank of Japan'),
+    ];
+    const g = buildGraph({ vaults: [{ vaultId: V, notes }] });
+    expect(g.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'ai-link', source: 'ai', from: 'vault-1/Japan.md', to: 'vault-1/Bank.md', confidence: 0.75, reason: expect.any(String) }),
+      expect.objectContaining({ type: 'ai-tag', source: 'ai', to: 'tag:macro', confidence: 0.75, reason: expect.any(String) }),
+    ]));
+    expect(g.edges.some((edge) => edge.type === 'wikilink')).toBe(false);
+  });
+
   it('output is deterministic (nodes and edges sorted by id)', () => {
     const build = () =>
       buildGraph({

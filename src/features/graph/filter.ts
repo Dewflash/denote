@@ -31,6 +31,10 @@ function edgeLayer(type: GraphEdge['type']): keyof LayerToggles | null {
       return 'topics';
     case 'ai-similar':
       return 'aiSimilar';
+    case 'ai-link':
+      return 'aiSimilar';
+    case 'ai-tag':
+      return 'tags';
     default:
       return null; // 'manual' edges are always shown — no layer owns them
   }

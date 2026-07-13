@@ -135,7 +135,7 @@ export class AppleAiClient implements AiClient {
         return {
           name,
           existingTopicId: existing?.id ?? null,
-          reason: (t.reason ?? '').trim(),
+          reason: (t.reason ?? '').trim() || `The on-device AI grouped this note under “${name}”.`,
           confidence: clamp01(t.confidence ?? 0),
           ...(t.parentName?.trim() ? { parentName: t.parentName.trim() } : {}),
           ...(t.relatedNames?.length ? { relatedNames: t.relatedNames } : {}),
@@ -143,14 +143,25 @@ export class AppleAiClient implements AiClient {
       });
 
     const tags: SuggestedTag[] = (raw.tags ?? [])
-      .map((t) => ({ name: normalizeTag(t.name ?? ''), reason: (t.reason ?? '').trim(), confidence: clamp01(t.confidence ?? 0) }))
+      .map((t) => {
+        const name = normalizeTag(t.name ?? '');
+        return {
+          name,
+          reason: (t.reason ?? '').trim() || `The on-device AI found “${name}” in this note.`,
+          confidence: clamp01(t.confidence ?? 0),
+        };
+      })
       .filter((t) => t.name.length > 0);
 
     const links: SuggestedLink[] = (raw.links ?? [])
       .filter((l) => (l.target ?? '').trim().length > 0)
       .map((l) => {
         const resolved = resolveLinkTarget(l.target!, req.candidateNotes);
-        return { ...resolved, reason: (l.reason ?? '').trim(), confidence: clamp01(l.confidence ?? 0) };
+        return {
+          ...resolved,
+          reason: (l.reason ?? '').trim() || `This note appears related to “${resolved.target}”.`,
+          confidence: clamp01(l.confidence ?? 0),
+        };
       });
 
     const summaryText = (raw.summary ?? '').trim();

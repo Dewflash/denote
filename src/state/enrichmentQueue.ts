@@ -92,6 +92,19 @@ export class EnrichmentQueue {
     this.consent = c;
   }
 
+  /** Wake jobs parked after an unavailable backend when the user explicitly retries it. */
+  resumeParked(now = Date.now()): number {
+    let resumed = 0;
+    for (const job of this.jobs.values()) {
+      if (job.state !== 'parked') continue;
+      job.state = 'pending';
+      job.attempts = 0;
+      job.nextAttemptAt = now;
+      resumed += 1;
+    }
+    return resumed;
+  }
+
   toJSON(): QueueFile {
     return { version: 1, jobs: this.all(), takeoverConsent: this.consent };
   }

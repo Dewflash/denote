@@ -8,7 +8,7 @@
 // builder only lays them out.
 
 import type { GraphEdge, GraphNode, NoteId, ParsedNote, Topic, VaultId } from './types';
-import { buildLinkIndex } from './links';
+import { buildLinkIndex, resolveLink } from './links';
 
 export interface GraphVaultInput {
   vaultId: VaultId;
@@ -70,6 +70,10 @@ export function buildGraph(input: GraphBuildInput): Graph {
   // Pass B: per-vault link + tag edges.
   for (const v of vaults) {
     const sortedNotes = [...v.notes].sort((a, b) => cmp(a.relPath, b.relPath));
+    const refs = sortedNotes.map((n) => ({ relPath: n.relPath, title: n.title }));
+    const userLinkTargets = new Set(
+      sortedNotes.flatMap((note) => note.links.map((link) => `${note.relPath}\u0000${link.targetTitle.toLowerCase()}`)),
+    );
 
     // Wikilink / embed edges (resolution is vault-scoped, S4/D17).
     const index = buildLinkIndex(sortedNotes, v.vaultId);
@@ -89,6 +93,31 @@ export function buildGraph(input: GraphBuildInput): Graph {
       addEdge({ id: `${type}:${from}->${to}`, from, to, type, source: 'parser', weight: 1 });
     }
 
+    // AI takeover writes reversible suggestions into `ai:` frontmatter. They are real graph
+    // relationships, but remain visibly separate from links the owner typed in the body.
+    for (const note of sortedNotes) {
+      const from = noteId(v.vaultId, note.relPath);
+      for (const target of note.aiFrontmatter?.links ?? []) {
+        const key = `${note.relPath}\u0000${target.toLowerCase()}`;
+        if (userLinkTargets.has(key)) continue;
+        const resolution = resolveLink(target, refs, v.vaultId);
+        const to = resolution.kind === 'note' ? noteId(v.vaultId, resolution.relPath) : resolution.id;
+        if (resolution.kind === 'ghost') {
+          addNode({ id: resolution.id, type: 'ghost', vaultId: v.vaultId, label: target });
+        }
+        addEdge({
+          id: `ai-link:${from}->${to}`,
+          from,
+          to,
+          type: 'ai-link',
+          source: 'ai',
+          weight: 1,
+          confidence: 0.75,
+          reason: `Provisional link suggested by ${note.aiFrontmatter?.model ?? 'on-device AI'}`,
+        });
+      }
+    }
+
     // Tag hub edges (D6): tag ids are GLOBAL (merge across vaults).
     for (const note of sortedNotes) {
       const from = noteId(v.vaultId, note.relPath);
@@ -102,6 +131,23 @@ export function buildGraph(input: GraphBuildInput): Graph {
           type: 'note-tag',
           source: 'parser',
           weight: 1,
+        });
+      }
+      const userTags = new Set(note.tags.map((tag) => tag.toLowerCase()));
+      for (const tag of note.aiFrontmatter?.tags ?? []) {
+        if (userTags.has(tag.toLowerCase())) continue;
+        const tagId = `tag:${tag.toLowerCase()}` as const;
+        const from = noteId(v.vaultId, note.relPath);
+        addNode({ id: tagId, type: 'tag', label: tag });
+        addEdge({
+          id: `ai-tag:${from}->${tagId}`,
+          from,
+          to: tagId,
+          type: 'ai-tag',
+          source: 'ai',
+          weight: 1,
+          confidence: 0.75,
+          reason: `Provisional tag suggested by ${note.aiFrontmatter?.model ?? 'on-device AI'}`,
         });
       }
     }

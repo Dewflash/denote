@@ -69,6 +69,7 @@ class CountingLlm implements AiClient {
   readonly modelId = 'mock@1';
   readonly isNetwork = false;
   labelCalls = 0;
+  failLabels = false;
   private inner = new MockAiClient();
   capabilities() {
     return this.inner.capabilities();
@@ -79,8 +80,9 @@ class CountingLlm implements AiClient {
   enrichNote(r: Parameters<AiClient['enrichNote']>[0]) {
     return this.inner.enrichNote(r);
   }
-  labelSimilarity(r: LabelSimilarityRequest) {
+  async labelSimilarity(r: LabelSimilarityRequest) {
     this.labelCalls++;
+    if (this.failLabels) throw new Error('sidecar unavailable');
     return this.inner.labelSimilarity(r);
   }
 }
@@ -138,6 +140,22 @@ describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
 
     await engine.syncAll(); // nothing changed
     expect(llm.labelCalls).toBe(first); // rejected pair not re-asked
+  });
+
+  it('retries unresolved similarity after the sidecar recovers without an edit', async () => {
+    const llm = new CountingLlm();
+    llm.failLabels = true;
+    const { repo, engine } = await open(llm);
+    await repo.createNote('a.md', '# Bank\nMonetary policy and interest rates.\n');
+    await repo.createNote('b.md', '# Central bank\nThe central bank changed rates.\n');
+    await engine.syncAll();
+    expect(engine.similarPairs()).toHaveLength(0);
+    expect(llm.labelCalls).toBe(1);
+
+    llm.failLabels = false;
+    engine.retry();
+    await engine.settle();
+    expect(engine.similarPairs()).toHaveLength(1);
   });
 
   it('re-embeds only changed notes (S14 incremental)', async () => {

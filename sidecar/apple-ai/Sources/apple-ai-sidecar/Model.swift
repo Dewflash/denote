@@ -82,12 +82,17 @@ struct NoteStub: Sendable {
     let summary: String?
 }
 
+@MainActor
 struct AppleModel {
     /// The exact model version string stamped into annotations (D26 hash-gating key). Foundation
     /// Models doesn't expose a fine-grained version, so we key on the OS-level model generation.
     static let modelVersion = "apple-fm@1"
+    private static var runtimeUnavailableReason: String?
 
     static func availability() -> (available: Bool, reason: String?) {
+        if let reason = runtimeUnavailableReason {
+            return (false, reason)
+        }
         switch SystemLanguageModel.default.availability {
         case .available:
             return (true, nil)
@@ -96,6 +101,10 @@ struct AppleModel {
         @unknown default:
             return (false, "unknown availability")
         }
+    }
+
+    static func markRuntimeUnavailable(_ reason: String) {
+        runtimeUnavailableReason = reason
     }
 
     static func ensureAvailable() throws {

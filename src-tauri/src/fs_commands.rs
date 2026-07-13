@@ -205,8 +205,8 @@ pub fn path_exists(
     Ok(path.exists())
 }
 
-/// Recursive listing of the whole vault, excluding the ignore set (S22). Directories are not
-/// returned; markdown and asset files are.
+/// Recursive listing of the whole vault, excluding the ignore set (S22). Directories are returned
+/// as well so empty user folders can be indexed and survive a reload.
 #[tauri::command]
 pub fn list_vault_files(
     root: String,
@@ -237,6 +237,14 @@ fn walk(base: &PathBuf, dir: &PathBuf, out: &mut Vec<DirEntryDto>) -> Result<(),
             Err(_) => continue,
         };
         if meta.is_dir() {
+            out.push(DirEntryDto {
+                rel_path: rel.clone(),
+                is_dir: true,
+                is_markdown: false,
+                mtime: mtime_ms(&meta),
+                btime: btime_ms(&meta),
+                size: 0,
+            });
             walk(base, &path, out)?;
         } else {
             let name = entry.file_name().to_string_lossy().to_string();

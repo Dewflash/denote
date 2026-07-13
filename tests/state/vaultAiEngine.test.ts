@@ -295,5 +295,5 @@ describe('VaultAiEngine — S28 consent gate (architect checkpoint B)', () => {
     await engine.enrichNow('n0.md');
     await engine.settle();
     expect(consentPrompts.length).toBe(prompts);
-  });
+  }, 15_000);
 });

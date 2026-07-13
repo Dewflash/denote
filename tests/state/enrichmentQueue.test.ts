@@ -33,6 +33,20 @@ describe('EnrichmentQueue', () => {
     expect(q.parkedCount()).toBe(1);
   });
 
+  it('resumes parked jobs after an explicit backend retry', () => {
+    const q = new EnrichmentQueue();
+    q.enqueue('a.md', 'h');
+    q.fail('a.md', 0);
+    q.fail('a.md', 0);
+    q.fail('a.md', 0);
+    q.fail('a.md', 0);
+    expect(q.get('a.md')?.state).toBe('parked');
+
+    expect(q.resumeParked(1234)).toBe(1);
+    expect(q.get('a.md')).toMatchObject({ state: 'pending', attempts: 0, nextAttemptAt: 1234 });
+    expect(q.due(1234)).toHaveLength(1);
+  });
+
   it('due() returns only pending jobs whose backoff has elapsed', () => {
     const q = new EnrichmentQueue();
     q.enqueue('a.md', 'h');

@@ -131,6 +131,13 @@ export class VaultAiEngine {
     return this.queue.getConsent();
   }
 
+  /** Retry parked work after the user has restored the on-device backend. */
+  retry(): void {
+    this.queue.resumeParked(this.now());
+    void this.persistQueue();
+    this.schedulePump();
+  }
+
   // ── change trigger (from Repository.onIndexChange) ─────────────────────────────
 
   /** A note was upserted (`note` non-null) or removed (`note` null). Demotion is applied

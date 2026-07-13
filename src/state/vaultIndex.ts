@@ -19,6 +19,8 @@ export class VaultIndex {
   readonly btimes = new Map<string, number>();
   /** Non-`.md` files, indexed by path only (S26). */
   readonly assets = new Map<string, FileStat>();
+  /** User-visible directories. Empty folders must survive reloads, unlike UI session state. */
+  readonly folders = new Set<string>();
 
   private linkIndex: ResolvedLink[] = [];
   private backlinks = new Map<string, Backlink[]>();
@@ -60,6 +62,19 @@ export class VaultIndex {
 
   removeAsset(relPath: string): void {
     this.assets.delete(relPath);
+  }
+
+  addFolder(relPath: string): void {
+    const segments = relPath.split('/').filter(Boolean);
+    let current = '';
+    for (const segment of segments) {
+      current = current ? `${current}/${segment}` : segment;
+      this.folders.add(current);
+    }
+  }
+
+  allFolders(): string[] {
+    return [...this.folders].sort((a, b) => a.localeCompare(b));
   }
 
   /** Recompute the link index + backlinks from the current note set. O(total links). */

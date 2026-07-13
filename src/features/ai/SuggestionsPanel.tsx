@@ -4,7 +4,7 @@
 // repository), Reject (→ rejection memory, D10), and Accept-all-above-threshold. Applied
 // provisional entries are shown distinctly (softer, "AI provisional" — S10) and are informational.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useVaultStore } from '../../state/vaultStore';
 import { useUiStore } from '../../state/uiStore';
 import type { AiAnnotation } from '../../domain';
@@ -108,6 +108,9 @@ export function SuggestionsPanel() {
   const threshold = useUiStore((s) => s.aiTakeoverThreshold);
   const enrich = useVaultStore((s) => s.enrichActiveNote);
   const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
+  const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const suggestions = useMemo(
     () => (activeNotePath ? useVaultStore.getState().aiSuggestionsFor(activeNotePath) : []),
@@ -146,6 +149,19 @@ export function SuggestionsPanel() {
     (a) => a.status === 'suggested' && a.confidence >= threshold,
   ).length;
 
+  const requestSuggestions = async (): Promise<void> => {
+    if (running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      await enrich();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="px-2 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
@@ -156,10 +172,12 @@ export function SuggestionsPanel() {
         <button
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)' }}
-          onClick={() => void enrich()}
+          disabled={running}
+          aria-busy={running}
+          onClick={() => void requestSuggestions()}
           title="Ask the AI to re-read this note right now"
         >
-          Get suggestions
+          {running ? 'Getting suggestions…' : 'Get suggestions'}
         </button>
         {acceptableCount > 0 && (
           <button
@@ -173,6 +191,14 @@ export function SuggestionsPanel() {
         )}
       </div>
       <div className="flex-1 overflow-auto p-2">
+        {error && (
+          <div className="mb-3 flex items-start justify-between gap-2 rounded p-2 text-xs" role="alert" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}>
+            <span>{error}</span>
+            <button type="button" className="shrink-0 underline" onClick={() => void requestSuggestions()}>
+              Retry
+            </button>
+          </div>
+        )}
         {misfit && (
           <div
             className="mb-3 rounded p-2 text-xs"
@@ -183,10 +209,22 @@ export function SuggestionsPanel() {
             <em>{misfit.suggestedFolder}</em>. {misfit.reason} (Observation only — nothing is moved.)
           </div>
         )}
-        {suggestions.length === 0 && (
-          <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-            No suggestions yet. Keep writing, or press “Get suggestions” — they'll appear here.
+        {running && (
+          <p className="mb-3 text-sm" style={{ color: 'var(--fg-muted)' }}>
+            Reading this note with on-device AI…
           </p>
+        )}
+        {suggestions.length === 0 && !running && (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+              No suggestions yet. Keep writing, or press “Get suggestions” — they&apos;ll appear here.
+            </p>
+            {appleAiHealth.status === 'unavailable' && (
+              <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                On-device AI is unavailable right now. Check Settings → AI &amp; Models; your typed links, tags, and topic groups remain available.
+              </p>
+            )}
+          </div>
         )}
         <div className="flex flex-col gap-3">
           {KIND_ORDER.filter((k) => grouped.has(k)).map((kind) => (

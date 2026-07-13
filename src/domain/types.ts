@@ -91,7 +91,16 @@ export interface GraphEdge {
   id: string;
   from: string;
   to: string;
-  type: 'wikilink' | 'embed' | 'note-tag' | 'note-topic' | 'topic-topic' | 'ai-similar' | 'manual';
+  type:
+    | 'wikilink'
+    | 'embed'
+    | 'ai-link'
+    | 'note-tag'
+    | 'ai-tag'
+    | 'note-topic'
+    | 'topic-topic'
+    | 'ai-similar'
+    | 'manual';
   source: 'user' | 'parser' | 'ai' | 'system';
   weight: number;
   confidence?: number;

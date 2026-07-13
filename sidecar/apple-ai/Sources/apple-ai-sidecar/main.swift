@@ -110,7 +110,14 @@ func handle(id: Any, method: String, params: [String: Any]) async {
     } catch let ModelError.unavailable(reason) {
         fail(id, "ai-unavailable", reason)
     } catch {
-        fail(id, "ai-invalid-output", String(describing: error))
+        let detail = String(describing: error)
+        if detail.contains("ModelManagerError Code=1008") {
+            let reason = "Apple Foundation Models could not start (Model Manager error 1008). Check that Apple Intelligence is enabled and the on-device model has finished downloading."
+            AppleModel.markRuntimeUnavailable(reason)
+            fail(id, "ai-unavailable", reason)
+        } else {
+            fail(id, "ai-invalid-output", detail)
+        }
     }
 }
 

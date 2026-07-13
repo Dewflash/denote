@@ -83,7 +83,11 @@ describe('folder creation', () => {
 
     await expect(repo.createFolder('Projects\\Ideas//')).resolves.toBe('Projects/Ideas');
     expect(await backend.exists(root, 'Projects/Ideas')).toBe(true);
+    expect(repo.index.allFolders()).toEqual(['Projects', 'Projects/Ideas']);
     expect(repo.listNotePaths()).toEqual([]);
+
+    const reopened = await Repository.openVault(backend, root);
+    expect(reopened.index.allFolders()).toEqual(['Projects', 'Projects/Ideas']);
 
     await expect(repo.createFolder('../outside')).rejects.toThrow();
 

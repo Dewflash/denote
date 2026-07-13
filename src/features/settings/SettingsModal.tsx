@@ -632,14 +632,53 @@ function AiSection() {
   // `revision` bumps when routing changes, re-rendering the selects with the live table.
   const revision = useVaultStore((s) => s.revision);
   const setTaskRouting = useVaultStore((s) => s.setTaskRouting);
+  const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
+  const refreshAppleAiStatus = useVaultStore((s) => s.refreshAppleAiStatus);
   const routing = useMemo(() => {
     void revision; // recompute when routing changes (revision bumps)
     return useVaultStore.getState().aiRoutingTable();
   }, [revision]);
 
+  useEffect(() => {
+    if (appleAiHealth.status === 'unknown') void refreshAppleAiStatus();
+  }, [appleAiHealth.status, refreshAppleAiStatus]);
+
   return (
     <div className="flex flex-col gap-5">
       <CloudSection />
+
+      <div className="rounded p-3" style={{ border: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+            On-device AI status
+          </div>
+          {appleAiHealth.status !== 'available' && (
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-xs"
+              style={{ border: '1px solid var(--border)' }}
+              onClick={() => void refreshAppleAiStatus(true)}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+        <div className="mt-1 text-sm" style={{ color: appleAiHealth.status === 'available' ? 'var(--accent)' : 'var(--fg)' }}>
+          {appleAiHealth.status === 'available'
+            ? `Available${appleAiHealth.modelVersion ? ` · ${appleAiHealth.modelVersion}` : ''}`
+            : appleAiHealth.status === 'unknown'
+              ? 'Checking…'
+              : 'Unavailable'}
+        </div>
+        {appleAiHealth.status === 'unavailable' && appleAiHealth.reason && (
+          <div className="mt-1 text-xs" style={{ color: 'var(--fg-muted)' }}>
+            {appleAiHealth.reason}
+          </div>
+        )}
+        <p className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          When unavailable, note suggestions and AI similarity stay queued. Your typed links, tags, and topic groups remain available.
+        </p>
+      </div>
 
       <div>
         <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>

@@ -409,7 +409,7 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
       ...repo.listNotePaths().map((relPath) => ({ relPath, kind: 'note' as const })),
       ...[...repo.index.assets.keys()].map((relPath) => ({ relPath, kind: 'asset' as const })),
     ];
-    return buildTree(entries, [...extraFolders, ...sessionFolders]);
+    return buildTree(entries, [...repo.index.allFolders(), ...extraFolders, ...sessionFolders]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo, revision, extraFolders, sessionFolders]);
 
@@ -427,7 +427,7 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
         dir = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '';
       }
     }
-    for (const folder of [...extraFolders, ...sessionFolders]) {
+    for (const folder of [...repo.index.allFolders(), ...extraFolders, ...sessionFolders]) {
       let dir = folder;
       while (dir) {
         set.add(dir);

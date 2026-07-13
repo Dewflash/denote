@@ -50,6 +50,10 @@ export class AiRouter {
     return this.clients.has(kind);
   }
 
+  getClient(kind: AiBackendKind): AiClient | undefined {
+    return this.clients.get(kind);
+  }
+
   getRouting(): RoutingTable {
     return { ...this.routing };
   }

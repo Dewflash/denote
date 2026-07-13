@@ -20,7 +20,7 @@ import {
   embedTextForNote,
   type EmbeddingsBackend,
 } from '../services/embeddings';
-import type { AiRouter } from '../services/aiClient';
+import type { AiClient, AiRouter } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
 import { SimilarStore } from '../services/similarStore';
 import type { Repository } from './repository';
@@ -47,7 +47,12 @@ export const SYNC_DEBOUNCE_MS = 2000;
 
 export class VaultEmbeddingEngine {
   private readonly dirty = new Set<string>();
+  /** Notes whose vetted similarity pass has not completed yet. This survives a temporarily
+   * unavailable sidecar/model so a later retry can create graph edges without an edit. */
+  private readonly pendingSimilarity = new Set<string>();
   private debounce: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryAttempt = 0;
   private syncing = false;
   private inflight: Promise<unknown> = Promise.resolve();
 
@@ -67,9 +72,11 @@ export class VaultEmbeddingEngine {
     });
     this.repo.registerDeleteHook((rel) => {
       this.dirty.delete(rel);
+      this.pendingSimilarity.delete(rel);
       void this.backend.remove(this.repo.root, rel).catch(() => {});
       return this.store.removeForPath(rel);
     });
+    for (const note of this.wantedNotes()) this.pendingSimilarity.add(note.relPath);
     // First-open bulk embed runs in the background; the UI stays responsive.
     if (!this.deps.disableTimers) this.track(this.syncAll());
   }
@@ -77,12 +84,24 @@ export class VaultEmbeddingEngine {
   dispose(): void {
     if (this.debounce) clearTimeout(this.debounce);
     this.debounce = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+  }
+
+  /** Retry all unresolved similarity labels after a backend retry or model becomes available. */
+  retry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.retryAttempt = 0;
+    for (const note of this.wantedNotes()) this.pendingSimilarity.add(note.relPath);
+    this.track(this.syncAll());
   }
 
   noteChanged(relPath: string, note: ParsedNote | null): void {
     if (note === null) return; // delete hook handles removal
     if (this.shouldSkip(relPath, note)) return;
     this.dirty.add(relPath);
+    this.pendingSimilarity.add(relPath);
     this.scheduleSync();
   }
 
@@ -128,11 +147,16 @@ export class VaultEmbeddingEngine {
     this.syncing = true;
     try {
       const wanted = this.wantedNotes();
+      const wantedPaths = new Set(wanted.map((n) => n.relPath));
+      for (const relPath of this.pendingSimilarity) {
+        if (!wantedPaths.has(relPath)) this.pendingSimilarity.delete(relPath);
+      }
       let index;
       try {
         index = await this.backend.index(this.repo.root);
       } catch {
-        return; // backend unavailable (offline + no model yet) — jobs stay dirty, retried later
+        this.scheduleRetry();
+        return; // backend unavailable (offline + no model yet) — jobs stay pending, retried later
       }
       const plan = computeEmbedPlan(index, wanted, EXPECTED_EMBED_MODEL);
 
@@ -145,7 +169,8 @@ export class VaultEmbeddingEngine {
         try {
           res = await this.backend.embed(texts);
         } catch {
-          return; // model unavailable mid-run — leave the rest dirty for the next attempt
+          this.scheduleRetry();
+          return; // model unavailable mid-run — leave the similarity pass pending
         }
         const entries = batch.map((b, j) => ({
           relPath: b.relPath,
@@ -159,9 +184,40 @@ export class VaultEmbeddingEngine {
       for (const rel of plan.toRemove) await this.backend.remove(this.repo.root, rel);
 
       this.dirty.clear();
-      // Similarity for every note whose vector just changed.
-      for (const rel of changed) await this.computeSimilar(rel);
-      if (changed.length) this.deps.onChange?.();
+      // Similarity is attempted for changed notes and for any notes left incomplete by a prior
+      // sidecar/model outage. The store's fresh/rejected gates prevent duplicate LLM calls.
+      let similarityClient: AiClient;
+      try {
+        const routed = this.router.route('label-similarity', { localOnly: this.deps.localOnly?.() ?? false });
+        const capabilities = await routed.capabilities();
+        if (!capabilities.available) {
+          this.scheduleRetry();
+          return;
+        }
+        similarityClient = routed;
+      } catch (err) {
+        // A local-only vault routed to a network backend is intentionally quiet until routing
+        // changes; all other failures remain pending for the bounded retry schedule.
+        if (err instanceof DenoteError && err.kind === 'local-only-blocked') return;
+        this.scheduleRetry();
+        return;
+      }
+      let similarityChanged = false;
+      for (const rel of [...this.pendingSimilarity]) {
+        const result = await this.computeSimilar(rel, similarityClient);
+        if (result.done) this.pendingSimilarity.delete(rel);
+        similarityChanged ||= result.changed;
+        // One failed label call usually means the sidecar just became unavailable. Stop the
+        // batch immediately instead of issuing one doomed call per remaining note.
+        if (!result.done) break;
+      }
+      if (changed.length || similarityChanged) this.deps.onChange?.();
+      if (this.pendingSimilarity.size > 0) this.scheduleRetry();
+      else {
+        this.retryAttempt = 0;
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+      }
     } finally {
       this.syncing = false;
     }
@@ -169,9 +225,9 @@ export class VaultEmbeddingEngine {
 
   // ── similarity (D6a/S15) ────────────────────────────────────────────────────────
 
-  private async computeSimilar(relPath: string): Promise<void> {
+  private async computeSimilar(relPath: string, client: AiClient): Promise<{ done: boolean; changed: boolean }> {
     const aHash = this.repo.getHash(relPath);
-    if (!aHash) return;
+    if (!aHash) return { done: true, changed: false };
     const k = this.deps.k?.() ?? 3;
     const minCos = this.deps.minCos?.() ?? 0.62;
 
@@ -179,19 +235,11 @@ export class VaultEmbeddingEngine {
     try {
       neighbors = await this.backend.topK(this.repo.root, relPath, k, minCos);
     } catch {
-      return;
-    }
-
-    const localOnly = this.deps.localOnly?.() ?? false;
-    let client;
-    try {
-      client = this.router.route('label-similarity', { localOnly });
-    } catch (err) {
-      if (err instanceof DenoteError && err.kind === 'local-only-blocked') return;
-      throw err;
+      return { done: false, changed: false };
     }
 
     const a = { vaultId: this.repo.vaultId, relPath };
+    let changed = false;
     for (const n of neighbors) {
       const bHash = this.repo.getHash(n.relPath);
       if (!bHash) continue;
@@ -203,14 +251,27 @@ export class VaultEmbeddingEngine {
       try {
         label = await client.labelSimilarity({ a: this.stub(relPath), b: this.stub(n.relPath) });
       } catch {
-        continue; // sidecar unavailable/timeout — try again on a later change
+        return { done: false, changed };
       }
       if (acceptSimilarity(label)) {
         await this.store.upsertAccepted(relPath, aHash, n.relPath, bHash, label.reason, label.confidence);
+        changed = true;
       } else {
         await this.store.recordRejected(a, aHash, b, bHash);
       }
     }
+    return { done: true, changed };
+  }
+
+  private scheduleRetry(delay = 30_000): void {
+    if (this.deps.disableTimers || this.retryTimer || this.retryAttempt >= 3) return;
+    const delays = [5_000, 30_000, 120_000];
+    const retryDelay = delays[this.retryAttempt] ?? delay;
+    this.retryAttempt += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.track(this.syncAll());
+    }, retryDelay);
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────────

@@ -153,9 +153,14 @@ export class Repository {
     this.index.mtimes.clear();
     this.index.btimes.clear();
     this.index.assets.clear();
+    this.index.folders.clear();
     const entries = await this.backend.listVaultFiles(this.root);
     for (const e of entries) {
-      if (e.isDir || isIgnoredPath(e.relPath)) continue;
+      if (isIgnoredPath(e.relPath)) continue;
+      if (e.isDir) {
+        this.index.addFolder(e.relPath);
+        continue;
+      }
       if (e.isMarkdown) {
         try {
           const content = await this.backend.readNote(this.root, e.relPath);
@@ -289,6 +294,7 @@ export class Repository {
     const normalized = normalizeFolderPath(relDir);
     if (!normalized) throw new DenoteError('fs', 'folder name cannot be empty');
     await this.backend.createDir(this.root, normalized);
+    this.index.addFolder(normalized);
     return normalized;
   }
 

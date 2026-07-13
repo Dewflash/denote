@@ -21,6 +21,20 @@ function sourceBadgeColor(source: GraphEdge['source']): string {
   }
 }
 
+function edgeLabel(type: GraphEdge['type']): string {
+  switch (type) {
+    case 'ai-link': return 'AI-suggested link';
+    case 'ai-tag': return 'AI-suggested tag';
+    case 'ai-similar': return 'AI-found similarity';
+    case 'note-tag': return 'Shared tag';
+    case 'note-topic': return 'AI topic group';
+    case 'topic-topic': return 'Related topic groups';
+    case 'wikilink': return 'Link you typed';
+    case 'embed': return 'Embedded note';
+    default: return type;
+  }
+}
+
 function relPathOf(node: GraphNode): string | null {
   if (node.type !== 'note' || !node.vaultId) return null;
   return noteRelPath(node.id, node.vaultId);
@@ -225,7 +239,7 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
               </span>
             </div>
             <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
-              {edge.type}
+              {edgeLabel(edge.type)}
               {edge.confidence !== undefined ? ` · ${Math.round(edge.confidence * 100)}% confidence` : ''}
             </span>
             {edge.reason && (
