@@ -260,6 +260,25 @@ tokens only, no new deps):
    (`?graphMock=1` screenshot): all four fixture notes, including isolated "Miso Soup Recipe",
    are inside the canvas after settle; the index contains all four and filters to Miso.
 
+- 2026-07-13 · independent inspection of the UX-AMENDMENTS execution (commits `f3401c4`,
+  `62eda5f`) · **verdict: PASS, no corrections.** Independently re-ran the full stack: 449 TS
+  tests / 57 files, lint, tsc, production build, Playwright e2e 3/3, Rust 19/19 + `cargo
+  check`, S1 hash reference ALL GREEN. Protected surfaces verified untouched: `src/domain/`,
+  SPECS, DECISIONS, CLAUDE.md, `package.json` (zero new deps). Hard constraints held: no
+  note↔note edge fabrication anywhere (liveGraph diff is seed-radius only; renderer adds no
+  edges — D6); `Repository.createFolder` normalizes + rejects traversal/dot segments with an
+  integration test proving `../outside` throws and a directory watcher event fires no pipeline
+  (S8/S22/D23); keymap `rebind` throws on collisions and saved-keymap restore drops invalid
+  entries (S21); hotkey persistence writes only `app_data_dir/hotkey.txt`; git pull-rebase
+  aborts to sibling conflict files, never merge markers (pass-11 policy). Spec compliance
+  spot-verified in code + live `?graphMock=1` screenshot: P1.1 local-view banner w/ counts +
+  "Show all notes", P1.4 plain-English layer copy verbatim, P2.1 shared `VersionTimeline`
+  reachable from FileTree + Settings, P2.3 "unlinked · missing" status chip w/ clickable rows,
+  P3.1 first-run card, P3.2 drag-and-drop via the existing `moveNote` wrapper. Beyond-spec
+  additions (searchable "Notes in map" index, graph auto-fit, meta.json corruption quarantine,
+  import symlink/`.TXT` hardening, editable hotkeys UI) reviewed individually — all sound, all
+  logged by the executor with honest deviations. Console clean in the live check.
+
 ## Owner manual-testing findings (post-11, 2026-07-13) — fixed same day
 
 Owner ran the real app; findings and resolutions:
