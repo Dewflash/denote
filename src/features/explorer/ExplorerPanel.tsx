@@ -86,9 +86,9 @@ export function ExplorerPanel() {
     if (!name) return;
     const path = `${selectedFolder ? `${selectedFolder}/` : ''}${name}`;
     try {
-      await createFolder(path);
-      setCreatedFolders((current) => current.includes(path) ? current : [...current, path]);
-      useUiStore.getState().setSelectedFolder(path);
+      const createdPath = await createFolder(path);
+      setCreatedFolders((current) => current.includes(createdPath) ? current : [...current, createdPath]);
+      useUiStore.getState().setSelectedFolder(createdPath);
       setFolderName('');
       setFolderDraftOpen(false);
     } catch (error) {

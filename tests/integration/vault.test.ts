@@ -81,9 +81,11 @@ describe('folder creation', () => {
     const onPipeline = vi.fn();
     const repo = await Repository.openVault(backend, root, { onPipeline });
 
-    await repo.createFolder('Projects/Ideas');
+    await expect(repo.createFolder('Projects\\Ideas//')).resolves.toBe('Projects/Ideas');
     expect(await backend.exists(root, 'Projects/Ideas')).toBe(true);
     expect(repo.listNotePaths()).toEqual([]);
+
+    await expect(repo.createFolder('../outside')).rejects.toThrow();
 
     // A recursive watcher can report the directory itself; it must not become a note or trigger AI.
     await repo.onWatcherEvent({ relPath: 'Projects/Ideas', kind: 'create' });

@@ -364,8 +364,8 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
   async function createFolder(path: string): Promise<boolean> {
     if (!repo || !path.trim()) return false;
     try {
-      await useVaultStore.getState().createFolder(path.trim());
-      rememberFolder(path.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''));
+      const createdPath = await useVaultStore.getState().createFolder(path.trim());
+      rememberFolder(createdPath);
       return true;
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
@@ -394,7 +394,10 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
   const folders = useMemo(() => {
     if (!repo) return [];
     const set = new Set<string>(['']);
-    for (const relPath of repo.listNotePaths()) {
+    for (const relPath of [
+      ...repo.listNotePaths(),
+      ...repo.index.assets.keys(),
+    ]) {
       let dir = relPath.includes('/') ? relPath.slice(0, relPath.lastIndexOf('/')) : '';
       while (dir) {
         set.add(dir);
@@ -426,6 +429,10 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
       onDrop={(e) => {
         e.preventDefault();
         setRootDropActive(false);
+        // A note row is a child of the root container, but dropping onto it is not a request to
+        // move to the root. Folder rows stop propagation themselves; this guard keeps a drop on
+        // any other child from becoming an accidental root move.
+        if (e.target !== e.currentTarget) return;
         const path = e.dataTransfer.getData('application/x-denote-note');
         if (path) moveNote(path, '');
       }}
@@ -456,7 +463,7 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
             const path = `${currentDir ? `${currentDir}/` : ''}${name.trim()}`;
             void createFolder(path).then((created) => {
               if (created) {
-                void useVaultStore.getState().moveNote(notePath, `${path}/${baseName}`);
+                void useVaultStore.getState().moveNote(notePath, `${created}/${baseName}`);
                 setMenu(null);
               }
             });

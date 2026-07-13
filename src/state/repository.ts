@@ -283,11 +283,13 @@ export class Repository {
     return this.relocate(oldRel, newRel, 'path-only');
   }
 
-  /** Create a user-visible folder without adding placeholder content to the vault. */
-  async createFolder(relDir: string): Promise<void> {
+  /** Create a user-visible folder without adding placeholder content to the vault. Returns the
+   * normalized vault-relative path so UI callers use the path the backend actually created. */
+  async createFolder(relDir: string): Promise<string> {
     const normalized = normalizeFolderPath(relDir);
     if (!normalized) throw new DenoteError('fs', 'folder name cannot be empty');
     await this.backend.createDir(this.root, normalized);
+    return normalized;
   }
 
   /** Force a snapshot of the current on-disk content (ignores the debounce gate). */

@@ -14,7 +14,8 @@ pub struct ImportFileDto {
 
 #[tauri::command]
 pub fn scan_import_folder(source_root: String) -> Result<Vec<ImportFileDto>, String> {
-    let root = fs::canonicalize(&source_root).map_err(|e| format!("cannot open import folder: {e}"))?;
+    let root =
+        fs::canonicalize(&source_root).map_err(|e| format!("cannot open import folder: {e}"))?;
     if !root.is_dir() {
         return Err("import source must be a folder".into());
     }
@@ -31,7 +32,13 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<ImportFileDto>) -> Result<(), Str
         if name.starts_with('.') {
             continue;
         }
-        if path.is_dir() {
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        // A source folder is a user boundary. Do not follow symlinked directories into another
+        // location or back into the source tree, where a cycle could make the scan unbounded.
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             if name == ".obsidian" {
                 continue;
             }
@@ -41,18 +48,12 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<ImportFileDto>) -> Result<(), Str
         if !is_text_note(&path) {
             continue;
         }
-        let rel = path
-            .strip_prefix(root)
-            .map_err(|e| e.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-        let rel = if rel.to_ascii_lowercase().ends_with(".txt") {
-            format!("{}.md", rel.trim_end_matches(".txt"))
-        } else {
-            rel
-        };
+        let rel = mapped_rel(root, &path)?;
         let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        out.push(ImportFileDto { rel_path: rel, content });
+        out.push(ImportFileDto {
+            rel_path: rel,
+            content,
+        });
     }
     Ok(())
 }
@@ -62,4 +63,32 @@ fn is_text_note(path: &PathBuf) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| matches!(e.to_ascii_lowercase().as_str(), "md" | "txt"))
         .unwrap_or(false)
+}
+
+fn mapped_rel(root: &Path, path: &Path) -> Result<String, String> {
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/");
+    if rel.to_ascii_lowercase().ends_with(".txt") {
+        Ok(format!("{}.md", &rel[..rel.len() - 4]))
+    } else {
+        Ok(rel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn converts_uppercase_txt_extension_without_leaving_txt_in_the_name() {
+        let root = Path::new("/tmp/import-source");
+        assert_eq!(
+            mapped_rel(root, &root.join("Folder/Note.TXT")).unwrap(),
+            "Folder/Note.md"
+        );
+    }
 }

@@ -730,6 +730,18 @@ what is needed and why, and continues with the rest of the pass if independent.
   green.** The first sandboxed e2e attempt could not bind `127.0.0.1:1420` (`EPERM`); the same
   suite was rerun with local-server permission and passed.
 
+- 2026-07-13 · UX/pass 10–11 follow-up audit · **PASS with three targeted hardening fixes.**
+  Re-traced the P1–P3 acceptance paths and pass-10/11 capture/import contracts. Fixed normalized
+  folder paths not being returned to the UI after creation, prevented a note-row drop from
+  bubbling into an accidental root move, and hardened native import scanning to skip symlinks
+  and map uppercase `.TXT` files to the correct `.md` path. Added graph interaction assertions
+  and repository/import regression coverage. **Verification:** 449 TypeScript tests / 57 files,
+  lint, `tsc --noEmit`, production build, Playwright e2e 3/3, Rust library tests 19/19,
+  individual `rustfmt --check` for `import_scan.rs`, hash reference suite, and `git diff --check`
+  green. Full `cargo fmt --check` still reports pre-existing formatting in unrelated Rust files;
+  no unrelated formatting was changed. Owner manual Tauri/Safari/private-GitHub/real-key scripts
+  remain outstanding per Checkpoint E.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with

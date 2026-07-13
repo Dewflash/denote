@@ -200,7 +200,7 @@ interface VaultStoreState {
   flushAutosave: () => Promise<void>;
 
   createNote: (relPath: string, body?: string) => Promise<void>;
-  createFolder: (relDir: string) => Promise<void>;
+  createFolder: (relDir: string) => Promise<string>;
   renameNote: (oldRel: string, newRel: string) => Promise<void>;
   moveNote: (oldRel: string, newRel: string) => Promise<void>;
   deleteNote: (relPath: string) => Promise<void>;
@@ -964,9 +964,10 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
     async createFolder(relDir) {
       const s = get();
-      if (!s.repo) return;
-      await s.repo.createFolder(relDir);
+      if (!s.repo) return relDir;
+      const normalized = await s.repo.createFolder(relDir);
       set((cur) => ({ revision: cur.revision + 1 }));
+      return normalized;
     },
 
     async renameNote(oldRel, newRel) {
