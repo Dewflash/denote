@@ -20,6 +20,7 @@ import { createAppSupportIO } from "./services/appSupportStore";
 import { SnippetStore } from "./services/snippets";
 import { tauriStorage } from "./services/tauriStorage";
 import { installNativeCaptureListener } from "./services/nativeCapture";
+import { E2ESmoke } from "./e2e/E2ESmoke";
 
 function ConflictBar() {
   const conflict = useVaultStore((s) => s.conflict);
@@ -253,6 +254,9 @@ function DevGraphPreview() {
 
 function App() {
   const root = useVaultStore((s) => s.root);
+  if (import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('e2eSmoke') === '1') {
+    return <E2ESmoke />;
+  }
   if (import.meta.env.DEV && typeof location !== 'undefined' && new URLSearchParams(location.search).get('graphMock') === '1') {
     return <DevGraphPreview />;
   }
