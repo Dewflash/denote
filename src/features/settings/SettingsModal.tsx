@@ -392,6 +392,28 @@ function CloudSection() {
 
       <div>
         <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
+          Run a cloud job
+        </div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          Deep organize sends your notes (never local-only vaults) to the cloud to find themes
+          across folders. You see the cost estimate and confirm before anything runs.
+        </p>
+        <button
+          className="rounded px-3 py-1 text-sm"
+          style={{ border: '1px solid var(--border)' }}
+          disabled={!present}
+          title={present ? undefined : 'Add your API key above first'}
+          onClick={() => {
+            useUiStore.getState().setSettingsOpen(false);
+            useUiStore.getState().setDeepOrganizeOpen(true);
+          }}
+        >
+          Deep organize…
+        </button>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
           Spend history
         </div>
         {runs.length === 0 ? (

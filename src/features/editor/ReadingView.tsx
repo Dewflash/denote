@@ -12,6 +12,7 @@ import { TAG_RE } from '../../domain/parser';
 import { findWikilinks, resolveAssetPath } from './wikilinkScan';
 import { AssetImage } from './AssetImage';
 import { useVaultStore } from '../../state/vaultStore';
+import { useUiStore } from '../../state/uiStore';
 
 const processor = unified().use(remarkParse).use(remarkFrontmatter, ['yaml']);
 
@@ -192,8 +193,18 @@ export function ReadingView() {
 
   if (!buffer || !ctx || !tree) return null;
   return (
-    <div className="denote-reading-view h-full overflow-auto" style={{ padding: '16px 20px', maxWidth: 860 }}>
-      {renderNode(tree, ctx, 'root')}
+    <div className="relative h-full">
+      <button
+        title="Back to editing (⌘E)"
+        className="absolute right-3 top-3 z-10 rounded px-2 py-1 text-xs"
+        style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+        onClick={() => useUiStore.getState().toggleViewMode()}
+      >
+        Edit
+      </button>
+      <div className="denote-reading-view h-full overflow-auto" style={{ padding: '16px 20px', maxWidth: 860 }}>
+        {renderNode(tree, ctx, 'root')}
+      </div>
     </div>
   );
 }

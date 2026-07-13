@@ -89,6 +89,22 @@ export function ExplorerPanel() {
             <path d="m7 16.5 4-8M15 8l2.5 6" />
           </svg>
         </ToolbarButton>
+        <ToolbarButton id="today-view" label="Today — notes created or edited today">
+          <svg {...ICON_PROPS}>
+            <rect x="3" y="4" width="18" height="17" rx="2" />
+            <path d="M3 9h18M8 2v4M16 2v4" />
+          </svg>
+        </ToolbarButton>
+        <ToolbarButton id="quick-switcher" label="Jump to a note by title">
+          <svg {...ICON_PROPS}>
+            <path d="M13 5h8M13 12h8M13 19h8M3 5l3 3-3 3M6 15l-3 3 3 3" />
+          </svg>
+        </ToolbarButton>
+        <ToolbarButton id="command-palette" label="All commands — everything the app can do">
+          <svg {...ICON_PROPS}>
+            <path d="m7 8-4 4 4 4M17 8l4 4-4 4M14 4l-4 16" />
+          </svg>
+        </ToolbarButton>
       </div>
       <div className="flex flex-col gap-2 p-2">
         <RecentNotes />

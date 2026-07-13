@@ -118,17 +118,27 @@ export function Editor() {
   return (
     <div className="relative h-full">
       {activeNotePath && (
-        <button
-          title="Show local graph (2-hop neighborhood)"
-          className="absolute right-3 top-3 z-10 rounded px-2 py-1 text-xs"
-          style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
-          onClick={() => {
-            useGraphStore.getState().enterLocalView(`${repo?.vaultId}/${activeNotePath}`, 2);
-            useUiStore.getState().setGraphViewOpen(true);
-          }}
-        >
-          Local graph
-        </button>
+        <div className="absolute right-3 top-3 z-10 flex gap-1.5">
+          <button
+            title="See this note without editing marks (⌘E toggles back)"
+            className="rounded px-2 py-1 text-xs"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+            onClick={() => useUiStore.getState().toggleViewMode()}
+          >
+            Reading view
+          </button>
+          <button
+            title="Show local graph (2-hop neighborhood)"
+            className="rounded px-2 py-1 text-xs"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+            onClick={() => {
+              useGraphStore.getState().enterLocalView(`${repo?.vaultId}/${activeNotePath}`, 2);
+              useUiStore.getState().setGraphViewOpen(true);
+            }}
+          >
+            Local graph
+          </button>
+        </div>
       )}
       <div ref={containerRef} className="h-full" data-testid="denote-editor" />
     </div>

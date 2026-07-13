@@ -292,6 +292,32 @@ Verification: 443 TS tests (56 files, +1 file), lint, tsc, `pnpm build`-equivale
 server, `pnpm e2e` (1/1), zero console errors on the dev preview graph page. No S/D-numbered
 behavior touched (S10/S23/D38 paths untouched; pass-04 graph click contract preserved).
 
+5. **Full "exists-but-invisible" audit (owner asked: "anything else not interactable from the
+   UI?"), all gaps closed same day:**
+   - `deleteNote` and `moveNote` had NO UI anywhere (notes were undeletable/unmovable in-app) →
+     FileTree right-click context menu: Open / Rename… / Move to folder… (lists existing
+     folders) / Delete… (two-step inline confirm, `--danger`). Dependency-free positioned menu;
+     all actions route through the existing vaultStore wrappers (S9 rename rewrite, D4a move
+     reconciliation, op-log where wired). Rename editing state lifted to FileTree so
+     double-click and menu-Rename share one mechanism; note rows got a
+     "Click to open · double-click to rename · right-click for more" tooltip.
+   - **Resurfacing cards (pass-8 `computeResurfacingCards`) were computed but never rendered
+     anywhere** → Today view gained a "Worth revisiting" section (open-on-click, per-card ✕
+     dismiss → `dismissResurfacing`, hidden when empty).
+   - Organize vault / Deep organize were command-palette-only → "Organize vault…" button in the
+     graph toolbar; "Deep organize…" button in Settings → AI & Models → Cloud (disabled until a
+     key is present).
+   - Today view (⌘T), quick switcher (⌘O), command palette (⌘P) were hotkey-only → three new
+     explorer-toolbar icon buttons via the existing keymap-invoke pattern (S21, one registry).
+   - Reading view (⌘E) was hotkey-only → "Reading view" button in the editor's top-right button
+     group; reading view gained a matching "Edit" button (previously reading mode had NO visible
+     exit).
+   Settings gear on the vault rail was added the same day (separate finding). Not added (still
+   palette/hidden): nothing known — palette "Open: <note>" entries and the quick switcher
+   overlap by design. Verification re-run after the batch: 443 TS tests, lint (2
+   set-state-in-effect violations found by the repo's lint rule and restructured properly), tsc,
+   build, dev-preview screenshot of the graph toolbar, console clean.
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing

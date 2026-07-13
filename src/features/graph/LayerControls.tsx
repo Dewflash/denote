@@ -108,6 +108,15 @@ export function LayerControls() {
         </button>
       )}
 
+      <button
+        className="rounded px-2 py-0.5"
+        style={{ border: '1px solid var(--border)' }}
+        onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
+        title="Group your notes into topics with the on-device AI — runs privately on this Mac"
+      >
+        Organize vault…
+      </button>
+
       <span style={{ marginLeft: 'auto' }}>Click a dot to open that note.</span>
       <button
         className="rounded px-2 py-0.5"
