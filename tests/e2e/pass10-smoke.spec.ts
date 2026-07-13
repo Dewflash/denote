@@ -46,6 +46,12 @@ test('graph view keeps isolated notes discoverable', async ({ page }) => {
   const mapBox = await page.getByTestId('graph-canvas').boundingBox();
   expect(mapBox).not.toBeNull();
   expect(mapBox!.width).toBeGreaterThan(1000);
+  const backgroundPixel = await page.locator('canvas').evaluate((canvas) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+  });
+  expect(backgroundPixel).toEqual([255, 255, 255, 255]);
   await page.getByRole('button', { name: 'Show note list' }).click();
   await expect(noteIndex).toBeVisible();
   await expect(noteIndex).toContainText('Notes in map');

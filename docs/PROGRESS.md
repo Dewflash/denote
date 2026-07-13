@@ -1026,6 +1026,19 @@ what is needed and why, and continues with the rest of the pass if independent.
   `pnpm lint`, `tsc --noEmit`, production build, Playwright smoke 6/6, and `git diff --check` are
   green. Native screenshot capture and owner Tauri/Safari/private-GitHub checks remain external.
 
+- 2026-07-13 · final compute/UI/AI cleanup · **made the graph canvas opaque and AI completion
+  states durable.** The force-graph now paints the token background in the canvas's device-pixel
+  coordinate space, removing the black/transparent map field seen in browser rendering. AI passes
+  persist exact note-hash/model completion records, including empty results; link-only passes no
+  longer masquerade as full enrichment, stale manual queue jobs are cleared after a completed
+  request, and the suggestions panel says when the configured backend actually checked a note.
+  Settings snippet, cloud-key, key-removal, and budget-cap failures now have visible error paths,
+  and the AI tab tooltip no longer claims that provisional metadata is never applied. Added tests
+  for empty-result hash gating and link-only/full-pass separation. **Verification:** 476 TypeScript
+  tests / 60 files, `pnpm lint`, `tsc --noEmit`, production build, Playwright smoke 6/6,
+  `docs/reference/hash_spec_test.mjs`, and `git diff --check` are green. Native screenshot capture
+  and owner Tauri/Safari/private-GitHub checks remain external.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

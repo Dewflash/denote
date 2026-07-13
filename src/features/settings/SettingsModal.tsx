@@ -390,10 +390,15 @@ function AppearanceSection() {
             {snippets.map((snippet) => (
               <label key={snippet.name} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={snippet.enabled} onChange={(event) => {
-                  void appSupportRoot().then((root) => new SnippetStore(createAppSupportIO(tauriStorage, root)).setEnabled(snippet.name, event.target.checked)).then(() => {
-                    setSnippets((current) => current.map((item) => item.name === snippet.name ? { ...item, enabled: event.target.checked } : item));
-                    bumpSnippetsRevision();
-                  });
+                  const enabled = event.currentTarget.checked;
+                  setSnippetError(null);
+                  void appSupportRoot()
+                    .then((root) => new SnippetStore(createAppSupportIO(tauriStorage, root)).setEnabled(snippet.name, enabled))
+                    .then(() => {
+                      setSnippets((current) => current.map((item) => item.name === snippet.name ? { ...item, enabled } : item));
+                      bumpSnippetsRevision();
+                    })
+                    .catch(() => setSnippetError(`Couldn't ${enabled ? 'enable' : 'disable'} ${snippet.name}.`));
                 }} />
                 <span>{snippet.name}</span>
               </label>
@@ -468,6 +473,7 @@ function CloudSection() {
   const [draft, setDraft] = useState('');
   const [test, setTest] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   const cap = useMemo(() => {
     void revision;
@@ -516,13 +522,17 @@ function CloudSection() {
             disabled={!draft.trim() || busy}
             onClick={() => {
               setBusy(true);
-              void setKey(draft.trim()).finally(() => {
-                setDraft('');
-                setBusy(false);
-              });
+              setCloudError(null);
+              void setKey(draft.trim())
+                .then(() => {
+                  setDraft('');
+                  setTest('Key saved');
+                })
+                .catch((err) => setCloudError(err instanceof Error ? err.message : String(err)))
+                .finally(() => setBusy(false));
             }}
           >
-            Save
+            {busy ? 'Working...' : 'Save'}
           </button>
         </div>
         <div className="mt-2 flex items-center gap-3 text-xs">
@@ -531,19 +541,33 @@ function CloudSection() {
             style={{ color: 'var(--fg-muted)' }}
             onClick={() => {
               setBusy(true);
+              setCloudError(null);
               setTest('Testing…');
               void testKey()
                 .then((r) => setTest(r.ok ? '✓ Key works' : `✗ ${r.detail ?? 'failed'}`))
+                .catch((err) => setTest(`✗ ${err instanceof Error ? err.message : String(err)}`))
                 .finally(() => setBusy(false));
             }}
           >
             Test key
           </button>
-          <button disabled={!present} style={{ color: 'var(--danger)' }} onClick={() => void clearKey()}>
+          <button
+            disabled={!present || busy}
+            style={{ color: 'var(--danger)' }}
+            onClick={() => {
+              setBusy(true);
+              setCloudError(null);
+              void clearKey()
+                .then(() => setTest('Key removed'))
+                .catch((err) => setCloudError(err instanceof Error ? err.message : String(err)))
+                .finally(() => setBusy(false));
+            }}
+          >
             Remove key
           </button>
           {test && <span style={{ color: 'var(--fg-muted)' }}>{test}</span>}
         </div>
+        {cloudError && <p role="alert" className="mt-2 text-xs" style={{ color: 'var(--danger)' }}>{cloudError}</p>}
       </div>
 
       <div>
@@ -564,7 +588,10 @@ function CloudSection() {
             key={cap}
             className="w-24 rounded px-2 py-1 text-sm"
             style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
-            onBlur={(e) => void setSpendCap(Number(e.target.value))}
+            onBlur={(e) => {
+              setCloudError(null);
+              void setSpendCap(Number(e.currentTarget.value)).catch((err) => setCloudError(err instanceof Error ? err.message : String(err)));
+            }}
           />
           <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>/ month</span>
         </div>

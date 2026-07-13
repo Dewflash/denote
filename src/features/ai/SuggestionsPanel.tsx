@@ -143,6 +143,7 @@ export function SuggestionsPanel() {
   const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
   const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
   const queueState = useVaultStore((s) => (activeNotePath ? s.aiQueueStateFor(activeNotePath) : 'idle'));
+  const aiProcessed = useVaultStore((s) => (activeNotePath ? s.aiHasProcessed(activeNotePath) : false));
   const refreshAppleAiStatus = useVaultStore((s) => s.refreshAppleAiStatus);
   const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const [running, setRunning] = useState(false);
@@ -215,8 +216,9 @@ export function SuggestionsPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-2 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-        The AI reads this note and suggests tags, links, and topics. Nothing is changed unless
-        you accept a suggestion.
+        The configured AI backend can suggest tags, links, and topics. High-confidence structure
+        may appear provisionally in the reserved <code>ai:</code> metadata; your note body changes
+        only when you accept a suggestion.
       </div>
       <div className="flex items-center justify-between gap-2 p-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <button
@@ -273,6 +275,8 @@ export function SuggestionsPanel() {
                 ? 'Preparing suggestions for this note… the map will update when the pass finishes.'
                 : queueState === 'parked'
                   ? `Suggestions are waiting for ${backendLabel(enrichBackend)}. Retry it when it is available.`
+                  : aiProcessed
+                    ? `The configured ${backendLabel(enrichBackend)} checked this note and found no actionable suggestions.`
                   : 'No suggestions yet. Press “Get suggestions” to ask the AI to read this note.'}
             </p>
             {appleAiHealth.status === 'unavailable' && enrichBackend === 'apple' && (

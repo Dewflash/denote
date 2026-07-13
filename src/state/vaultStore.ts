@@ -189,6 +189,7 @@ interface VaultStoreState {
   // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
   aiSuggestionsFor: (relPath: string) => AiAnnotation[];
   aiQueueStateFor: (relPath: string) => AiQueueState;
+  aiHasProcessed: (relPath: string) => boolean;
   acceptSuggestion: (id: string) => Promise<void>;
   rejectSuggestion: (id: string) => Promise<void>;
   acceptSuggestionsAbove: (relPath: string) => Promise<void>;
@@ -907,6 +908,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
     aiQueueStateFor(relPath) {
       return get().getActiveAiEngine()?.queueStateFor(relPath) ?? 'idle';
+    },
+    aiHasProcessed(relPath) {
+      return get().getActiveAiEngine()?.hasProcessed(relPath) ?? false;
     },
     async acceptSuggestion(id) {
       await get().getActiveAiEngine()?.accept(id);

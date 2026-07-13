@@ -28,6 +28,7 @@ export interface RejectionRecord {
 interface AnnotationsFile {
   version: 1;
   annotations: AiAnnotation[];
+  processed?: ProcessingRecord[];
 }
 interface RejectionsFile {
   version: 1;
@@ -45,8 +46,20 @@ export interface InternalStoreIO {
 
 const LIVE = new Set<AiAnnotation['status']>(['suggested', 'applied-provisional']);
 
+export type ProcessingMode = 'full' | 'links';
+
+/** A successful model pass, including passes that returned no suggestions. */
+export interface ProcessingRecord {
+  notePath: string;
+  contentHash: string;
+  model: string;
+  mode: ProcessingMode;
+  processedAt: string;
+}
+
 export class AnnotationStore {
   private annotations: AiAnnotation[] = [];
+  private processed: ProcessingRecord[] = [];
   private rejections: RejectionRecord[] = [];
 
   constructor(
@@ -56,7 +69,16 @@ export class AnnotationStore {
 
   /** Load both files from disk (tolerant of missing/corrupt files — treated as empty). */
   async load(): Promise<void> {
-    this.annotations = (await this.readJson<AnnotationsFile>(ANNOTATIONS_PATH))?.annotations ?? [];
+    const file = await this.readJson<AnnotationsFile>(ANNOTATIONS_PATH);
+    this.annotations = file?.annotations ?? [];
+    this.processed = (file?.processed ?? []).filter(
+      (record): record is ProcessingRecord =>
+        !!record &&
+        typeof record.notePath === 'string' &&
+        typeof record.contentHash === 'string' &&
+        typeof record.model === 'string' &&
+        (record.mode === 'full' || record.mode === 'links'),
+    );
     this.rejections = (await this.readJson<RejectionsFile>(REJECTIONS_PATH))?.rejections ?? [];
   }
 
@@ -97,6 +119,22 @@ export class AnnotationStore {
     return this.annotations.some((a) => a.notePath === relPath && a.contentHash === contentHash);
   }
 
+  /** True when a full pass completed for this exact note/hash/model. Legacy annotation-only
+   * records count as complete until a newer pass writes an explicit mode marker. */
+  hasFullProcessingFor(relPath: string, contentHash: string, model: string): boolean {
+    const records = this.processed.filter(
+      (record) => record.notePath === relPath && record.contentHash === contentHash && record.model === model,
+    );
+    if (records.some((record) => record.mode === 'full')) return true;
+    if (records.length > 0) return false;
+    return this.hasAnnotationsFor(relPath, contentHash, model);
+  }
+
+  /** True when any successful pass exists for the current hash, used only for honest UI copy. */
+  hasProcessedForHash(relPath: string, contentHash: string): boolean {
+    return this.processed.some((record) => record.notePath === relPath && record.contentHash === contentHash);
+  }
+
   isRejected(fingerprint: string, contentHash: string): boolean {
     return this.rejections.some((r) => r.fingerprint === fingerprint && r.contentHash === contentHash);
   }
@@ -116,6 +154,21 @@ export class AnnotationStore {
     await this.persistAnnotations();
   }
 
+  /** Record completion separately from suggestions so an empty model result is still hash-gated. */
+  async markProcessed(
+    relPath: string,
+    contentHash: string,
+    model: string,
+    mode: ProcessingMode,
+    processedAt: string,
+  ): Promise<void> {
+    this.processed = this.processed.filter(
+      (record) => !(record.notePath === relPath && record.contentHash === contentHash && record.model === model && record.mode === mode),
+    );
+    this.processed.push({ notePath: relPath, contentHash, model, mode, processedAt });
+    await this.persistAnnotations();
+  }
+
   async setStatus(id: string, status: AiAnnotation['status']): Promise<void> {
     const a = this.get(id);
     if (!a) return;
@@ -132,8 +185,10 @@ export class AnnotationStore {
 
   async removeForPath(relPath: string): Promise<void> {
     const before = this.annotations.length;
+    const processedBefore = this.processed.length;
     this.annotations = this.annotations.filter((a) => a.notePath !== relPath);
-    if (this.annotations.length !== before) await this.persistAnnotations();
+    this.processed = this.processed.filter((record) => record.notePath !== relPath);
+    if (this.annotations.length !== before || this.processed.length !== processedBefore) await this.persistAnnotations();
   }
 
   /** Move all records for a note to a new path (D4a move/rename reconciliation). */
@@ -148,6 +203,12 @@ export class AnnotationStore {
     for (const r of this.rejections) {
       if (r.notePath === oldPath) {
         r.notePath = newPath;
+        touched = true;
+      }
+    }
+    for (const record of this.processed) {
+      if (record.notePath === oldPath) {
+        record.notePath = newPath;
         touched = true;
       }
     }
@@ -177,7 +238,7 @@ export class AnnotationStore {
   // ── persistence ──────────────────────────────────────────────────────────────
 
   private async persistAnnotations(): Promise<void> {
-    const file: AnnotationsFile = { version: 1, annotations: this.annotations };
+    const file: AnnotationsFile = { version: 1, annotations: this.annotations, processed: this.processed };
     await this.io.write(ANNOTATIONS_PATH, JSON.stringify(file, null, 2) + '\n');
   }
 

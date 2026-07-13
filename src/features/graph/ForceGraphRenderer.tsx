@@ -391,6 +391,18 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
             }
           }
         }}
+        onRenderFramePost={(ctx) => {
+          // force-graph clears the backing canvas to transparent before every frame. Paint the
+          // token background behind the finished frame so accelerated canvas compositors do not
+          // turn the transparent field black while preserving the nodes and edges above it.
+          ctx.save();
+          const pixelRatio = window.devicePixelRatio || 1;
+          ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+          ctx.globalCompositeOperation = 'destination-over';
+          ctx.fillStyle = styleTokens.bg;
+          ctx.fillRect(0, 0, size.width, size.height);
+          ctx.restore();
+        }}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const x = node.x ?? 0;
           const y = node.y ?? 0;

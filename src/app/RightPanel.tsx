@@ -41,7 +41,7 @@ export function RightPanel() {
         <Tabs.Trigger
           value="suggestions"
           className="denote-tab-trigger flex-1 px-3 py-2 text-sm"
-          title="AI suggestions for the open note — nothing is applied unless you accept it"
+          title="AI suggestions for the open note; high-confidence structure may appear in ai: metadata until you accept it"
         >
           AI{suggestionCount > 0 ? ` (${suggestionCount})` : ''}
         </Tabs.Trigger>

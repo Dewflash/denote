@@ -119,6 +119,35 @@ describe('VaultAiEngine — enrichment + takeover', () => {
     expect(engine.graphLinkSuggestions()).toHaveLength(1);
   });
 
+  it('hash-gates an empty full result and clears the manual queue job', async () => {
+    const empty = new EmptyResultClient();
+    const router = new AiRouter([empty], { ...DEFAULT_ROUTING, enrich: 'mock' });
+    await backend.writeNote(root, 'Plain.md', '# Plain\nA note with no model-specific suggestions.\n');
+    const { engine } = await open({ router });
+
+    await engine.enrichNow('Plain.md');
+
+    expect(empty.enrichCalls).toBe(1);
+    expect(engine.hasProcessed('Plain.md')).toBe(true);
+    expect(engine['queue'].get('Plain.md')).toBeUndefined();
+    await engine['runEnrichment']('Plain.md');
+    expect(empty.enrichCalls).toBe(1);
+  });
+
+  it('keeps a link-only pass from marking full enrichment complete', async () => {
+    const linkOnly = new LinksOnlyResultClient();
+    const router = new AiRouter([linkOnly], { ...DEFAULT_ROUTING, enrich: 'mock' });
+    await backend.writeNote(root, 'Current.md', '# Current\nOffline design notes.\n');
+    await backend.writeNote(root, 'Neighbor.md', '# Neighbor\nOffline design patterns.\n');
+    const { engine } = await open({ router });
+
+    await engine.enrichNow('Current.md', { linksOnly: true });
+
+    expect(engine.hasProcessed('Current.md')).toBe(true);
+    expect(engine['seedMissingNotes']()).toBe(true);
+    expect(engine['queue'].get('Current.md')).toMatchObject({ state: 'pending' });
+  });
+
   it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
     const unavailable = new CountingClient(new MockAiClient(), 'apple');
     unavailable.available = false;
@@ -336,6 +365,52 @@ class DuplicateResultClient implements AiClient {
         { target: 'Neighbor', targetPath: 'Neighbor.md', reason: 'Offline design is shared.', confidence: 0.55 },
         { target: 'Neighbor', targetPath: 'Neighbor.md', reason: 'Offline design is shared clearly.', confidence: 0.9 },
       ],
+      tags: [],
+      summary: null,
+      aliases: [],
+    };
+  }
+  async labelSimilarity() {
+    return { related: false, reason: '', confidence: 0 };
+  }
+}
+
+class EmptyResultClient implements AiClient {
+  readonly id = 'mock' as const;
+  readonly modelId = 'mock-empty@1';
+  readonly isNetwork = false;
+  enrichCalls = 0;
+
+  async capabilities() {
+    return { available: true, maxInputTokens: 8000, supportsGuidedJson: true, modelVersion: this.modelId };
+  }
+  async summarize() {
+    return { summary: '' };
+  }
+  async enrichNote() {
+    this.enrichCalls += 1;
+    return { topics: [], links: [], tags: [], summary: null, aliases: [] };
+  }
+  async labelSimilarity() {
+    return { related: false, reason: '', confidence: 0 };
+  }
+}
+
+class LinksOnlyResultClient implements AiClient {
+  readonly id = 'mock' as const;
+  readonly modelId = 'mock-links-only@1';
+  readonly isNetwork = false;
+
+  async capabilities() {
+    return { available: true, maxInputTokens: 8000, supportsGuidedJson: true, modelVersion: this.modelId };
+  }
+  async summarize() {
+    return { summary: '' };
+  }
+  async enrichNote() {
+    return {
+      topics: [],
+      links: [{ target: 'Neighbor', targetPath: 'Neighbor.md', reason: 'Both describe offline design.', confidence: 0.8 }],
       tags: [],
       summary: null,
       aliases: [],

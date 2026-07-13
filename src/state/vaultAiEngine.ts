@@ -29,7 +29,7 @@ import {
   type LinkPayload,
   type ParsedNote,
 } from '../domain';
-import { AnnotationStore } from '../services/annotationStore';
+import { AnnotationStore, type ProcessingMode } from '../services/annotationStore';
 import { loadMigratedJson } from '../services/migrations';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
 import type { EnrichResult, NoteStub, TopicStub } from '../services/aiClient';
@@ -158,6 +158,13 @@ export class VaultAiEngine {
     const state = this.queue.get(relPath)?.state;
     return state === 'parked' ? 'parked' : state ? 'queued' : 'idle';
   }
+
+  /** Whether the current note hash has completed any successful AI pass, including an empty
+   * result. This is a display signal only; full-pass hash gating remains model/mode aware. */
+  hasProcessed(relPath: string): boolean {
+    const hash = this.repo.getHash(relPath);
+    return hash ? this.store.hasProcessedForHash(relPath, hash) : false;
+  }
   getConsent(): TakeoverConsent {
     return this.queue.getConsent();
   }
@@ -230,6 +237,7 @@ export class VaultAiEngine {
   async enrichNow(relPath: string, opts: { linksOnly?: boolean } = {}): Promise<void> {
     this.cancelDebounce(relPath);
     await this.runEnrichment(relPath, { force: true, linksOnly: opts.linksOnly });
+    this.queue.remove(relPath);
     await this.persistQueue();
   }
 
@@ -340,7 +348,7 @@ export class VaultAiEngine {
     }
 
     // Hash-gating (D26): already annotated at this (hash, model)? Skip unless forced.
-    if (!opts.force && this.store.hasAnnotationsFor(relPath, hash, client.modelId)) return;
+    if (!opts.force && !opts.linksOnly && this.store.hasFullProcessingFor(relPath, hash, client.modelId)) return;
 
     const capabilities = await this.checkCapabilities(client, localOnly);
     if (!capabilities.available) {
@@ -421,6 +429,8 @@ export class VaultAiEngine {
     } else {
       await this.store.replaceLiveFor(relPath, kept);
     }
+    const mode: ProcessingMode = linksOnly ? 'links' : 'full';
+    await this.store.markProcessed(relPath, hash, modelId, mode, new Date(this.now()).toISOString());
     this.deps.onChange?.();
 
     await this.applyTakeover(relPath);
@@ -635,10 +645,8 @@ export class VaultAiEngine {
       const hash = this.repo.getHash(note.relPath);
       if (!hash) continue;
       const job = this.queue.get(note.relPath);
-      if (job?.contentHash === hash) continue;
-
       const alreadyAnnotated = model
-        ? this.store.hasAnnotationsFor(note.relPath, hash, model)
+        ? this.store.hasFullProcessingFor(note.relPath, hash, model)
         : this.store.hasAnnotationsForHash(note.relPath, hash);
       if (alreadyAnnotated) {
         if (job) {
@@ -647,6 +655,7 @@ export class VaultAiEngine {
         }
         continue;
       }
+      if (job?.contentHash === hash) continue;
       this.queue.enqueue(note.relPath, hash);
       changed = true;
     }
