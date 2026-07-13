@@ -648,8 +648,6 @@ function AiSection() {
 
   return (
     <div className="flex flex-col gap-5">
-      <CloudSection />
-
       <div className="rounded p-3" style={{ border: '1px solid var(--border)' }}>
         <div className="flex items-center justify-between gap-2">
           <div className="text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
@@ -722,8 +720,8 @@ function AiSection() {
         </div>
         <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
           Embeddings propose up to <strong>{topK}</strong> neighbors per note above cosine{' '}
-          <strong>{minCos.toFixed(2)}</strong>; the on-device model must then name a specific shared
-          concept before an edge is drawn (D6a).
+          <strong>{minCos.toFixed(2)}</strong>; the configured AI backend must then name a specific
+          shared concept before an edge is drawn (D6a).
         </p>
         <div className="flex items-center gap-3">
           <span className="w-24 text-xs" style={{ color: 'var(--fg-muted)' }}>Top-K neighbors</span>
@@ -792,6 +790,8 @@ function AiSection() {
           ))}
         </div>
       </div>
+
+      <CloudSection />
     </div>
   );
 }

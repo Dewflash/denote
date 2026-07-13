@@ -45,8 +45,8 @@ export interface GraphViewProps {
    *  the node (pass-8 mixed-membership visual). */
   nodeRings?: Record<string, string[]>;
   selectedId?: string | null;
-  /** Plain click: open the note (or create+open a ghost) and, by convention, leave the graph.
-   *  Cmd-click: open + keep the graph open. Tag/topic clicks just select (no navigation). */
+  /** Plain click selects a node for inspection. Cmd-click opens a note (or creates a ghost) while
+   *  keeping the graph open. Tag/topic clicks only select. */
   onNodeClick?: (node: GraphNode, opts: { metaKey: boolean }) => void;
   onBackgroundClick?: () => void;
   onNodeDragEnd?: (node: GraphNode, x: number, y: number) => void;

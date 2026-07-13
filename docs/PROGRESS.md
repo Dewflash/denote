@@ -956,6 +956,20 @@ what is needed and why, and continues with the rest of the pass if independent.
   TypeScript-only follow-up; the previous native Rust/Swift/Tauri verification remains recorded in
   the earlier audit entry.
 
+- 2026-07-13 · continued UI/AI audit · **made the graph inspectable and the AI states honest.** A
+  plain graph-node click now selects the node and keeps the map open so the provenance inspector is
+  reachable; Cmd-click remains the quick open path. Cmd-N creates a self-titled Markdown note and
+  places the cursor after its generated H1. Capture now preflights its routed clients once, avoiding
+  doomed generation calls when Apple is unavailable. The deterministic preview backend no longer
+  invents a random nearby link when no meaningful term or concept is shared. AI/capture/organize copy
+  now names the configured backend, and Settings puts the local AI status before the cloud tier.
+  **Deviation:** the UX amendment's “on-device AI” wording is replaced in these states with
+  “configured AI backend” because the user can explicitly select the deterministic preview backend.
+  **Verification:** 466 TypeScript tests / 60 files, focused capture + AI tests 23/23, lint,
+  `tsc --noEmit`, production build, Playwright e2e 6/6, S1 hash reference, `git diff --check`, and
+  a light/dark/narrow graph inspection with zero console errors are green. This remains a
+  TypeScript/UI-only follow-up; native screenshot and owner acceptance are still external.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

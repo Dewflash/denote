@@ -7,6 +7,7 @@ import { useUiStore } from '../../state/uiStore';
 import { EDITOR_ROOT_ATTR } from '../../app/keymap';
 import { yamlScalar } from '../../domain/frontmatterText';
 import { captureCurrentContext } from '../../services/nativeCapture';
+import { newNoteBody } from './newNote';
 
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 const DEFAULT_INBOX = 'Inbox';
@@ -41,8 +42,8 @@ function uniquePath(dir: string | null, base: string): string {
 /** cmd-N: untitled note in the selected folder, or `Inbox/` if none is selected. */
 export async function createUntitledNote(folder: string | null): Promise<void> {
   const relPath = uniquePath(folder ?? DEFAULT_INBOX, 'Untitled');
-  await useVaultStore.getState().createNote(relPath, '');
-  await useVaultStore.getState().setActiveNote(relPath);
+  await useVaultStore.getState().createNote(relPath, newNoteBody(relPath));
+  await useVaultStore.getState().setActiveNote(relPath, { cursorAtEnd: true });
 }
 
 /** Rename target for a note being moved into a new folder while keeping its basename. */

@@ -36,6 +36,7 @@ import {
   type EnrichResult,
 } from '../services/aiClient';
 import { createTauriEmbeddingsBackend } from '../services/embeddings';
+import { suggestCaptureWithClients } from '../services/captureSuggestions';
 import type { AiAnnotation, SimilarPair } from '../domain';
 import type { AiLinkSuggestion } from '../domain/graphBuilder';
 import type { TakeoverConsent } from './enrichmentQueue';
@@ -73,6 +74,8 @@ export interface OpenBuffer {
   relPath: string;
   content: string;
   dirty: boolean;
+  /** New-note affordances can place the first insertion point after the generated H1. */
+  cursorAtEnd?: boolean;
 }
 
 /** S23 rule 3: an external edit landed under a dirty buffer. Never silently merged. */
@@ -208,7 +211,7 @@ interface VaultStoreState {
   /** Opens a note in the editor. By default this also REVEALS the editor (closes the graph /
    *  today overlays) so a click on any note affordance is always visibly answered; pass
    *  `reveal: false` only when the caller manages its own visibility (GraphPage cmd-click). */
-  setActiveNote: (relPath: string | null, opts?: { reveal?: boolean }) => Promise<void>;
+  setActiveNote: (relPath: string | null, opts?: { reveal?: boolean; cursorAtEnd?: boolean }) => Promise<void>;
   updateBufferContent: (content: string) => void;
   flushAutosave: () => Promise<void>;
 
@@ -221,7 +224,7 @@ interface VaultStoreState {
   /** S4: "clicking a ghost creates `{target}.md` in the current folder" (verbatim casing). Used
    *  by the editor's live preview, the reading view, and the backlinks/outgoing panels — every
    *  ghost-click affordance in the app goes through this one action. */
-  createGhostAndOpen: (target: string, opts?: { reveal?: boolean }) => Promise<void>;
+  createGhostAndOpen: (target: string, opts?: { reveal?: boolean; cursorAtEnd?: boolean }) => Promise<void>;
 
   resolveConflictKeepMine: () => void;
   resolveConflictTakeDisk: () => void;
@@ -948,25 +951,22 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     async suggestForCapture(text) {
       const localOnly = get().registry.find((v) => v.id === get().vaultId)?.localOnly ?? false;
       const firstLine = text.split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || 'Untitled';
+      let appleRouted = false;
       try {
         const summarizer = sharedRouter.route('summarize', { localOnly });
         const enricher = sharedRouter.route('enrich', { localOnly });
-        const [{ summary }, enrich] = await Promise.all([
-          summarizer.summarize({ text, maxWords: 40 }),
-          enricher.enrichNote({
-            text,
-            title: firstLine,
-            folderPath: 'Inbox',
-            existingTopics: [],
-            candidateNotes: [],
-          }),
-        ]);
-        const title = summary ? summary.split(/\s+/).slice(0, 8).join(' ') : firstLine;
-        const tags = enrich.tags.map((t) => t.name).filter(Boolean).slice(0, 6);
-        return { title, summary, tags };
+        appleRouted = summarizer.id === 'apple' || enricher.id === 'apple';
+        const response = await suggestCaptureWithClients(summarizer, enricher, text, firstLine);
+        if (response.unavailable) {
+          if (appleRouted) {
+            set({ appleAiHealth: { status: 'unavailable', reason: response.unavailable.reason, modelVersion: response.unavailable.modelVersion } });
+          }
+          return response.suggestion;
+        }
+        return response.suggestion;
       } catch {
         // Backend unavailable / offline without model — capture still works, unassisted.
-        await get().refreshAppleAiStatus().catch(() => {});
+        if (appleRouted) await get().refreshAppleAiStatus().catch(() => {});
         return { title: firstLine, summary: '', tags: [] };
       }
     },
@@ -988,7 +988,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       const content = await repo.readNote(relPath);
       set((s) => ({
         activeNotePath: relPath,
-        buffer: { relPath, content, dirty: false },
+        buffer: { relPath, content, dirty: false, cursorAtEnd: opts?.cursorAtEnd },
         conflict: null,
         revision: s.revision + 1,
       }));
@@ -1097,7 +1097,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       } catch {
         /* already exists (race with another creator) — fall through to opening it */
       }
-      await get().setActiveNote(relPath, opts);
+      await get().setActiveNote(relPath, { ...opts, cursorAtEnd: true });
     },
 
     resolveConflictKeepMine() {

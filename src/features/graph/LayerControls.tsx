@@ -117,12 +117,12 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
-        title="Group your notes into topics with the on-device AI — runs privately on this Mac"
+        title="Group your notes into topics with the configured AI backend"
       >
         Organize vault…
       </button>
 
-      <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Select a dot; click a note to open it.</span>
+      <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Select a dot to inspect it.</span>
       <button
         className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}

@@ -37,6 +37,13 @@ function modelLabel(model: string): string {
   return model;
 }
 
+function backendLabel(backend: string): string {
+  if (backend === 'apple') return 'on-device AI';
+  if (backend === 'anthropic') return 'Cloud AI';
+  if (backend === 'mock') return 'the test backend preview';
+  return backend;
+}
+
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   return (
@@ -221,7 +228,7 @@ export function SuggestionsPanel() {
         )}
         {running && (
           <p className="mb-3 text-sm" style={{ color: 'var(--fg-muted)' }}>
-            Reading this note with on-device AI…
+            Getting suggestions from {backendLabel(enrichBackend)}…
           </p>
         )}
         {suggestions.length === 0 && !running && (
@@ -230,13 +237,13 @@ export function SuggestionsPanel() {
               {queueState === 'queued'
                 ? 'Preparing suggestions for this note… the map will update when the pass finishes.'
                 : queueState === 'parked'
-                  ? 'Suggestions are waiting for the AI backend. Retry on-device AI when it is available.'
+                  ? `Suggestions are waiting for ${backendLabel(enrichBackend)}. Retry it when it is available.`
                   : 'No suggestions yet. Press “Get suggestions” to ask the AI to read this note.'}
             </p>
             {appleAiHealth.status === 'unavailable' && enrichBackend === 'apple' && (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-xs" style={{ color: 'var(--danger)' }}>
-                  On-device AI is unavailable right now. Your typed links, tags, and topic groups remain available.
+                  {backendLabel(enrichBackend)} is unavailable right now. Your typed links, tags, and topic groups remain available.
                 </p>
                 <button
                   type="button"
@@ -244,7 +251,7 @@ export function SuggestionsPanel() {
                   style={{ border: '1px solid var(--border)' }}
                   onClick={() => void refreshAppleAiStatus(true)}
                 >
-                  Retry on-device AI
+                  Retry {backendLabel(enrichBackend)}
                 </button>
               </div>
             )}

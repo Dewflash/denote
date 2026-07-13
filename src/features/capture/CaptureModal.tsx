@@ -111,7 +111,7 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
           <div className="mb-3 flex items-center justify-between">
             <Dialog.Title className="text-base font-semibold">Capture note</Dialog.Title>
             <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
-              {loading ? 'Analyzing on-device…' : `Suggested by ${displayBackend(backend)}`}
+              {loading ? `Analyzing with ${displayBackend(backend)}…` : `Suggested by ${displayBackend(backend)}`}
             </span>
           </div>
 

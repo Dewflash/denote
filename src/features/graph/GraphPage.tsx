@@ -10,7 +10,6 @@ import { buildGraph, dominantTopic, strongMemberships, type Graph, type Membersh
 import { paletteColor } from './layout';
 import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
-import { useUiStore } from '../../state/uiStore';
 import { ForceGraphRenderer } from './ForceGraphRenderer';
 import { LayerControls } from './LayerControls';
 import { NodeInspector } from './NodeInspector';
@@ -38,7 +37,6 @@ export function GraphPage() {
   const graphSimilarPairs = useVaultStore((s) => s.graphSimilarPairs);
   const graphAiLinks = useVaultStore((s) => s.graphAiLinks);
   const graphTopics = useVaultStore((s) => s.graphTopics);
-  const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
 
   const layers = useGraphStore((s) => s.layers);
   const minConfidence = useGraphStore((s) => s.minConfidence);
@@ -190,19 +188,21 @@ export function GraphPage() {
   // is a no-op fast path when it's already active (vaultStore.switchVault), so this is safe to
   // call unconditionally before navigating.
   async function handleNodeClick(node: GraphNode, opts: { metaKey: boolean }): Promise<void> {
+    // A plain click is inspection: keep the map open so the selected node's provenance and
+    // connection list can be read. Cmd-click remains the quick path for opening a note without
+    // leaving the map; ghost creation is deliberately explicit in the inspector.
     setSelectedNode(node.id);
-    if (node.type === 'ghost' && node.vaultId) {
+    if (!opts.metaKey || !node.vaultId) return;
+    if (node.type === 'ghost') {
       await switchVault(node.vaultId);
       void createGhostAndOpen(node.label ?? '', { reveal: false });
-      if (!opts.metaKey) setGraphViewOpen(false);
       return;
     }
-    if (node.type === 'note' && node.vaultId) {
+    if (node.type === 'note') {
       const relPath = noteRelPath(node.id, node.vaultId);
       if (relPath) {
         await switchVault(node.vaultId);
         void setActiveNote(relPath, { reveal: false });
-        if (!opts.metaKey) setGraphViewOpen(false);
       }
     }
     // tag/topic clicks just select — no navigation target.
@@ -259,7 +259,7 @@ export function GraphPage() {
           {sparseHint && (
             <div className="flex shrink-0 items-start gap-2 px-3 py-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}>
               <span>
-                Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.
+                Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the configured AI backend group them into topics.
               </span>
               <button type="button" aria-label="Dismiss graph hint" title="Dismiss until the next app launch" className="shrink-0 text-base leading-none" style={{ color: 'var(--fg-muted)' }} onClick={() => setSparseHintDismissed(true)}>
                 ×

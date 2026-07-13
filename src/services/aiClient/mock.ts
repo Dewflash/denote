@@ -111,6 +111,24 @@ function makeRng(seed: number): () => number {
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
+const STOP_WORDS = new Set([
+  'about', 'after', 'also', 'and', 'are', 'because', 'been', 'being', 'between', 'but',
+  'can', 'could', 'from', 'has', 'have', 'into', 'more', 'most', 'note', 'notes', 'not',
+  'only', 'other', 'our', 'same', 'some', 'than', 'that', 'their', 'them', 'then', 'these',
+  'they', 'this', 'those', 'through', 'under', 'very', 'was', 'were', 'what', 'when', 'where',
+  'which', 'while', 'with', 'would', 'your',
+]);
+
+function meaningfulTerms(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .split(/\s+/)
+      .filter((term) => term.length >= 4 && !STOP_WORDS.has(term)),
+  );
+}
+
 function firstWords(text: string, n: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const head = words.slice(0, n).join(' ');
@@ -176,7 +194,7 @@ export class MockAiClient implements AiClient {
 
     // Links: candidate neighbors that share a matched concept get a plausible, resolvable link.
     const links: SuggestedLink[] = [];
-    const matchedTests = matched.map((c) => c.test);
+    const currentTerms = meaningfulTerms(`${req.title} ${req.text}`);
     for (const n of req.candidateNotes.slice(0, 8)) {
       if (links.length >= 2) break;
       const hay = `${n.title} ${n.summary ?? ''}`;
@@ -188,13 +206,17 @@ export class MockAiClient implements AiClient {
           reason: `Shares the "${sharedConcept.topic}" theme with "${req.title}".`,
           confidence: round2(clamp01(0.7 + rng() * 0.2)),
         });
-      } else if (links.length === 0 && matchedTests.length === 0 && rng() > 0.5) {
-        // Nothing concept-matched: offer one weak link so link-suggestion UX is still reachable.
+        continue;
+      }
+      const sharedTerms = [...meaningfulTerms(hay)].filter((term) => currentTerms.has(term)).slice(0, 2);
+      if (sharedTerms.length > 0) {
+        // A lexical fallback is still constrained by a real shared term; never suggest a random
+        // nearby note merely to make the preview look busy.
         links.push({
           target: n.title,
           targetPath: n.relPath,
-          reason: `Nearby note in the same area of the vault as "${req.title}".`,
-          confidence: round2(clamp01(0.45 + rng() * 0.15)),
+          reason: `Both notes mention ${sharedTerms.join(' and ')}.`,
+          confidence: round2(clamp01(0.58 + rng() * 0.14)),
         });
       }
     }

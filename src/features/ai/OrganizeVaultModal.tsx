@@ -77,8 +77,9 @@ export function OrganizeVaultModal() {
             Organize vault
           </Dialog.Title>
           <Dialog.Description className="mt-1 text-xs" style={{ color: 'var(--fg-muted)' }}>
-            An on-device pass that reconciles topics, profiles folders, flags misfit notes, and
-            regenerates topic hub notes. Nothing is sent off-device; note bodies are never moved.
+            A local vault pass using the configured AI backend that reconciles topics, profiles
+            folders, flags misfit notes, and regenerates topic hub notes. Note bodies are never
+            moved.
           </Dialog.Description>
 
           {progress && (

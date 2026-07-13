@@ -48,7 +48,11 @@ export function Editor() {
       }),
     ];
     const view = new EditorView({
-      state: EditorState.create({ doc: buffer.content, extensions }),
+      state: EditorState.create({
+        doc: buffer.content,
+        extensions,
+        ...(buffer.cursorAtEnd ? { selection: { anchor: buffer.content.length } } : {}),
+      }),
       parent: containerRef.current,
     });
     view.dom.setAttribute(EDITOR_ROOT_ATTR, 'true');

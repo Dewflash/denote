@@ -51,6 +51,15 @@ describe('MockAiClient', () => {
     expect(res.links.some((l) => l.target === 'Miso Soup Recipe')).toBe(false);
   });
 
+  it('does not invent a link when a candidate shares no meaningful term', async () => {
+    const res = await mock.enrichNote(enrichReq({
+      text: 'A short note about an unrelated subject.',
+      title: 'Unrelated Note',
+      candidateNotes: [{ relPath: 'recipe.md', title: 'Miso Soup Recipe', summary: 'broth and tofu' }],
+    }));
+    expect(res.links).toEqual([]);
+  });
+
   it('labelSimilarity passes the vacuity gate only on a real shared concept', async () => {
     const related = await mock.labelSimilarity({
       a: { relPath: 'a.md', title: 'Yen Intervention', summary: 'BOJ and the yen' },

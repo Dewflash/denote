@@ -67,7 +67,7 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   await expect(page.getByText('AI links & similarity', { exact: true })).toBeVisible();
   await expect(page.getByText('Hide AI guesses below 0% sure', { exact: true })).toBeVisible();
   await expect(page.getByText('Outline folders', { exact: true })).toBeVisible();
-  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.';
+  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the configured AI backend group them into topics.';
   await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
 
   for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI links & similarity']) {
@@ -86,6 +86,7 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
 
   await page.getByRole('button', { name: 'Reset view' }).click();
   await page.getByTestId('graph-note-index-item').filter({ hasText: 'Miso Soup Recipe' }).click();
+  await expect(page.getByTestId('graph-canvas')).toBeVisible();
   await expect(page.getByText("This note isn't connected to anything yet. Open it and type [[ to link it to another note.", { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open note' })).toBeVisible();
 });
