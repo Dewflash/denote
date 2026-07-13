@@ -73,6 +73,13 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI-found similarity']) {
     await page.getByLabel(label, { exact: true }).click();
   }
+  const emptyLayerCopy = 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI-found similarity above.';
+  await expect(page.getByText(emptyLayerCopy, { exact: true })).toBeVisible();
+  const emptyHintBox = await page.getByText(emptyLayerCopy, { exact: true }).boundingBox();
+  const canvasBox = await page.getByTestId('graph-canvas').boundingBox();
+  expect(emptyHintBox).not.toBeNull();
+  expect(canvasBox).not.toBeNull();
+  expect(emptyHintBox!.y + emptyHintBox!.height).toBeLessThanOrEqual(canvasBox!.y);
   await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Dismiss graph hint' }).click();
   await expect(page.getByText(sparseCopy, { exact: true })).toBeHidden();

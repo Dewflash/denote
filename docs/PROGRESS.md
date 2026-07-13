@@ -905,6 +905,16 @@ what is needed and why, and continues with the rest of the pass if independent.
   still unavailable on this Mac and remains reported honestly; native owner acceptance remains
   the outstanding external check.
 
+- 2026-07-13 · focused visual + native shell audit · **three visible interaction defects fixed.**
+  Empty-layer graph guidance now occupies normal layout flow and cannot cover graph nodes; the
+  vault-rail import result is a readable, dismissible status message instead of an unexplained
+  `i` button; and mobile explorer/details controls announce their current open/closed action.
+  Added a Playwright geometry assertion that graph guidance ends before the canvas begins.
+  **Verification:** 455 TypeScript tests / 58 files, Playwright e2e 6/6, lint, `tsc --noEmit`,
+  production build, Rust library tests 19/19, Swift sidecar rebuild, native Tauri dev boot,
+  S1 hash reference, and `git diff --check` green. Apple Foundation Models remains unavailable
+  on this Mac and is reported honestly; native screenshot/owner acceptance is still external.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

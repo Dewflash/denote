@@ -57,7 +57,26 @@ export function VaultRail() {
       }}
     >
       {dropActive && <div className="absolute inset-1 z-10 flex items-center justify-center rounded p-1 text-center text-[10px]" style={{ backgroundColor: 'var(--bg)', border: '1px dashed var(--accent)', color: 'var(--accent)' }}>Drop notes</div>}
-      {dropMessage && <button type="button" title={dropMessage} aria-label={dropMessage} onClick={() => setDropMessage(null)} className="absolute bottom-12 z-20 h-5 w-5 rounded-full text-[10px]" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }}>i</button>}
+      {dropMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute bottom-12 left-1 z-20 flex w-[min(280px,calc(100vw-16px))] items-start gap-2 rounded p-2 text-xs shadow-lg"
+          style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}
+        >
+          <span className="min-w-0 flex-1">{dropMessage}</span>
+          <button
+            type="button"
+            aria-label="Dismiss import message"
+            title="Dismiss import message"
+            className="shrink-0 text-base leading-none"
+            style={{ color: 'var(--fg-muted)' }}
+            onClick={() => setDropMessage(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {registry.map((v) => {
         const isActive = v.id === vaultId;
         const isOpen = openVaultIds.includes(v.id);

@@ -293,8 +293,9 @@ function Shell() {
         <div className="denote-mobile-toolbar" aria-label="Panel controls">
           <button
             type="button"
-            aria-label="Show note list"
-            title="Show note list"
+            aria-label={mobileExplorerOpen ? "Hide note list" : "Show note list"}
+            aria-expanded={mobileExplorerOpen}
+            title={mobileExplorerOpen ? "Hide note list" : "Show note list"}
             className="denote-mobile-toolbar-button"
             onClick={() => { setMobileExplorerOpen((open) => !open); setMobileInspectorOpen(false); }}
           >
@@ -302,8 +303,9 @@ function Shell() {
           </button>
           <button
             type="button"
-            aria-label="Show note details"
-            title="Show note details"
+            aria-label={mobileInspectorOpen ? "Hide note details" : "Show note details"}
+            aria-expanded={mobileInspectorOpen}
+            title={mobileInspectorOpen ? "Hide note details" : "Show note details"}
             className="denote-mobile-toolbar-button"
             onClick={() => { setMobileInspectorOpen((open) => !open); setMobileExplorerOpen(false); }}
           >
