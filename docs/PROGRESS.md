@@ -970,6 +970,26 @@ what is needed and why, and continues with the rest of the pass if independent.
   a light/dark/narrow graph inspection with zero console errors are green. This remains a
   TypeScript/UI-only follow-up; native screenshot and owner acceptance are still external.
 
+- 2026-07-13 · final graph/AI audit · **fixed two visible graph defects and two automatic-linking
+  failure modes.** The page no longer carries the Vite starter title/favicon; the settled force
+  simulation now performs its authoritative camera fit after the compact placement force reheats,
+  so nodes and labels remain inside the map at desktop and 320px widths. Local graph mode now has
+  an explicit toolbar-level `Show all notes` action in addition to its scope banner. AI enrichment
+  drops model link targets that were not retrieved from the vault, preventing invented AI ghost
+  nodes. A permanent per-pair model refusal is recorded as a declined similarity pair so it cannot
+  starve unrelated notes; transient sidecar failures still retry with the bounded schedule. The
+  similarity prompt now explicitly frames the task as non-advisory topic classification.
+  **Current native probe:** the Apple sidecar reports `available: true` (`apple-fm@1`); real offline
+  summarize and enrichment requests succeeded, and neutral-topic similarity succeeded. The
+  finance-topic similarity probe was refused by Foundation Models as sensitive content; the app
+  now leaves that pair unlinked and continues other work instead of looping. **Verification:**
+  469 TypeScript tests / 60 files, focused AI tests 18/18, lint, `tsc --noEmit`, production build,
+  Playwright e2e 6/6, Rust library tests 19/19, Swift release build, native Tauri dev boot with
+  sidecar staging, S1 hash reference suite, and `git diff --check` green. Screenshots were checked
+  at 320x568, 390x844, and 1280x720 with zero browser console errors; native screenshot capture
+  remains unavailable in this headless session, and owner Tauri/Safari/private-GitHub checks remain
+  the external acceptance items listed above.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

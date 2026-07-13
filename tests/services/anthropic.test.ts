@@ -54,6 +54,21 @@ describe('AnthropicAiClient', () => {
     expect(res.summary?.text).toBe('BOJ intervened in the yen market.');
   });
 
+  it('drops model links that do not resolve to a retrieved candidate note', async () => {
+    const c = new AnthropicAiClient(transport(JSON.stringify({
+      links: [{ target: 'Invented topic', reason: 'unsupported', confidence: 0.99 }],
+    })));
+    const res = await c.enrichNote({
+      text: 'A note.',
+      title: 'Current note',
+      folderPath: '',
+      existingTopics: [],
+      candidateNotes: [{ relPath: 'Known.md', title: 'Known' }],
+    });
+
+    expect(res.links).toEqual([]);
+  });
+
   it('returns an empty result on a safety refusal instead of throwing', async () => {
     const c = new AnthropicAiClient(transport('', { refused: true }));
     const res = await c.enrichNote({ text: 'x', title: 'X', folderPath: '', existingTopics: [], candidateNotes: [] });

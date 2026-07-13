@@ -51,6 +51,24 @@ describe('AppleAiClient.enrichNote', () => {
     expect(res.links[0].targetPath).toBe('Finance/Fed Rate Decision.md');
     expect(res.summary?.text).toBe('BOJ intervened in the yen market.');
   });
+
+  it('drops model links that do not resolve to a retrieved candidate note', async () => {
+    const t = transport({
+      enrichNote: {
+        links: [{ target: 'A topic the model invented', reason: 'unsupported', confidence: 0.99 }],
+      },
+    });
+    const client = new AppleAiClient(t);
+    const res = await client.enrichNote({
+      text: 'A note about policy.',
+      title: 'Current note',
+      folderPath: '',
+      existingTopics: [],
+      candidateNotes: [{ relPath: 'Known.md', title: 'Known' }],
+    });
+
+    expect(res.links).toEqual([]);
+  });
 });
 
 describe('AppleAiClient.summarize', () => {

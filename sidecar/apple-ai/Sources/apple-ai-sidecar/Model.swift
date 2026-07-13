@@ -170,11 +170,13 @@ struct AppleModel {
         let bStr = noteStubString(b)
         let session = LanguageModelSession(
             instructions: """
-            You judge whether two notes are meaningfully related. Relatedness requires a specific \
+            You classify topic overlap between two private note snippets for a graph. This is not \
+            financial, medical, legal, or other professional advice: do not recommend actions, \
+            predict outcomes, or evaluate what the user should do. Relatedness requires a specific \
             shared concept in substance — never generic overlap. If unsure, answer not related.
             """
         )
-        let prompt = "Note A:\n\(aStr)\n\nNote B:\n\(bStr)\n\nAre they related? Name the specific shared concept."
+        let prompt = "Classify whether these two notes share a specific topic. Return only the structured graph-label result; do not provide advice or recommendations.\n\nNote A:\n\(aStr)\n\nNote B:\n\(bStr)\n\nAre they related? Name the specific shared concept."
         let response = try await session.respond(to: prompt, generating: GenSimilarity.self)
         return response.content
     }

@@ -36,6 +36,7 @@ test('pass-10 smoke covers vault, links, graph, search, capture, and hostile sni
 
 test('graph view keeps isolated notes discoverable', async ({ page }) => {
   await page.goto('/?graphMock=1');
+  await expect(page).toHaveTitle('DeNote');
 
   await expect(page.locator('canvas')).toBeVisible();
   await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-node-count', '8');

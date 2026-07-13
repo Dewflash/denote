@@ -264,7 +264,15 @@ export class VaultEmbeddingEngine {
       let label;
       try {
         label = await client.labelSimilarity({ a: this.stub(relPath), b: this.stub(n.relPath) });
-      } catch {
+      } catch (error) {
+        // A model refusal/schema failure is a terminal answer for this exact pair at these
+        // hashes. Remember it like any other declined pair so one sensitive note cannot starve
+        // every other note's similarity pass. Transport/time-out failures stay pending and are
+        // retried after the bounded backoff.
+        if (isPermanentSimilarityFailure(error)) {
+          await this.store.recordRejected(a, aHash, b, bHash);
+          continue;
+        }
         return { done: false, changed };
       }
       if (acceptSimilarity(label)) {
@@ -318,6 +326,11 @@ export class VaultEmbeddingEngine {
     if (note.frontmatter.source === 'ai') return true;
     return false;
   }
+}
+
+function isPermanentSimilarityFailure(error: unknown): boolean {
+  const detail = error instanceof Error ? error.message : String(error);
+  return /ai-invalid-output|refusal|sensitive content|schema-invalid/i.test(detail);
 }
 
 // ── binding factory (mirrors createVaultAiBinding / search binding) ───────────────────

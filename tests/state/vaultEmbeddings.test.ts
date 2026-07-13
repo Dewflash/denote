@@ -70,6 +70,7 @@ class CountingLlm implements AiClient {
   readonly isNetwork = false;
   labelCalls = 0;
   failLabels = false;
+  refuseOnce = false;
   private inner = new MockAiClient();
   capabilities() {
     return this.inner.capabilities();
@@ -83,6 +84,10 @@ class CountingLlm implements AiClient {
   async labelSimilarity(r: LabelSimilarityRequest) {
     this.labelCalls++;
     if (this.failLabels) throw new Error('sidecar unavailable');
+    if (this.refuseOnce) {
+      this.refuseOnce = false;
+      throw new Error('ai-invalid-output: refusal (sensitive content)');
+    }
     return this.inner.labelSimilarity(r);
   }
 }
@@ -170,6 +175,20 @@ describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
     llm.failLabels = false;
     engine.retry();
     await engine.settle();
+    expect(engine.similarPairs()).toHaveLength(1);
+  });
+
+  it('remembers a permanent model refusal and continues judging other pairs', async () => {
+    const llm = new CountingLlm();
+    llm.refuseOnce = true;
+    const { repo, engine } = await open(llm);
+    await repo.createNote('a.md', '# Bank Policy\nMonetary policy and interest rates.\n');
+    await repo.createNote('b.md', '# Soup\nMiso and tofu recipe.\n');
+    await repo.createNote('c.md', '# Central Bank\nThe central bank changed rates.\n');
+
+    await engine.syncAll();
+
+    expect(llm.labelCalls).toBeGreaterThan(1);
     expect(engine.similarPairs()).toHaveLength(1);
   });
 

@@ -31,6 +31,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
   const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
   const toggleHulls = useGraphStore((s) => s.toggleHulls);
   const resetView = useGraphStore((s) => s.resetView);
+  const localView = useGraphStore((s) => s.localView);
   const exitLocalView = useGraphStore((s) => s.exitLocalView);
   const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
   const toggleGraphVault = useGraphStore((s) => s.toggleGraphVault);
@@ -112,6 +113,17 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
       >
         {notesIndexOpen ? 'Hide note list' : 'Show note list'}
       </button>
+
+      {localView.enabled && (
+        <button
+          className="graph-toolbar-button rounded px-2 py-0.5"
+          style={{ border: '1px solid var(--border)' }}
+          onClick={exitLocalView}
+          title="Leave the focused map and show every note"
+        >
+          Show all notes
+        </button>
+      )}
 
       <button
         className="graph-toolbar-button rounded px-2 py-0.5"

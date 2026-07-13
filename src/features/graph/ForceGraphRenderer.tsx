@@ -208,11 +208,12 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
       const link = graph.d3Force('link') as unknown as { distance?: (value: number) => unknown } | undefined;
       const center = graph.d3Force('center') as unknown as { strength?: (value: number) => unknown } | undefined;
       const compact = positioned.length <= 24;
+      const narrow = size.width <= 360;
       // Keep unlinked notes in the same readable field as the connected component while still
       // giving real edges room to breathe. This changes only placement, never graph structure.
-      charge?.strength?.(compact ? -5 : -18);
-      link?.distance?.(compact ? 40 : 72);
-      center?.strength?.(compact ? 0.9 : 0.5);
+      charge?.strength?.(compact ? (narrow ? -20 : -5) : -18);
+      link?.distance?.(compact ? (narrow ? 62 : 40) : 72);
+      center?.strength?.(compact ? (narrow ? 0.65 : 0.9) : 0.5);
 
       // d3's center force moves the centroid but does not pull isolated nodes toward the
       // connected component. Without a gentle attraction, a small vault can fit technically
@@ -222,7 +223,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
       graph.d3Force('denote-compact', null);
       if (positioned.length <= 300) {
         const compactForce: CompactForce = ((alpha: number) => {
-          const strength = compact ? 0.018 : 0.004;
+          const strength = compact ? (narrow ? 0.008 : 0.018) : 0.004;
           for (const node of positionedRef.current) {
             if (node.fx !== undefined || node.fy !== undefined) continue;
             node.vx = (node.vx ?? 0) - node.x * strength * alpha;
@@ -231,10 +232,13 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
         }) as CompactForce;
         graph.d3Force('denote-compact', compactForce);
       }
+      // The custom force changes the settled bounds after the renderer's initial stop event.
+      // Allow the next stop to perform the authoritative fit around those final positions.
+      fittedGraphKeyRef.current = null;
       graph.d3ReheatSimulation();
     });
     return () => cancelAnimationFrame(frame);
-  }, [positioned.length]);
+  }, [positioned.length, size.width]);
 
   return (
     <div
@@ -326,6 +330,11 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
                 break;
               }
             }
+            // A crowded viewport is still useful when the nodes remain readable. Do not paint
+            // every unsatisfied label at the node's fallback position: that creates a text pile
+            // on narrow maps. Selected/hovered nodes are the intentional exception because their
+            // label is part of the inspection contract at every zoom and graph size.
+            if (!chosen && node.id !== selectedId && node.id !== hoveredId) continue;
             if (!chosen) {
               const x = node.x;
               const y = node.y + nodeRadius + labelGap + height / 2;

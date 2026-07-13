@@ -162,7 +162,10 @@ export class AppleAiClient implements AiClient {
           reason: (l.reason ?? '').trim() || `This note appears related to “${resolved.target}”.`,
           confidence: clamp01(l.confidence ?? 0),
         };
-      });
+      })
+      // The prompt only offers candidate notes. Do not turn a model hallucination or a topic
+      // name into an AI ghost edge; ghosts are for links the user actually wrote.
+      .filter((l) => l.targetPath !== undefined);
 
     const summaryText = (raw.summary ?? '').trim();
     const summary = summaryText

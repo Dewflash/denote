@@ -247,7 +247,10 @@ export class AnthropicAiClient implements AiClient {
       .filter((t) => t.name.length > 0);
     const links: SuggestedLink[] = (raw.links ?? [])
       .filter((l) => (l.target ?? '').trim())
-      .map((l) => ({ ...resolveLinkTarget(l.target!, req.candidateNotes), reason: (l.reason ?? '').trim(), confidence: clamp01(l.confidence ?? 0) }));
+      .map((l) => ({ ...resolveLinkTarget(l.target!, req.candidateNotes), reason: (l.reason ?? '').trim(), confidence: clamp01(l.confidence ?? 0) }))
+      // Candidate retrieval is the source of truth for AI links. Unknown model targets should
+      // not become ghost nodes; ghosts represent wikilinks the user authored.
+      .filter((l) => l.targetPath !== undefined);
     const summaryText = (raw.summary ?? '').trim();
 
     return {
