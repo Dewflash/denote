@@ -18,6 +18,19 @@ body {
   grid-template-columns: 56px 260px minmax(0, 1fr) 300px;
 }
 
+.denote-shell-explorer-collapsed {
+  grid-template-columns: 56px 0 minmax(0, 1fr) 300px;
+}
+
+.denote-shell-inspector-collapsed {
+  grid-template-columns: 56px 260px minmax(0, 1fr) 0;
+}
+
+.denote-shell-explorer-collapsed .denote-shell-explorer,
+.denote-shell-inspector-collapsed .denote-shell-inspector {
+  display: none;
+}
+
 .e2e-smoke-shell {
   grid-template-columns: 220px minmax(0, 1fr) 280px;
 }
@@ -58,6 +71,10 @@ body {
   display: none;
 }
 
+.denote-shell-graph .denote-desktop-panel-toggles {
+  display: none;
+}
+
 .denote-shell-rail,
 .denote-shell-explorer,
 .denote-shell-main,
@@ -73,6 +90,43 @@ body {
 
 .denote-mobile-toolbar {
   display: none;
+}
+
+.denote-desktop-panel-toggles {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.denote-panel-toggle {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+}
+
+.denote-panel-toggle:hover {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.denote-panel-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .denote-mobile-backdrop {
@@ -211,6 +265,10 @@ body {
     padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-panel);
+  }
+
+  .denote-desktop-panel-toggles {
+    display: none;
   }
 
   .denote-mobile-backdrop {

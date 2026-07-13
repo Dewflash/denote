@@ -46,6 +46,10 @@ type LabelLayout = LabelRect & {
   font: string;
 };
 
+type CompactForce = ((alpha: number) => void) & {
+  initialize?: (nodes: PositionedNode[]) => void;
+};
+
 const LABEL_DIRECTIONS = [
   { x: 0, y: 1 },
   { x: 1, y: 0 },
@@ -126,6 +130,10 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
   const cameraDirtyRef = useRef(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const labelLayoutsRef = useRef(new Map<string, LabelLayout>());
+  const positionedRef = useRef(positioned);
+  useEffect(() => {
+    positionedRef.current = positioned;
+  }, [positioned]);
 
   // Never hand our domain edge objects to the renderer: force-graph mutates `source`/`target`
   // (here aliased to `from`/`to`) into live node references once the simulation starts, which
@@ -194,10 +202,31 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
       if (!graph) return;
       const charge = graph.d3Force('charge') as unknown as { strength?: (value: number) => unknown } | undefined;
       const link = graph.d3Force('link') as unknown as { distance?: (value: number) => unknown } | undefined;
+      const center = graph.d3Force('center') as unknown as { strength?: (value: number) => unknown } | undefined;
+      const compact = positioned.length <= 24;
       // Keep unlinked notes in the same readable field as the connected component while still
       // giving real edges room to breathe. This changes only placement, never graph structure.
-      charge?.strength?.(-18);
-      link?.distance?.(72);
+      charge?.strength?.(compact ? -5 : -18);
+      link?.distance?.(compact ? 40 : 72);
+      center?.strength?.(compact ? 0.9 : 0.5);
+
+      // d3's center force moves the centroid but does not pull isolated nodes toward the
+      // connected component. Without a gentle attraction, a small vault can fit technically
+      // while still leaving one orphan stranded at the edge of the map. Keep this force local
+      // to the renderer: it changes placement only and never invents a relationship. Skip it
+      // for very large maps so the renderer's per-tick work stays bounded by the graph engine.
+      graph.d3Force('denote-compact', null);
+      if (positioned.length <= 300) {
+        const compactForce: CompactForce = ((alpha: number) => {
+          const strength = compact ? 0.018 : 0.004;
+          for (const node of positionedRef.current) {
+            if (node.fx !== undefined || node.fy !== undefined) continue;
+            node.vx = (node.vx ?? 0) - node.x * strength * alpha;
+            node.vy = (node.vy ?? 0) - node.y * strength * alpha;
+          }
+        }) as CompactForce;
+        graph.d3Force('denote-compact', compactForce);
+      }
       graph.d3ReheatSimulation();
     });
     return () => cancelAnimationFrame(frame);

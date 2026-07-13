@@ -24,19 +24,26 @@ export function OrganizeVaultModal() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; phase: OrganizePhase } | null>(null);
   const [result, setResult] = useState<OrganizeResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<CancelToken>({ aborted: false });
 
   const start = async (): Promise<void> => {
     setRunning(true);
     setResult(null);
+    setError(null);
     cancelRef.current = { aborted: false };
-    const res = await organize({
-      onProgress: (done, total, phase) => setProgress({ done, total, phase }),
-      signal: cancelRef.current,
-    });
-    setRunning(false);
-    setProgress(null);
-    setResult(res ?? { cancelled: true, mergedTopics: 0, prunedTopics: 0, materializedTopics: 0 });
+    try {
+      const res = await organize({
+        onProgress: (done, total, phase) => setProgress({ done, total, phase }),
+        signal: cancelRef.current,
+      });
+      setResult(res ?? { cancelled: true, mergedTopics: 0, prunedTopics: 0, materializedTopics: 0 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+      setProgress(null);
+    }
   };
 
   const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -84,6 +91,12 @@ export function OrganizeVaultModal() {
             </div>
           )}
 
+          {error && (
+            <div className="mt-4 rounded p-2 text-xs" role="alert" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}>
+              Organize vault could not finish: {error}
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             {running ? (
               <button
@@ -108,7 +121,7 @@ export function OrganizeVaultModal() {
                   disabled={!vaultId}
                   onClick={() => void start()}
                 >
-                  {result ? 'Run again' : 'Start'}
+                  {result || error ? 'Try again' : 'Start'}
                 </button>
               </>
             )}

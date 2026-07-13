@@ -167,8 +167,49 @@ function CenterPane() {
   );
 }
 
+function ShellPanelToggles({
+  explorerOpen,
+  inspectorOpen,
+  onToggleExplorer,
+  onToggleInspector,
+}: {
+  explorerOpen: boolean;
+  inspectorOpen: boolean;
+  onToggleExplorer: () => void;
+  onToggleInspector: () => void;
+}) {
+  return (
+    <div className="denote-desktop-panel-toggles" aria-label="Desktop panel controls">
+      <button
+        type="button"
+        data-testid="toggle-explorer-panel"
+        className="denote-panel-toggle"
+        aria-label={explorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+        aria-expanded={explorerOpen}
+        title={explorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+        onClick={onToggleExplorer}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden><path d={explorerOpen ? 'm15 6-6 6 6 6' : 'm9 6 6 6-6 6'} /></svg>
+      </button>
+      <button
+        type="button"
+        data-testid="toggle-inspector-panel"
+        className="denote-panel-toggle"
+        aria-label={inspectorOpen ? 'Hide links panel' : 'Show links panel'}
+        aria-expanded={inspectorOpen}
+        title={inspectorOpen ? 'Hide links panel' : 'Show links panel'}
+        onClick={onToggleInspector}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden><path d={inspectorOpen ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'} /></svg>
+      </button>
+    </div>
+  );
+}
+
 function Shell() {
   const graphViewOpen = useUiStore((s) => s.graphViewOpen);
+  const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
+  const [desktopInspectorOpen, setDesktopInspectorOpen] = useState(true);
   const [mobileExplorerOpen, setMobileExplorerOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
@@ -212,7 +253,7 @@ function Shell() {
   return (
     <>
     <div
-      className={`snippet-scope denote-shell grid h-screen${graphViewOpen ? " denote-shell-graph" : ""}${mobileExplorerOpen ? " denote-shell-explorer-open" : ""}${mobileInspectorOpen ? " denote-shell-inspector-open" : ""}`}
+      className={`snippet-scope denote-shell grid h-screen${graphViewOpen ? " denote-shell-graph" : ""}${!desktopExplorerOpen ? " denote-shell-explorer-collapsed" : ""}${!desktopInspectorOpen ? " denote-shell-inspector-collapsed" : ""}${mobileExplorerOpen ? " denote-shell-explorer-open" : ""}${mobileInspectorOpen ? " denote-shell-inspector-open" : ""}`}
       style={{
         gridTemplateRows: "1fr 24px",
         backgroundColor: "var(--bg)",
@@ -243,6 +284,12 @@ function Shell() {
         <ErrorBoundary surface="Explorer"><ExplorerPanel /></ErrorBoundary>
       </aside>
       <main className="denote-shell-main" style={{ gridRow: "1 / 2", display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <ShellPanelToggles
+          explorerOpen={desktopExplorerOpen}
+          inspectorOpen={desktopInspectorOpen}
+          onToggleExplorer={() => setDesktopExplorerOpen((open) => !open)}
+          onToggleInspector={() => setDesktopInspectorOpen((open) => !open)}
+        />
         <div className="denote-mobile-toolbar" aria-label="Panel controls">
           <button
             type="button"

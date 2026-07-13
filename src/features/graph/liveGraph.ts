@@ -13,6 +13,8 @@ import { seedPosition } from './layout';
 export interface PositionedNode extends GraphNode {
   x: number;
   y: number;
+  vx?: number;
+  vy?: number;
   fx?: number;
   fy?: number;
 }
@@ -20,7 +22,7 @@ export interface PositionedNode extends GraphNode {
 function seedRadiusForGraph(nodeCount: number): number {
   // Small vaults should read as one compact map. Grow by sqrt so larger vaults still have room
   // to separate, without placing a four-note graph across an unnecessarily large world.
-  return Math.min(190, Math.max(28, 20 + Math.sqrt(Math.max(1, nodeCount)) * 20));
+  return Math.min(120, Math.max(16, 12 + Math.sqrt(Math.max(1, nodeCount)) * 5));
 }
 
 /** Mutates and returns `registry` in place: `registry` is the caller's persistent id→node map

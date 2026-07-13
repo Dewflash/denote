@@ -114,9 +114,10 @@ test('graph overlays stay mutually exclusive on a narrow window', async ({ page 
   await expect(page.getByTestId('graph-notes-index')).toBeVisible();
   await page.waitForTimeout(1800);
 
-  // A seeded ghost node remains visible in the uncovered right-hand strip while the note index
-  // is open, which exercises the canvas click path without relying on the covered labels.
-  await canvas.click({ position: { x: 385, y: 373 } });
+  // Use the text index to select a node instead of a pixel coordinate. The force layout is
+  // intentionally compact and can move nodes as the graph settles, but the overlay contract
+  // should stay stable regardless of their final positions.
+  await page.getByTestId('graph-note-index-item').filter({ hasText: 'Miso Soup Recipe' }).click();
   await expect(page.getByTestId('graph-notes-index')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
 

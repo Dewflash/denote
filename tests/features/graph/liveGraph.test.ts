@@ -18,6 +18,14 @@ describe('reconcileNodePositions', () => {
     expect(farthest).toBeLessThanOrEqual(241);
   });
 
+  it('keeps a small graph close enough that isolated notes do not start stranded', () => {
+    const registry = new Map<string, PositionedNode>();
+    const nodes = Array.from({ length: 8 }, (_, i) => ({ id: `v/${i}.md`, type: 'note' as const }));
+    const positioned = reconcileNodePositions(registry, nodes as GraphNode[]);
+    const farthest = Math.max(...positioned.map((node) => Math.hypot(node.x, node.y)));
+    expect(farthest).toBeLessThanOrEqual(30);
+  });
+
   it('reuses the SAME object reference across calls for an id seen before', () => {
     const registry = new Map<string, PositionedNode>();
     const first = reconcileNodePositions(registry, [{ id: 'v/A.md', type: 'note', label: 'A' } as GraphNode])[0];

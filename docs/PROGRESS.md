@@ -850,6 +850,19 @@ what is needed and why, and continues with the rest of the pass if independent.
   TypeScript tests / 57 files, lint, type-check, production build, Playwright e2e 6/6, Rust 19/19,
   Swift sidecar build, S1 hash reference, and `git diff --check` green.
 
+- 2026-07-13 · continued UI/AI audit · **three concrete interaction failures fixed.** Small graphs
+  now seed and settle into a compact readable field so isolated notes do not begin stranded far
+  from the connected component; the placement-only attraction is skipped above 300 nodes to keep
+  large-map tick work bounded. Desktop file explorer and Links panel now have independent collapse
+  and reopen controls, while graph mode and mobile drawers keep their existing panel rules.
+  Organize vault now catches on-device model failures, resets its running state, and exposes a
+  retryable error instead of hanging when Apple Foundation Models returns Model Manager 1008.
+  The mobile overlay regression now selects through the stable note index rather than a settling
+  canvas coordinate. **Verification:** 453 TypeScript tests / 57 files, lint, `tsc --noEmit`,
+  production build, Playwright e2e 6/6, native Tauri Vite/Rust/Swift build and boot, hash reference
+  suite, and `git diff --check` green. Native screenshot capture was unavailable in this headless
+  session; the Apple model remains unavailable on this Mac and is reported honestly by the app.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with
