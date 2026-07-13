@@ -945,6 +945,17 @@ what is needed and why, and continues with the rest of the pass if independent.
   path, rather than implying it will keep retrying in the background. The deterministic mock is now
   labeled `Test backend` so preview output cannot be mistaken for on-device intelligence.
 
+- 2026-07-13 · automatic-linking retrieval audit · **enrichment now receives embedding-ranked
+  neighbor summaries.** The previous path sent the first 25 note titles, so generic titles could not
+  produce useful links even when local embeddings had already found related notes. Enrichment now
+  requests top-k local neighbors as bounded prompt stubs, with a capped opening excerpt only as the
+  pre-embedding fallback; the separate AI reason/confidence gate still controls which links reach the
+  graph. This follows D12/S16 and does not write markdown automatically. **Verification:** 462
+  TypeScript tests / 58 files, focused AI + embedding tests 18/18, lint, `tsc --noEmit`, production
+  build, Playwright e2e 6/6, S1 hash reference suite, and `git diff --check` are green. This was a
+  TypeScript-only follow-up; the previous native Rust/Swift/Tauri verification remains recorded in
+  the earlier audit entry.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

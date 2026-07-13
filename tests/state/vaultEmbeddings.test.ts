@@ -128,6 +128,21 @@ describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
     expect(p.aVaultId).toBe(repo.vaultId);
   });
 
+  it('exposes embedding-ranked neighbor summaries for enrichment retrieval', async () => {
+    const { repo, engine } = await open(new MockAiClient());
+    await repo.createNote('a.md', '# Current\nA note about central-bank policy.\n');
+    await repo.createNote('b.md', '# Neighbor\nA short note about rate policy.\n');
+    await engine.syncAll();
+
+    await expect(engine.candidateNotesFor('a.md')).resolves.toEqual([
+      expect.objectContaining({
+        relPath: 'b.md',
+        title: 'Neighbor',
+        summary: expect.stringContaining('rate policy'),
+      }),
+    ]);
+  });
+
   it('does not re-ask the LLM about a rejected pair on the next sync (S15 memory)', async () => {
     const llm = new CountingLlm();
     const { repo, engine } = await open(llm);

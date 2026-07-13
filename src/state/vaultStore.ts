@@ -528,11 +528,26 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         onChange: () => set((s) => ({ revision: s.revision + 1 })),
         reenrich: (relPath) => aiEngines.get(selfRef.vaultId ?? '')?.enrichNow(relPath) ?? Promise.resolve(),
       });
+      // Embeddings + ai-similar edges (pass 7). Local-only embedding; labelSimilarity inherits the
+      // D18 boundary via the shared router. It also supplies ranked prompt candidates to enrichment.
+      const embeddingBinding = createVaultEmbeddingBinding({
+        backend: embeddingsBackend,
+        router: sharedRouter,
+        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+        k: () => useUiStore.getState().similarityTopK,
+        minCos: () => useUiStore.getState().similarityMinCos,
+        onChange: () => {
+          set((s) => ({ revision: s.revision + 1 }));
+          // A note's vectors just changed — (re)compute cross-vault edges (S24), debounced.
+          crossVaultEngine.schedule();
+        },
+      });
       const aiBinding = createVaultAiBinding({
         router: sharedRouter,
         localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
         threshold: () => useUiStore.getState().aiTakeoverThreshold,
         existingTopics: () => ontologyBinding.getEngine()?.topicStubs() ?? [],
+        candidateNotes: (relPath) => embeddingBinding.getEngine()?.candidateNotesFor(relPath) ?? [],
         onEnrichResult: (relPath, hash, result) =>
           ontologyBinding.getEngine()?.onEnrichResult(relPath, hash, result) ?? Promise.resolve(),
         // S23: only defer writes to the note that is OPEN and DIRTY in the ACTIVE editor.
@@ -544,20 +559,6 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         onChange: () => set((s) => ({ revision: s.revision + 1 })),
         onConsentNeeded: (count) => {
           if (selfRef.vaultId) set({ aiConsentPrompt: { vaultId: selfRef.vaultId, count } });
-        },
-      });
-      // Embeddings + ai-similar edges (pass 7). Local-only embedding; labelSimilarity inherits the
-      // D18 boundary via the shared router. Feeds the graph through `graphSimilarPairs`.
-      const embeddingBinding = createVaultEmbeddingBinding({
-        backend: embeddingsBackend,
-        router: sharedRouter,
-        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
-        k: () => useUiStore.getState().similarityTopK,
-        minCos: () => useUiStore.getState().similarityMinCos,
-        onChange: () => {
-          set((s) => ({ revision: s.revision + 1 }));
-          // A note's vectors just changed — (re)compute cross-vault edges (S24), debounced.
-          crossVaultEngine.schedule();
         },
       });
       const onIndexChange: IndexChangeHook = (relPath, note) => {

@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Repository } from '../../src/state/repository';
-import { VaultAiEngine } from '../../src/state/vaultAiEngine';
+import { VaultAiEngine, type VaultAiEngineDeps } from '../../src/state/vaultAiEngine';
 import { AnnotationStore } from '../../src/services/annotationStore';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../../src/services/aiClient';
 import type { AiClient } from '../../src/services/aiClient';
@@ -30,7 +30,7 @@ interface Harness {
   clock: ReturnType<typeof makeClock>;
 }
 
-async function open(opts: { router?: AiRouter; localOnly?: boolean } = {}): Promise<Harness> {
+async function open(opts: { router?: AiRouter; localOnly?: boolean; candidateNotes?: VaultAiEngineDeps['candidateNotes'] } = {}): Promise<Harness> {
   const clock = makeClock();
   const ops: Op[] = [];
   const holder: { engine?: VaultAiEngine } = {};
@@ -47,6 +47,7 @@ async function open(opts: { router?: AiRouter; localOnly?: boolean } = {}): Prom
     now: clock.now,
     localOnly: () => opts.localOnly ?? false,
     threshold: () => 0.75,
+    candidateNotes: opts.candidateNotes,
     pushOp: (op) => ops.push(op),
     disableTimers: true, // drive enrichNow() explicitly for determinism
   });
@@ -66,6 +67,23 @@ describe('VaultAiEngine — enrichment + takeover', () => {
       state: 'pending',
     });
     expect(engine.queueStateFor('Existing.md')).toBe('queued');
+  });
+
+  it('passes embedding-ranked neighbor summaries to the enrichment backend', async () => {
+    const counter = new CountingClient(new MockAiClient());
+    const router = new AiRouter([counter], DEFAULT_ROUTING);
+    await backend.writeNote(root, 'Current.md', '# Current\nA note about policy.\n');
+    await backend.writeNote(root, 'Neighbor.md', '# Neighbor\nA concise policy summary.\n');
+    const { engine } = await open({
+      router,
+      candidateNotes: () => [{ relPath: 'Neighbor.md', title: 'Neighbor', summary: 'policy summary' }],
+    });
+
+    await engine.enrichNow('Current.md');
+
+    expect(counter.lastEnrichRequest?.candidateNotes).toEqual([
+      { relPath: 'Neighbor.md', title: 'Neighbor', summary: 'policy summary' },
+    ]);
   });
 
   it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
@@ -218,6 +236,7 @@ describe('VaultAiEngine — D18 localOnly', () => {
 class CountingClient implements AiClient {
   enrichCalls = 0;
   capabilitiesCalls = 0;
+  lastEnrichRequest: Parameters<AiClient['enrichNote']>[0] | undefined;
   available = true;
   constructor(
     private readonly inner: AiClient,
@@ -241,6 +260,7 @@ class CountingClient implements AiClient {
   }
   enrichNote(req: Parameters<AiClient['enrichNote']>[0]) {
     this.enrichCalls++;
+    this.lastEnrichRequest = req;
     return this.inner.enrichNote(req);
   }
   labelSimilarity(req: Parameters<AiClient['labelSimilarity']>[0]) {

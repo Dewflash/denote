@@ -20,7 +20,7 @@ import {
   embedTextForNote,
   type EmbeddingsBackend,
 } from '../services/embeddings';
-import type { AiClient, AiRouter } from '../services/aiClient';
+import type { AiClient, AiRouter, NoteStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
 import { SimilarStore } from '../services/similarStore';
 import type { Repository } from './repository';
@@ -128,6 +128,20 @@ export class VaultEmbeddingEngine {
       reason: p.reason,
       confidence: p.confidence,
     }));
+  }
+
+  /** Return the local embedding-ranked neighbors as bounded prompt stubs for note enrichment.
+   * Similarity edges still require the separate label gate; this method only supplies retrieval
+   * context to the enrichment model (D12/S16). */
+  async candidateNotesFor(relPath: string, k = Math.max(1, Math.round(this.deps.k?.() ?? 3))): Promise<NoteStub[]> {
+    try {
+      const neighbors = await this.backend.topK(this.repo.root, relPath, k, 0);
+      return neighbors
+        .filter((neighbor) => neighbor.relPath !== relPath && !!this.repo.getParsed(neighbor.relPath))
+        .map((neighbor) => this.stub(neighbor.relPath));
+    } catch {
+      return [];
+    }
   }
 
   // ── sync ─────────────────────────────────────────────────────────────────────

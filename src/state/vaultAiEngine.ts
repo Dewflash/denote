@@ -32,7 +32,7 @@ import {
 import { AnnotationStore } from '../services/annotationStore';
 import { loadMigratedJson } from '../services/migrations';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
-import type { EnrichResult, TopicStub } from '../services/aiClient';
+import type { EnrichResult, NoteStub, TopicStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
 import type { Op } from './opLog';
 import type { Repository } from './repository';
@@ -71,6 +71,8 @@ export interface VaultAiEngineDeps {
   existingTopics?: () => TopicStub[];
   /** Fold an enrichment result's topics into the persistent ontology (pass 8 canonicalization). */
   onEnrichResult?: (relPath: string, hash: string, result: EnrichResult) => Promise<void>;
+  /** Retrieve embedding-ranked neighbor summaries for the enrichment prompt (D12/S16). */
+  candidateNotes?: (relPath: string) => Promise<NoteStub[]> | NoteStub[];
   /** Test hook: disable the internal debounce timer so enqueue() is a no-op timer-wise. */
   disableTimers?: boolean;
 }
@@ -333,12 +335,15 @@ export class VaultAiEngine {
 
     let result: EnrichResult;
     try {
+      const retrievedCandidates = await this.deps.candidateNotes?.(relPath);
       result = await client.enrichNote({
         text: note.bodyText || '',
         title: note.title,
         folderPath: dirOf(relPath),
         existingTopics: this.deps.existingTopics?.() ?? [], // D14/R3 retrieval (pass 8 ontology)
-        candidateNotes: this.candidateNotes(relPath),
+        candidateNotes: retrievedCandidates && retrievedCandidates.length > 0
+          ? retrievedCandidates
+          : this.candidateNotes(relPath),
       });
     } catch (error) {
       const reason = this.backendUnavailableReason(error);
@@ -636,7 +641,11 @@ export class VaultAiEngine {
       if (n.relPath === selfPath) continue;
       if (n.frontmatter.source === 'ai') continue;
       if (ENRICHABLE_SKIP_DIRS.some((d) => n.relPath.startsWith(d))) continue;
-      out.push({ relPath: n.relPath, title: n.title });
+      // Before the embedding store is ready, use a bounded opening excerpt as a temporary summary
+      // proxy. Never send the full body, and replace this fallback with ranked neighbors as soon
+      // as the local embedding engine is available.
+      const excerpt = n.bodyText.trim().split(/\s+/).filter(Boolean).slice(0, 40).join(' ');
+      out.push({ relPath: n.relPath, title: n.title, ...(excerpt ? { summary: excerpt } : {}) });
       if (out.length >= 25) break;
     }
     return out;
