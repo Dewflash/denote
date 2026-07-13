@@ -84,8 +84,8 @@ export function E2ESmoke() {
   return (
     <>
       {hostileSnippet && <style data-testid="hostile-snippet">{'.snippet-scope * { display: none !important; }'}</style>}
-      <div className="snippet-scope grid h-screen" style={{ gridTemplateColumns: '220px 1fr 280px', gridTemplateRows: '1fr 28px', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}>
-        <aside className="p-3" style={{ borderRight: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}>
+      <div className="snippet-scope e2e-smoke-shell grid h-screen" style={{ gridTemplateRows: '1fr 28px', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}>
+        <aside className="e2e-smoke-explorer p-3" style={{ borderRight: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}>
           <div className="mb-2 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>Fixture Vault</div>
           {notes.map((note) => (
             <button
@@ -142,7 +142,7 @@ export function E2ESmoke() {
           )}
         </main>
 
-        <aside className="p-3" style={{ borderLeft: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}>
+        <aside className="e2e-smoke-inspector p-3" style={{ borderLeft: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}>
           <h2 className="mb-2 text-sm font-semibold">Backlinks</h2>
           <div data-testid="backlinks-panel" className="mb-4 text-sm">
             {backlinks.length === 0 ? 'No backlinks' : backlinks.map((n) => <div key={n.title}>{n.title}</div>)}
@@ -176,7 +176,7 @@ export function E2ESmoke() {
       </button>
 
       {searchOpen && (
-        <div data-testid="search-dialog" className="fixed left-1/2 top-16 z-50 w-[520px] -translate-x-1/2 rounded p-3" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
+        <div data-testid="search-dialog" className="fixed left-1/2 top-16 z-50 w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded p-3" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
           <input
             data-testid="search-input"
             className="mb-2 w-full rounded px-2 py-1"
@@ -203,7 +203,7 @@ export function E2ESmoke() {
       )}
 
       {captureOpen && (
-        <div data-testid="capture-dialog" className="fixed left-1/2 top-24 z-50 w-[460px] -translate-x-1/2 rounded p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
+        <div data-testid="capture-dialog" className="fixed left-1/2 top-24 z-50 w-[460px] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded p-4" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
           <h2 className="mb-2 font-semibold">Capture note</h2>
           <p className="mb-3 text-sm" style={{ color: 'var(--fg-muted)' }}>Source: Safari · https://example.com/boj</p>
           <button data-testid="file-capture" className="rounded px-3 py-1.5 text-sm" style={{ backgroundColor: 'var(--accent)', color: '#fff' }} onClick={fileCapture}>
@@ -213,7 +213,7 @@ export function E2ESmoke() {
       )}
 
       {settingsOpen && (
-        <div data-testid="settings-dialog" className="fixed left-1/2 top-1/2 z-50 w-[520px] -translate-x-1/2 -translate-y-1/2 rounded p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
+        <div data-testid="settings-dialog" className="fixed left-1/2 top-1/2 z-50 w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 rounded p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}>
           <h2 className="mb-2 text-lg font-semibold">Settings</h2>
           <p data-testid="settings-visible" className="text-sm">Settings remains outside the snippet scope.</p>
           <button className="mt-3 rounded px-2 py-1 text-sm" style={{ border: '1px solid var(--border)' }} onClick={() => setSettingsOpen(false)}>

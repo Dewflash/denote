@@ -776,6 +776,18 @@ what is needed and why, and continues with the rest of the pass if independent.
   changed in this audit. Remaining gaps are owner-only Tauri/Safari capture, real-key cloud, and
   private-GitHub acceptance scripts from Checkpoint E.
 
+- 2026-07-13 · final responsive shell/modal audit · **PASS with no new scope deviations.** Re-ran
+  the welcome screen, fixture shell, full graph, sparse-graph controls, and isolated-note path at
+  desktop and 390x844. The production shell now collapses to a 48px rail plus an editor column on
+  narrow windows; the note list and inspector become mutually exclusive drawers, while graph mode
+  hides both side panels. Welcome copy, status health, conflict actions, smoke controls, and all
+  fixed-width dialog surfaces stay within the viewport; long dialog bodies scroll instead of
+  clipping. Added the narrow-window Playwright regression. **Verification:** 449 TypeScript tests /
+  57 files, lint, `tsc --noEmit`, production build, Playwright e2e 5/5, hash reference suite, and
+  `git diff --check` green. The sandboxed e2e server needed approved host bind access; plain Vite
+  cannot exercise native Tauri vault/capture bridges, so owner-only acceptance items remain those
+  listed under Checkpoint E.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with

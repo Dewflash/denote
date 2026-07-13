@@ -9,6 +9,98 @@ body {
   font-family: var(--font-ui);
 }
 
+.denote-shell {
+  grid-template-columns: 56px 260px minmax(0, 1fr) 300px;
+}
+
+.e2e-smoke-shell {
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+}
+
+.denote-shell-graph {
+  grid-template-columns: 56px 0 minmax(0, 1fr) 0;
+}
+
+.denote-shell-rail,
+.denote-shell-explorer,
+.denote-shell-main,
+.denote-shell-inspector {
+  grid-row: 1;
+}
+
+.denote-shell-rail {
+  grid-column: 1;
+}
+
+.denote-shell-explorer {
+  grid-column: 2;
+}
+
+.denote-shell-main {
+  grid-column: 3;
+}
+
+.denote-shell-inspector {
+  grid-column: 4;
+}
+
+.denote-shell-graph .denote-shell-explorer,
+.denote-shell-graph .denote-shell-inspector {
+  display: none;
+}
+
+.denote-shell-graph .denote-mobile-toolbar {
+  display: none;
+}
+
+.denote-shell-rail,
+.denote-shell-explorer,
+.denote-shell-main,
+.denote-shell-inspector {
+  min-width: 0;
+  min-height: 0;
+}
+
+.denote-shell-explorer,
+.denote-shell-inspector {
+  display: block;
+}
+
+.denote-mobile-toolbar {
+  display: none;
+}
+
+.denote-mobile-backdrop {
+  display: none;
+}
+
+.denote-mobile-toolbar-button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+}
+
+.denote-mobile-toolbar-button:hover {
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+
+.denote-mobile-toolbar-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .denote-tab-trigger {
   color: var(--fg-muted);
   background: transparent;
@@ -40,6 +132,121 @@ body {
 }
 
 @media (max-width: 720px) {
+  .e2e-smoke-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .e2e-smoke-explorer,
+  .e2e-smoke-inspector {
+    display: none;
+  }
+
+  .e2e-smoke-shell main {
+    grid-column: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+
+  .denote-shell {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .denote-shell-graph {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .denote-shell-rail {
+    grid-column: 1;
+  }
+
+  .denote-shell-main {
+    grid-column: 2;
+  }
+
+  .denote-shell-explorer,
+  .denote-shell-inspector {
+    grid-column: auto;
+  }
+
+  .denote-shell-explorer,
+  .denote-shell-inspector {
+    position: fixed;
+    top: 0;
+    bottom: 24px;
+    z-index: 30;
+    width: min(300px, calc(100vw - 56px));
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .denote-shell-explorer {
+    left: 48px;
+    display: none;
+  }
+
+  .denote-shell-inspector {
+    right: 0;
+    display: none;
+  }
+
+  .denote-shell-explorer-open .denote-shell-explorer,
+  .denote-shell-inspector-open .denote-shell-inspector {
+    display: block;
+  }
+
+  .denote-shell-graph .denote-shell-explorer,
+  .denote-shell-graph .denote-shell-inspector {
+    display: none;
+  }
+
+  .denote-mobile-toolbar {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+
+  .denote-mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0 0 24px;
+    z-index: 20;
+    border: 0;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .denote-conflict-bar {
+    align-items: flex-start;
+  }
+
+  .denote-status-bar {
+    gap: 8px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .denote-status-vault {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .denote-status-meta {
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .denote-status-health {
+    max-width: 145px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .graph-layer-controls {
     align-items: flex-start;
     column-gap: 10px;
@@ -80,5 +287,14 @@ body {
     z-index: 20;
     width: min(360px, calc(100vw - 24px)) !important;
     box-shadow: -10px 0 24px rgba(0, 0, 0, 0.24);
+  }
+
+  .denote-modal-settings {
+    height: min(520px, calc(100dvh - 24px));
+    width: min(720px, calc(100vw - 24px));
+  }
+
+  .denote-modal-settings-nav {
+    width: 116px;
   }
 }

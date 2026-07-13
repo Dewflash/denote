@@ -103,3 +103,15 @@ test('graph keeps the map usable on a narrow window', async ({ page }) => {
   await expect(page.getByTestId('graph-notes-index')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open note' })).toBeVisible();
 });
+
+test('welcome and smoke shell stay inside a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'DeNote' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  await page.goto('/?e2eSmoke=1');
+  await page.getByTestId('open-vault').click();
+  await expect(page.getByTestId('editor-note')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

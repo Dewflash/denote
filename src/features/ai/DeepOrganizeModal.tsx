@@ -67,7 +67,7 @@ export function DeepOrganizeModal() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
-          className="fixed left-1/2 top-1/3 z-50 w-[460px] -translate-x-1/2 p-5"
+          className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-24px)] w-[460px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 overflow-auto p-5"
           style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}
         >
           <Dialog.Title className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>
@@ -128,7 +128,7 @@ export function DeepOrganizeModal() {
 
           {phase === 'error' && <p className="mt-3 text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
 
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
             <button
               className="rounded px-3 py-1.5 text-xs"
               style={{ border: '1px solid var(--border)', color: 'var(--fg)', opacity: busy ? 0.5 : 1 }}

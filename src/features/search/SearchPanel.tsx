@@ -88,7 +88,7 @@ export function SearchPanel() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
-          className="fixed left-1/2 top-20 z-50 flex max-h-[70vh] w-[600px] flex-col -translate-x-1/2"
+          className="fixed left-1/2 top-20 z-50 flex max-h-[calc(100dvh-96px)] w-[600px] max-w-[calc(100vw-24px)] flex-col -translate-x-1/2"
           style={{
             backgroundColor: 'var(--bg)',
             border: '1px solid var(--border)',

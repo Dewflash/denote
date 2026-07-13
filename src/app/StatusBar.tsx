@@ -38,7 +38,7 @@ export function StatusBar() {
 
   return (
     <div
-      className="flex items-center justify-between px-3 text-xs"
+      className="denote-status-bar flex items-center justify-between px-3 text-xs"
       style={{
         height: 24,
         borderTop: '1px solid var(--border)',
@@ -46,7 +46,7 @@ export function StatusBar() {
         backgroundColor: 'var(--bg-panel)',
       }}
     >
-      <span className="flex items-center gap-1.5">
+      <span className="denote-status-vault flex items-center gap-1.5">
         {activeEntry && (
           <span
             aria-hidden
@@ -55,7 +55,7 @@ export function StatusBar() {
         )}
         {vaultName}
       </span>
-      <span className="relative flex items-center gap-3">
+      <span className="denote-status-meta relative flex items-center gap-3">
         {repo && (
           <>
             <button
@@ -64,7 +64,7 @@ export function StatusBar() {
               aria-expanded={open}
               aria-controls="status-graph-health"
               onClick={() => setOpen((value) => !value)}
-              className="rounded px-1"
+              className="denote-status-health rounded px-1"
               style={{ color: health.orphans.length || health.unresolvedLinks.length ? 'var(--fg)' : 'var(--fg-muted)' }}
             >
               {health.orphans.length} unlinked · {health.unresolvedLinks.length} missing

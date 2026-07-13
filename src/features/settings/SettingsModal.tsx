@@ -1178,7 +1178,7 @@ export function SettingsModal() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 flex h-[520px] w-[720px] -translate-x-1/2 -translate-y-1/2"
+          className="denote-modal-settings fixed left-1/2 top-1/2 z-50 flex h-[520px] w-[720px] max-h-[calc(100dvh-24px)] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2"
           style={{
             backgroundColor: 'var(--bg)',
             border: '1px solid var(--border)',
@@ -1188,7 +1188,7 @@ export function SettingsModal() {
         >
           <Dialog.Title className="sr-only">Settings</Dialog.Title>
           <nav
-            className="flex w-40 shrink-0 flex-col gap-0.5 p-2"
+            className="denote-modal-settings-nav flex w-40 shrink-0 flex-col gap-0.5 overflow-auto p-2"
             style={{ borderRight: '1px solid var(--border)' }}
           >
             {SECTIONS.map((s) => (
@@ -1202,7 +1202,7 @@ export function SettingsModal() {
               </button>
             ))}
           </nav>
-          <div className="flex-1 overflow-auto p-4">
+          <div className="min-w-0 flex-1 overflow-auto p-4">
             {section === 'vaults' && <VaultsSection />}
             {section === 'editor' && <EditorSection />}
             {section === 'appearance' && <AppearanceSection />}

@@ -105,7 +105,7 @@ export function CommandPalette() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
-          className="fixed left-1/2 top-24 z-50 w-[520px] -translate-x-1/2"
+          className="fixed left-1/2 top-24 z-50 w-[520px] max-w-[calc(100vw-24px)] -translate-x-1/2"
           style={{
             backgroundColor: 'var(--bg)',
             border: '1px solid var(--border)',

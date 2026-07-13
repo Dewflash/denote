@@ -57,6 +57,7 @@ function NoteRow({
 
   return (
     <div
+      data-denote-note-row
       className="flex items-center gap-1 rounded px-2 py-1 text-sm"
       title={isAsset ? node.name : 'Click to open · double-click to rename · right-click for more'}
       style={{

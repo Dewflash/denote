@@ -30,7 +30,7 @@ function ImportReview({ draft }: { draft: ImportReviewDraft }) {
     <Dialog.Root open onOpenChange={(open) => { if (!open) close(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[560px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}>
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-24px)] w-[560px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 overflow-auto p-5" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}>
           <Dialog.Title className="mb-1 text-base font-semibold">Review imported notes</Dialog.Title>
           <p className="mb-3 text-xs" style={{ color: 'var(--fg-muted)' }}>{draft.sourceLabel} · {draft.exactSkipped} exact duplicate{draft.exactSkipped === 1 ? '' : 's'} skipped automatically.</p>
           {draft.warnings.length > 0 && <p className="mb-3 rounded p-2 text-xs" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}>{draft.warnings.join(' ')}</p>}

@@ -35,14 +35,14 @@ function ConflictBar() {
   if (!conflict) return null;
   return (
     <div
-      className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+      className="denote-conflict-bar flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm"
       style={{ backgroundColor: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}
     >
-      <span>
+      <span className="min-w-0 flex-1">
         External changes detected in <strong>{conflict.relPath}</strong> while you had unsaved
         edits.
       </span>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           className="rounded px-2 py-1"
           style={{ border: "1px solid var(--border)" }}
@@ -76,11 +76,11 @@ function Welcome() {
 
   return (
     <div
-      className="flex h-screen flex-col items-center justify-center gap-4"
+      className="flex h-screen flex-col items-center justify-center gap-4 px-4 text-center"
       style={{ backgroundColor: "var(--bg)", color: "var(--fg)" }}
     >
       <h1 className="text-xl font-semibold">DeNote</h1>
-      <p style={{ color: "var(--fg-muted)" }}>
+      <p className="max-w-md" style={{ color: "var(--fg-muted)" }}>
         Open an existing vault or create a new one to get started.
       </p>
       <div className="flex gap-3">
@@ -169,6 +169,8 @@ function CenterPane() {
 
 function Shell() {
   const graphViewOpen = useUiStore((s) => s.graphViewOpen);
+  const [mobileExplorerOpen, setMobileExplorerOpen] = useState(false);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
   useEffect(() => {
     restoreSavedKeymap(appKeymap);
@@ -210,43 +212,73 @@ function Shell() {
   return (
     <>
     <div
-      className="snippet-scope grid h-screen"
+      className={`snippet-scope denote-shell grid h-screen${graphViewOpen ? " denote-shell-graph" : ""}${mobileExplorerOpen ? " denote-shell-explorer-open" : ""}${mobileInspectorOpen ? " denote-shell-inspector-open" : ""}`}
       style={{
-        gridTemplateColumns: graphViewOpen ? "56px 0 1fr 0" : "56px 260px 1fr 300px",
         gridTemplateRows: "1fr 24px",
         backgroundColor: "var(--bg)",
       }}
     >
-      <div style={{ gridRow: "1 / 2" }}>
+      <div className="denote-shell-rail" style={{ gridRow: "1 / 2" }}>
         <ErrorBoundary surface="Vault rail"><VaultRail /></ErrorBoundary>
       </div>
+      {(mobileExplorerOpen || mobileInspectorOpen) && !graphViewOpen && (
+        <button
+          type="button"
+          aria-label="Close side panel"
+          className="denote-mobile-backdrop"
+          onClick={() => { setMobileExplorerOpen(false); setMobileInspectorOpen(false); }}
+        />
+      )}
       <aside
+        className="denote-shell-explorer"
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('[data-denote-note-row]')) setMobileExplorerOpen(false);
+        }}
         style={{
           gridRow: "1 / 2",
           borderRight: "1px solid var(--border)",
           backgroundColor: "var(--bg-panel)",
-          display: graphViewOpen ? "none" : undefined,
         }}
       >
         <ErrorBoundary surface="Explorer"><ExplorerPanel /></ErrorBoundary>
       </aside>
-      <main style={{ gridRow: "1 / 2", display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <main className="denote-shell-main" style={{ gridRow: "1 / 2", display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div className="denote-mobile-toolbar" aria-label="Panel controls">
+          <button
+            type="button"
+            aria-label="Show note list"
+            title="Show note list"
+            className="denote-mobile-toolbar-button"
+            onClick={() => { setMobileExplorerOpen((open) => !open); setMobileInspectorOpen(false); }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+          </button>
+          <button
+            type="button"
+            aria-label="Show note details"
+            title="Show note details"
+            className="denote-mobile-toolbar-button"
+            onClick={() => { setMobileInspectorOpen((open) => !open); setMobileExplorerOpen(false); }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7h.01" /></svg>
+          </button>
+        </div>
         <ErrorBoundary surface="Editor"><ConflictBar /></ErrorBoundary>
         <div style={{ flex: 1, minHeight: 0 }}>
           <ErrorBoundary surface="Editor"><CenterPane /></ErrorBoundary>
         </div>
       </main>
       <aside
+        className="denote-shell-inspector"
         style={{
           gridRow: "1 / 2",
           borderLeft: "1px solid var(--border)",
           backgroundColor: "var(--bg-panel)",
-          display: graphViewOpen ? "none" : undefined,
         }}
       >
         <ErrorBoundary surface="Inspector"><RightPanel /></ErrorBoundary>
       </aside>
-      <div style={{ gridColumn: "1 / -1", gridRow: "2 / 3" }}>
+      <div className="denote-shell-status" style={{ gridColumn: "1 / -1", gridRow: "2 / 3" }}>
         <ErrorBoundary surface="Status bar"><StatusBar /></ErrorBoundary>
       </div>
       <CommandPalette />
