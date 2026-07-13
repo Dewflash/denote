@@ -1187,15 +1187,28 @@ export function SettingsModal() {
           }}
         >
           <Dialog.Title className="sr-only">Settings</Dialog.Title>
+          <Dialog.Close asChild>
+            <button
+              type="button"
+              aria-label="Close settings"
+              title="Close settings"
+              className="absolute right-2 top-2 z-10 rounded px-1.5 py-0.5 text-lg leading-none"
+              style={{ color: 'var(--fg-muted)' }}
+            >
+              ×
+            </button>
+          </Dialog.Close>
           <nav
             className="denote-modal-settings-nav flex w-40 shrink-0 flex-col gap-0.5 overflow-auto p-2"
             style={{ borderRight: '1px solid var(--border)' }}
           >
             {SECTIONS.map((s) => (
               <button
+                type="button"
                 key={s.id}
                 className="rounded px-2 py-1.5 text-left text-sm"
                 style={{ backgroundColor: section === s.id ? 'var(--bg-panel)' : 'transparent' }}
+                aria-pressed={section === s.id}
                 onClick={() => setSection(s.id)}
               >
                 {s.label}

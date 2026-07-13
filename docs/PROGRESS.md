@@ -808,6 +808,13 @@ what is needed and why, and continues with the rest of the pass if independent.
   tests / 57 files, lint, `tsc --noEmit`, production build, Playwright e2e 6/6, and `git diff
   --check` green.
 
+- 2026-07-13 · settings discoverability follow-up · **visible close control added.** Production
+  Settings previously relied on Escape or clicking the overlay, with no in-panel close affordance;
+  the Radix dialog now exposes a top-right `Close settings` button and marks section controls with
+  `aria-pressed`. **Verification:** 449 TypeScript tests / 57 files, lint, `tsc --noEmit`,
+  production build, Playwright e2e 6/6, and `git diff --check` green. The e2e smoke Settings
+  screen remains a fixture-only shell path; native Tauri Settings still requires owner acceptance.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with
