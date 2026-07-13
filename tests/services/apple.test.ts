@@ -69,6 +69,24 @@ describe('AppleAiClient.enrichNote', () => {
 
     expect(res.links).toEqual([]);
   });
+
+  it('does not resolve a candidate when its title is only a prefix of the target', async () => {
+    const t = transport({
+      enrichNote: {
+        links: [{ target: 'Banking policy', reason: 'unsupported', confidence: 0.99 }],
+      },
+    });
+    const client = new AppleAiClient(t);
+    const res = await client.enrichNote({
+      text: 'A note about policy.',
+      title: 'Current note',
+      folderPath: '',
+      existingTopics: [],
+      candidateNotes: [{ relPath: 'Bank.md', title: 'Bank' }],
+    });
+
+    expect(res.links).toEqual([]);
+  });
 });
 
 describe('AppleAiClient.summarize', () => {

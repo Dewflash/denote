@@ -274,6 +274,24 @@ export class VaultAiEngine {
   async reject(id: string): Promise<void> {
     const ann = this.store.get(id);
     if (!ann) return;
+    if (ann.status === 'applied-provisional') {
+      // A provisional entry has two representations: the live annotation and the persisted
+      // `ai:` block. Remove both atomically from the user's point of view; otherwise Reject would
+      // hide the row while the graph rebuilt from Markdown and resurrected the rejected edge/tag.
+      const relPath = ann.notePath;
+      const before = normalize(await this.repo.readNote(relPath));
+      const remaining = this.store
+        .allFor(relPath)
+        .filter((a) => a.id !== id && a.status === 'applied-provisional');
+      const parsed = this.repo.getParsed(relPath);
+      const model = parsed?.aiFrontmatter?.model ?? ann.model;
+      const appliedAt = parsed?.aiFrontmatter?.applied ?? new Date(this.now()).toISOString();
+      const after = writeAiFrontmatter(
+        before,
+        remaining.length > 0 ? buildAiFrontmatter(remaining, model, appliedAt) : null,
+      );
+      if (after !== before) await this.repo.saveNote(relPath, after);
+    }
     await this.store.reject(ann);
     this.deps.onChange?.();
   }
@@ -658,10 +676,10 @@ export class VaultAiEngine {
     result: EnrichResult,
     linksOnly?: boolean,
   ): AiAnnotation[] {
-    const anns: AiAnnotation[] = [];
+    const anns = new Map<string, AiAnnotation>();
     const at = new Date(this.now()).toISOString();
     const mk = (kind: AiAnnotation['kind'], payload: unknown, confidence: number, reason: string): void => {
-      anns.push({
+      const annotation: AiAnnotation = {
         id: `ai-${hash.slice(0, 8)}-${this.idSeq++}`,
         notePath: relPath,
         contentHash: hash,
@@ -672,19 +690,24 @@ export class VaultAiEngine {
         status: 'suggested',
         model,
         createdAt: at,
-      });
+      };
+      const key = annotationKey(kind, payload);
+      const previous = anns.get(key);
+      // Models occasionally repeat an item. Keep the strongest instance so the panel, graph, and
+      // accept-all action operate on one stable suggestion per target/category.
+      if (!previous || annotation.confidence > previous.confidence) anns.set(key, annotation);
     };
     for (const l of result.links) {
       mk('link', { target: l.target, targetPath: l.targetPath } satisfies LinkPayload, l.confidence, l.reason);
     }
-    if (linksOnly) return anns;
+    if (linksOnly) return [...anns.values()];
     for (const t of result.tags) mk('tag', { name: t.name }, t.confidence, t.reason);
     for (const t of result.topics) {
       mk('topic', { name: t.name, existingTopicId: t.existingTopicId }, t.confidence, t.reason);
     }
     for (const a of result.aliases) mk('alias', { name: a.name }, a.confidence, a.reason);
     if (result.summary) mk('summary', { text: result.summary.text }, result.summary.confidence, result.summary.reason);
-    return anns;
+    return [...anns.values()];
   }
 
   private noteHasProvisional(relPath: string): boolean {
@@ -719,6 +742,16 @@ export class VaultAiEngine {
 function dirOf(relPath: string): string {
   const i = relPath.lastIndexOf('/');
   return i < 0 ? '' : relPath.slice(0, i);
+}
+
+function annotationKey(kind: AiAnnotation['kind'], payload: unknown): string {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  const value = kind === 'link'
+    ? p.targetPath ?? p.target
+    : kind === 'summary'
+      ? 'summary'
+      : p.name;
+  return `${kind}:${String(value ?? '').trim().toLowerCase()}`;
 }
 
 // ── binding factory (mirrors createSearchIndexBinding) ───────────────────────────────

@@ -149,7 +149,10 @@ const LABEL_SCHEMA: Record<string, unknown> = {
 
 function resolveLinkTarget(target: string, candidates: NoteStub[]): { target: string; targetPath?: string } {
   const t = target.trim().toLowerCase();
-  const hit = candidates.find((c) => t === c.title.toLowerCase() || t.startsWith(c.title.toLowerCase()));
+  const hit = candidates.find((c) => {
+    const title = c.title.toLowerCase();
+    return t === title || t.startsWith(`${title}:`) || t.startsWith(`${title}#`);
+  });
   return hit ? { target: hit.title, targetPath: hit.relPath } : { target: target.trim() };
 }
 

@@ -69,6 +69,21 @@ function SuggestionRow({ ann }: { ann: AiAnnotation }) {
   const accept = useVaultStore((s) => s.acceptSuggestion);
   const reject = useVaultStore((s) => s.rejectSuggestion);
   const provisional = ann.status === 'applied-provisional';
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (action: () => Promise<void>): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -99,19 +114,23 @@ function SuggestionRow({ ann }: { ann: AiAnnotation }) {
           <button
             className="rounded px-2 py-0.5 text-xs"
             style={{ border: '1px solid var(--border)' }}
-            onClick={() => void accept(ann.id)}
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void run(() => accept(ann.id))}
           >
-            Accept
+            {busy ? 'Working…' : 'Accept'}
           </button>
           <button
             className="rounded px-2 py-0.5 text-xs"
             style={{ color: 'var(--fg-muted)' }}
-            onClick={() => void reject(ann.id)}
+            disabled={busy}
+            onClick={() => void run(() => reject(ann.id))}
           >
             Reject
           </button>
         </div>
       </div>
+      {error && <div role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{error}</div>}
     </div>
   );
 }
@@ -128,6 +147,7 @@ export function SuggestionsPanel() {
   const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acceptingAll, setAcceptingAll] = useState(false);
 
   const suggestions = useMemo(
     () => (activeNotePath ? useVaultStore.getState().aiSuggestionsFor(activeNotePath) : []),
@@ -179,6 +199,19 @@ export function SuggestionsPanel() {
     }
   };
 
+  const acceptAll = async (): Promise<void> => {
+    if (acceptingAll) return;
+    setAcceptingAll(true);
+    setError(null);
+    try {
+      await acceptAbove(activeNotePath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAcceptingAll(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="px-2 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
@@ -200,10 +233,12 @@ export function SuggestionsPanel() {
           <button
             className="rounded px-2 py-1 text-xs"
             style={{ border: '1px solid var(--border)' }}
-            onClick={() => void acceptAbove(activeNotePath)}
+            disabled={acceptingAll}
+            aria-busy={acceptingAll}
+            onClick={() => void acceptAll()}
             title={`Accept the ${acceptableCount} suggestion(s) at or above ${Math.round(threshold * 100)}% confidence`}
           >
-            Accept all ≥ {Math.round(threshold * 100)}%
+            {acceptingAll ? 'Accepting…' : `Accept all ≥ ${Math.round(threshold * 100)}%`}
           </button>
         )}
       </div>

@@ -105,6 +105,20 @@ describe('VaultAiEngine — enrichment + takeover', () => {
     expect(await repo.readNote('Yen.md')).toBe(before);
   });
 
+  it('deduplicates repeated model links before they reach the graph and suggestions panel', async () => {
+    await backend.writeNote(root, 'Current.md', '# Current\nA note about offline design.\n');
+    await backend.writeNote(root, 'Neighbor.md', '# Neighbor\nOffline design patterns.\n');
+    const router = new AiRouter([new DuplicateResultClient()], { ...DEFAULT_ROUTING, enrich: 'mock' });
+    const { engine } = await open({ router });
+
+    await engine.enrichNow('Current.md', { linksOnly: true });
+
+    const links = engine.suggestionsFor('Current.md').filter((a) => a.kind === 'link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ confidence: 0.9, payload: { targetPath: 'Neighbor.md' } });
+    expect(engine.graphLinkSuggestions()).toHaveLength(1);
+  });
+
   it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
     const unavailable = new CountingClient(new MockAiClient(), 'apple');
     unavailable.available = false;
@@ -151,6 +165,23 @@ describe('VaultAiEngine — enrichment + takeover', () => {
 
     const provisional = engine.suggestionsFor('Yen.md').filter((a) => a.status === 'applied-provisional');
     expect(provisional.length).toBeGreaterThan(0);
+  });
+
+  it('rejecting a provisional suggestion removes its ai metadata as well as its live row', async () => {
+    await backend.writeNote(root, 'Yen.md', '# Yen\nBOJ defended the yen; interest rates diverged.\n');
+    const { repo, engine } = await open();
+    await engine.enrichNow('Yen.md');
+
+    const provisional = engine.suggestionsFor('Yen.md').find(
+      (a) => a.status === 'applied-provisional' && a.kind === 'tag',
+    );
+    expect(provisional).toBeDefined();
+    const tag = (provisional!.payload as { name: string }).name;
+
+    await engine.reject(provisional!.id);
+
+    expect(engine.suggestionsFor('Yen.md').some((a) => a.id === provisional!.id)).toBe(false);
+    expect(repo.getParsed('Yen.md')?.aiFrontmatter?.tags ?? []).not.toContain(tag);
   });
 
   it('R1: enriching twice runs the mock exactly once (hash-gated, no re-trigger loop)', async () => {
@@ -284,6 +315,34 @@ class CountingClient implements AiClient {
   }
   labelSimilarity(req: Parameters<AiClient['labelSimilarity']>[0]) {
     return this.inner.labelSimilarity(req);
+  }
+}
+
+class DuplicateResultClient implements AiClient {
+  readonly id = 'mock' as const;
+  readonly modelId = 'mock-duplicate@1';
+  readonly isNetwork = false;
+
+  async capabilities() {
+    return { available: true, maxInputTokens: 8000, supportsGuidedJson: true, modelVersion: this.modelId };
+  }
+  async summarize() {
+    return { summary: '' };
+  }
+  async enrichNote() {
+    return {
+      topics: [],
+      links: [
+        { target: 'Neighbor', targetPath: 'Neighbor.md', reason: 'Offline design is shared.', confidence: 0.55 },
+        { target: 'Neighbor', targetPath: 'Neighbor.md', reason: 'Offline design is shared clearly.', confidence: 0.9 },
+      ],
+      tags: [],
+      summary: null,
+      aliases: [],
+    };
+  }
+  async labelSimilarity() {
+    return { related: false, reason: '', confidence: 0 };
   }
 }
 

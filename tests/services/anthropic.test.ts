@@ -69,6 +69,21 @@ describe('AnthropicAiClient', () => {
     expect(res.links).toEqual([]);
   });
 
+  it('does not resolve a candidate when its title is only a prefix of the target', async () => {
+    const c = new AnthropicAiClient(transport(JSON.stringify({
+      links: [{ target: 'Banking policy', reason: 'unsupported', confidence: 0.99 }],
+    })));
+    const res = await c.enrichNote({
+      text: 'A note.',
+      title: 'Current note',
+      folderPath: '',
+      existingTopics: [],
+      candidateNotes: [{ relPath: 'Bank.md', title: 'Bank' }],
+    });
+
+    expect(res.links).toEqual([]);
+  });
+
   it('returns an empty result on a safety refusal instead of throwing', async () => {
     const c = new AnthropicAiClient(transport('', { refused: true }));
     const res = await c.enrichNote({ text: 'x', title: 'X', folderPath: '', existingTopics: [], candidateNotes: [] });

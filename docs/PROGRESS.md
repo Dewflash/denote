@@ -1003,6 +1003,19 @@ what is needed and why, and continues with the rest of the pass if independent.
   Playwright smoke 6/6, and `git diff --check` green. Native Tauri/WKWebView owner interaction and
   native screenshot capture remain external in this headless session.
 
+- 2026-07-13 · compute/UI/AI audit follow-up · **closed three concrete failure modes.** Repeated
+  model links are deduplicated at the engine boundary, keeping the strongest confidence so the map,
+  suggestions panel, and accept-all action agree. Rejecting an applied-provisional suggestion now
+  removes its persisted `ai:` metadata as well as its live row, so rejected graph items cannot
+  resurrect after rebuild. Apple and Anthropic link resolution no longer treats an unrelated title
+  prefix as a matching note. The capture review now reports AI failures inline, prevents duplicate
+  submits, reports save errors, refuses to close as a false success without a vault, and shows an
+  explicit no-vault state. **Verification:** 474 TypeScript tests / 60 files, focused AI/service
+  tests 28/28, lint, `tsc --noEmit`, production build, Playwright smoke 6/6, `git diff --check`,
+  and a direct Apple sidecar capability/summarize/enrichment probe are green. Native Tauri/Vite
+  processes were stopped and a final process check was empty. Native screenshot capture and owner
+  Safari/private-GitHub acceptance remain the external checks listed above.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

@@ -69,7 +69,10 @@ function resolveLinkTarget(
 ): { target: string; targetPath?: string } {
   const t = target.trim().toLowerCase();
   const hit = candidates.find(
-    (c) => t === c.title.toLowerCase() || t.startsWith(c.title.toLowerCase() + ':') || t.startsWith(c.title.toLowerCase()),
+    (c) => {
+      const title = c.title.toLowerCase();
+      return t === title || t.startsWith(`${title}:`) || t.startsWith(`${title}#`);
+    },
   );
   return hit ? { target: hit.title, targetPath: hit.relPath } : { target: target.trim() };
 }

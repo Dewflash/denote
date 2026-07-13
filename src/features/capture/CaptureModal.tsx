@@ -44,6 +44,8 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
   const [folder, setFolder] = useState(() => localStorage.getItem('denote:captureFolder') ?? 'Inbox');
   const [vaultId, setVaultId] = useState(activeVaultId ?? registry[0]?.id ?? '');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const backend = routingBackendFor('summarize');
   const preview = text.slice(0, 600);
@@ -62,6 +64,12 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
       setTags(s.tags);
       setEnabledTags(new Set(s.tags));
       setLoading(false);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      setLoading(false);
+      setError(err instanceof Error
+        ? `AI suggestions unavailable: ${err.message}`
+        : 'AI suggestions unavailable; you can still capture this note.');
     });
     return () => {
       cancelled = true;
@@ -78,24 +86,37 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
   }
 
   async function create(): Promise<void> {
-    await fileCapture({
-      title,
-      body: text,
-      summary: summary || undefined,
-      tags: tags.filter((t) => enabledTags.has(t)),
-      folder,
-      sourceUrl: draft.sourceUrl,
-      sourceApp: draft.sourceApp,
-      sourceTitle: draft.sourceTitle,
-      capturedAt: draft.capturedAt,
-      vaultId: vaultId || undefined,
-    });
-    localStorage.setItem('denote:captureFolder', folder.trim() || 'Inbox');
-    closeCapture();
+    if (saving) return;
+    if (!vaultId) {
+      setError('Open a vault before capturing a note.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await fileCapture({
+        title,
+        body: text,
+        summary: summary || undefined,
+        tags: tags.filter((t) => enabledTags.has(t)),
+        folder,
+        sourceUrl: draft.sourceUrl,
+        sourceApp: draft.sourceApp,
+        sourceTitle: draft.sourceTitle,
+        capturedAt: draft.capturedAt,
+        vaultId,
+      });
+      localStorage.setItem('denote:captureFolder', folder.trim() || 'Inbox');
+      closeCapture();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the note.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <Dialog.Root open onOpenChange={(o) => !o && closeCapture()}>
+    <Dialog.Root open onOpenChange={(o) => !o && !saving && closeCapture()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
@@ -120,10 +141,16 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
             className="mb-3 w-full rounded px-2 py-1.5 text-sm"
             style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}
             value={vaultId}
+            disabled={saving || registry.length === 0}
             onChange={(event) => setVaultId(event.target.value)}
           >
             {registry.map((vault) => <option key={vault.id} value={vault.id}>{vault.name}{vault.localOnly ? ' · local only' : ''}</option>)}
           </select>
+          {registry.length === 0 && (
+            <div className="mb-3 text-xs" style={{ color: 'var(--danger)' }}>
+              Open a vault before capturing a note.
+            </div>
+          )}
 
           <label className="mb-1 block text-xs" style={{ color: 'var(--fg-muted)' }}>
             Title
@@ -201,11 +228,18 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
             </div>
           )}
 
+          {error && (
+            <div role="alert" className="mb-3 text-xs" style={{ color: 'var(--danger)' }}>
+              {error}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
             <button
               type="button"
               className="rounded px-3 py-1.5 text-sm"
               style={{ color: 'var(--fg-muted)' }}
+              disabled={saving}
               onClick={() => closeCapture()}
             >
               Cancel
@@ -214,8 +248,10 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
               type="submit"
               className="rounded px-3 py-1.5 text-sm"
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+              disabled={saving || !vaultId}
+              aria-busy={saving}
             >
-              Create note
+              {saving ? 'Saving…' : 'Create note'}
             </button>
           </div>
           </form>
