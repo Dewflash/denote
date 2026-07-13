@@ -44,6 +44,14 @@ export const ENRICH_DEBOUNCE_MS = 2000;
 export const CONSENT_THRESHOLD = 20;
 export type AiQueueState = 'idle' | 'queued' | 'parked';
 
+type BackendGate = {
+  key: string;
+  available: boolean;
+  reason?: string;
+};
+
+type PumpGate = 'available' | 'unavailable' | 'local-only-blocked';
+
 export interface VaultAiEngineDeps {
   now?: () => number;
   /** The vault's localOnly flag (D18) — read fresh so a Settings toggle takes effect at once. */
@@ -76,6 +84,9 @@ export class VaultAiEngine {
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private pumping = false;
   private started = false;
+  /** One capability probe gates a whole pump, so an unavailable model cannot cause one doomed
+   * generation attempt per note followed by repeated backoff work. */
+  private backendGate: BackendGate | null = null;
   private idSeq = 0;
   // Chain of background work started from onIndexChange (demotion, delete cleanup). `settle()`
   // awaits it — used by tests for determinism; harmless in production.
@@ -151,6 +162,7 @@ export class VaultAiEngine {
 
   /** Retry parked work after the user has restored the on-device backend. */
   retry(): void {
+    this.backendGate = null;
     this.seedMissingNotes();
     this.queue.resumeParked(this.now());
     void this.persistQueue();
@@ -310,13 +322,35 @@ export class VaultAiEngine {
     // Hash-gating (D26): already annotated at this (hash, model)? Skip unless forced.
     if (!opts.force && this.store.hasAnnotationsFor(relPath, hash, client.modelId)) return;
 
-    const result: EnrichResult = await client.enrichNote({
-      text: note.bodyText || '',
-      title: note.title,
-      folderPath: dirOf(relPath),
-      existingTopics: this.deps.existingTopics?.() ?? [], // D14/R3 retrieval (pass 8 ontology)
-      candidateNotes: this.candidateNotes(relPath),
-    });
+    const capabilities = await this.checkCapabilities(client, localOnly);
+    if (!capabilities.available) {
+      throw new DenoteError(
+        'ai-unavailable',
+        capabilities.reason ?? 'The selected AI backend is unavailable.',
+        { retryable: true },
+      );
+    }
+
+    let result: EnrichResult;
+    try {
+      result = await client.enrichNote({
+        text: note.bodyText || '',
+        title: note.title,
+        folderPath: dirOf(relPath),
+        existingTopics: this.deps.existingTopics?.() ?? [], // D14/R3 retrieval (pass 8 ontology)
+        candidateNotes: this.candidateNotes(relPath),
+      });
+    } catch (error) {
+      const reason = this.backendUnavailableReason(error);
+      if (!reason) throw error;
+      if (error instanceof DenoteError && error.kind === 'ai-timeout') throw error;
+      this.backendGate = {
+        key: this.backendKey(client, localOnly),
+        available: false,
+        reason,
+      };
+      throw new DenoteError('ai-unavailable', reason, { retryable: true });
+    }
 
     await this.ingestResult(relPath, hash, client.modelId, result, opts.linksOnly);
   }
@@ -460,12 +494,34 @@ export class VaultAiEngine {
     if (this.pumping) return;
     this.pumping = true;
     try {
-      for (const job of this.queue.due(this.now())) {
+      const due = this.queue.due(this.now());
+      if (due.length === 0) return;
+
+      const gate = await this.preflightBackend();
+      if (gate !== 'available') {
+        // Preserve work across a backend or privacy-policy change. The vault may become eligible
+        // again later, and retry() will re-check the route before waking these jobs.
+        this.queue.parkPending();
+        await this.persistQueue();
+        this.deps.onChange?.();
+        return;
+      }
+
+      for (const job of due) {
         this.queue.markRunning(job.relPath);
         try {
           await this.runEnrichment(job.relPath);
           this.queue.remove(job.relPath);
-        } catch {
+        } catch (error) {
+          if (this.backendUnavailableReason(error)) {
+            // The backend can fail after preflight. Stop immediately and park the rest of the
+            // batch; an explicit Retry is the only path that wakes it again.
+            this.queue.park(job.relPath);
+            this.queue.parkPending();
+            await this.persistQueue();
+            this.deps.onChange?.();
+            break;
+          }
           this.queue.fail(job.relPath, this.now());
         }
         await this.persistQueue();
@@ -482,6 +538,60 @@ export class VaultAiEngine {
     if (ENRICHABLE_SKIP_DIRS.some((d) => relPath.startsWith(d))) return true;
     if (note.frontmatter.source === 'ai') return true; // D26: materialized topic hubs
     return false;
+  }
+
+  private backendKey(client: { id: string; modelId: string }, localOnly: boolean): string {
+    return `${client.id}:${client.modelId}:${localOnly ? 'local-only' : 'network-allowed'}`;
+  }
+
+  private async checkCapabilities(
+    client: { id: string; modelId: string; capabilities: () => Promise<{ available: boolean; reason?: string }> },
+    localOnly: boolean,
+  ): Promise<{ available: boolean; reason?: string }> {
+    const key = this.backendKey(client, localOnly);
+    if (this.backendGate?.key === key) return this.backendGate;
+
+    try {
+      const capabilities = await client.capabilities();
+      this.backendGate = {
+        key,
+        available: capabilities.available,
+        reason: capabilities.reason,
+      };
+    } catch (error) {
+      this.backendGate = {
+        key,
+        available: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+    return this.backendGate;
+  }
+
+  private async preflightBackend(): Promise<PumpGate> {
+    const localOnly = this.deps.localOnly?.() ?? false;
+    let client;
+    try {
+      client = this.router.route('enrich', { localOnly });
+    } catch (error) {
+      if (error instanceof DenoteError && error.kind === 'local-only-blocked') {
+        return 'local-only-blocked';
+      }
+      return 'unavailable';
+    }
+    const capabilities = await this.checkCapabilities(client, localOnly);
+    return capabilities.available ? 'available' : 'unavailable';
+  }
+
+  private backendUnavailableReason(error: unknown): string | null {
+    if (error instanceof DenoteError && (error.kind === 'ai-unavailable' || error.kind === 'ai-timeout')) {
+      return error.message;
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/(ai-unavailable|ai-timeout|timed out|model manager|apple foundation models could not start|sidecar (?:binary|spawn|closed|write|call)|repeatedly.*disabled)/i.test(detail)) {
+      return detail;
+    }
+    return null;
   }
 
   /** Initial Repository indexing intentionally does not call onIndexChange. Seed only missing

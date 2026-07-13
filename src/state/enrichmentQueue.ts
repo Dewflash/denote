@@ -50,6 +50,23 @@ export class EnrichmentQueue {
     this.jobs.delete(relPath);
   }
 
+  /** Park one job until an explicit backend retry wakes it. */
+  park(relPath: string): void {
+    const job = this.jobs.get(relPath);
+    if (job) job.state = 'parked';
+  }
+
+  /** Park all pending work when a capability probe says the backend is unavailable. */
+  parkPending(): number {
+    let parked = 0;
+    for (const job of this.jobs.values()) {
+      if (job.state !== 'pending') continue;
+      job.state = 'parked';
+      parked += 1;
+    }
+    return parked;
+  }
+
   all(): EnrichJob[] {
     return [...this.jobs.values()];
   }

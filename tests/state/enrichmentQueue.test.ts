@@ -47,6 +47,15 @@ describe('EnrichmentQueue', () => {
     expect(q.due(1234)).toHaveLength(1);
   });
 
+  it('parks every pending job when the backend is unavailable', () => {
+    const q = new EnrichmentQueue();
+    q.enqueue('a.md', 'a');
+    q.enqueue('b.md', 'b');
+    expect(q.parkPending()).toBe(2);
+    expect(q.due(Date.now())).toEqual([]);
+    expect(q.parkedCount()).toBe(2);
+  });
+
   it('due() returns only pending jobs whose backoff has elapsed', () => {
     const q = new EnrichmentQueue();
     q.enqueue('a.md', 'h');

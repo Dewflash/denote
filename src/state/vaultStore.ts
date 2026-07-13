@@ -758,6 +758,10 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       ).vaults;
       await persistRegistry(registry);
       set({ registry });
+      // Re-check parked enrichment work when the vault's privacy policy changes. This is a
+      // no-op for a backend that remains unavailable, but avoids leaving eligible notes asleep
+      // after a local-only toggle is reversed.
+      aiEngines.get(vaultId)?.retry();
     },
 
     async relocateVault(vaultId, newPath) {

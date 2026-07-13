@@ -929,6 +929,17 @@ what is needed and why, and continues with the rest of the pass if independent.
   reference, and `git diff --check` green. Native screenshot capture remains unavailable in this
   headless session; Apple Foundation Models remains an external runtime/model-availability check.
 
+- 2026-07-13 · bounded AI queue follow-up · **removed the unavailable-backend retry storm.** The
+  enrichment pump now performs one cached capability check before processing a batch; an unavailable
+  Apple/backend parks all pending notes without issuing doomed generation calls, and an explicit
+  Settings Retry clears the gate and resumes the work. A backend failure during a batch stops and
+  parks the remainder, while direct note requests fail fast with an actionable `ai-unavailable`
+  error. Local-only policy changes preserve and re-evaluate parked work. Added queue and integration
+  coverage for park/resume behavior. **Verification:** 460
+  TypeScript tests / 58 files, focused queue/AI tests 19/19, lint, `tsc --noEmit`, production build,
+  Playwright e2e 6/6, Rust library tests 19/19, S1 hash reference suite, and `git diff --check`
+  green. The first sandboxed e2e bind was denied (`EPERM`); the approved local-server rerun passed.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

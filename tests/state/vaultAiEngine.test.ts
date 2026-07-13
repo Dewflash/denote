@@ -68,6 +68,29 @@ describe('VaultAiEngine — enrichment + takeover', () => {
     expect(engine.queueStateFor('Existing.md')).toBe('queued');
   });
 
+  it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
+    const unavailable = new CountingClient(new MockAiClient(), 'apple');
+    unavailable.available = false;
+    const router = new AiRouter([unavailable], { ...DEFAULT_ROUTING, enrich: 'apple' });
+    await backend.writeNote(root, 'One.md', '# One\nBanking policy.\n');
+    await backend.writeNote(root, 'Two.md', '# Two\nInterest rates.\n');
+    const { engine } = await open({ router });
+
+    await engine['runPump']();
+
+    expect(unavailable.capabilitiesCalls).toBe(1);
+    expect(unavailable.enrichCalls).toBe(0);
+    expect(engine.queueStateFor('One.md')).toBe('parked');
+    expect(engine.queueStateFor('Two.md')).toBe('parked');
+
+    unavailable.available = true;
+    engine.retry();
+    await engine['runPump']();
+
+    expect(unavailable.capabilitiesCalls).toBe(2);
+    expect(unavailable.enrichCalls).toBe(2);
+  });
+
   it('a bare note gets provisional ai: structure without changing contentHash (R1)', async () => {
     const body = '# Yen Intervention\nThe BOJ defended the yen as interest rates diverged.\n';
     await backend.writeNote(root, 'Yen.md', '');
@@ -194,6 +217,8 @@ describe('VaultAiEngine — D18 localOnly', () => {
 // A backend that counts enrichNote calls and can masquerade as any id / network flag.
 class CountingClient implements AiClient {
   enrichCalls = 0;
+  capabilitiesCalls = 0;
+  available = true;
   constructor(
     private readonly inner: AiClient,
     readonly id: AiClient['id'] = 'mock',
@@ -202,8 +227,14 @@ class CountingClient implements AiClient {
   get modelId() {
     return this.inner.modelId;
   }
-  capabilities() {
-    return this.inner.capabilities();
+  async capabilities() {
+    this.capabilitiesCalls++;
+    const caps = await this.inner.capabilities();
+    return {
+      ...caps,
+      available: this.available,
+      ...(this.available ? {} : { reason: 'test backend unavailable' }),
+    };
   }
   summarize(req: Parameters<AiClient['summarize']>[0]) {
     return this.inner.summarize(req);
