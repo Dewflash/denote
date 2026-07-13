@@ -453,7 +453,7 @@ const AI_TASKS: { id: string; label: string }[] = [
 // there is no uncapped path to the paid tier (S27). It stays registered in the router so D18 still
 // blocks it for localOnly vaults if ever routed (proven in tests).
 const AI_BACKENDS: { id: string; label: string; enabled: boolean; note?: string }[] = [
-  { id: 'mock', label: 'Mock', enabled: true },
+  { id: 'mock', label: 'Test backend', enabled: true, note: 'deterministic preview' },
   { id: 'apple', label: 'Apple (on-device)', enabled: true },
   { id: 'anthropic', label: 'Anthropic (cloud)', enabled: false, note: 'deep-organize only' },
 ];
@@ -679,7 +679,8 @@ function AiSection() {
           </div>
         )}
         <p className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-          When unavailable, note suggestions and AI similarity stay queued. Your typed links, tags, and topic groups remain available.
+          When unavailable, note suggestions and AI similarity are paused to save battery and compute.
+          Retry when the on-device model is ready. Your typed links, tags, and topic groups remain available.
         </p>
       </div>
 
@@ -688,7 +689,8 @@ function AiSection() {
           Task routing
         </div>
         <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-          Per-note tasks run on-device (Apple, free & offline) or the Mock backend. The paid
+          Per-note tasks run on-device (Apple, free & offline) or the Test backend (deterministic
+          preview only). The paid
           Anthropic tier is reached only through the capped “Deep organize” job and topic Analysis,
           never per keystroke — so cloud spend always passes the monthly budget gate.
         </p>

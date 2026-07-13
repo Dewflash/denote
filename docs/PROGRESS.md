@@ -940,6 +940,11 @@ what is needed and why, and continues with the rest of the pass if independent.
   Playwright e2e 6/6, Rust library tests 19/19, S1 hash reference suite, and `git diff --check`
   green. The first sandboxed e2e bind was denied (`EPERM`); the approved local-server rerun passed.
 
+- 2026-07-13 · AI state-copy audit · **aligned Settings with the actual bounded queue behavior.**
+  Unavailable Apple work is described as paused to save battery and compute, with an explicit Retry
+  path, rather than implying it will keep retrying in the background. The deterministic mock is now
+  labeled `Test backend` so preview output cannot be mistaken for on-device intelligence.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

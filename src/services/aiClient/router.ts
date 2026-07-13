@@ -21,9 +21,10 @@ export const DEFAULT_ROUTING: RoutingTable = {
 };
 
 /** Pass-7 production default: on-device Apple Foundation Models handle the free-tier work; the
- *  mock stays registered as a fallback and for tests. deep-organize routes to mock until the paid
- *  Anthropic tier lands (pass 9). If the Apple backend is unavailable the router still returns it
- *  and its calls fail gracefully (jobs queue) — it is never a network backend, so D18 is moot. */
+ *  mock stays registered as a deterministic preview and for tests. deep-organize routes to mock
+ *  until the paid Anthropic tier lands (pass 9). If the Apple backend is unavailable the router
+ *  still returns it and its calls fail gracefully; the queue parks work without fan-out retries.
+ *  Apple is never a network backend, so D18 is moot. */
 export const APPLE_ROUTING: RoutingTable = {
   summarize: 'apple',
   enrich: 'apple',

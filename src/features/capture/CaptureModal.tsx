@@ -25,7 +25,7 @@ function seedTitle(text: string): string {
 function displayBackend(id: string): string {
   if (id === 'anthropic') return 'Cloud: Anthropic';
   if (id === 'apple') return 'On this Mac: Apple';
-  if (id === 'mock') return 'On this Mac: Mock';
+  if (id === 'mock') return 'Test backend: deterministic preview';
   return id;
 }
 
