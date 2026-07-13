@@ -36,6 +36,7 @@ export function GraphPage() {
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const graphSimilarPairs = useVaultStore((s) => s.graphSimilarPairs);
+  const graphAiLinks = useVaultStore((s) => s.graphAiLinks);
   const graphTopics = useVaultStore((s) => s.graphTopics);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
 
@@ -74,9 +75,10 @@ export function GraphPage() {
     // ai-similar pairs (pass 7, S15) come from the embedding engines; topics (pass 8) drive the
     // semantic-cluster hubs + note-topic edges.
     const similarPairs = graphSimilarPairs(selectedGraphVaultIds);
-    return buildGraph({ vaults, similarPairs });
+    const aiLinks = graphAiLinks(selectedGraphVaultIds);
+    return buildGraph({ vaults, similarPairs, aiLinks });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, graphTopics, revision, useMock]);
+  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, graphAiLinks, graphTopics, revision, useMock]);
 
   // Semantic clustering (D7 default view): color each note by its dominant topic (matching the
   // topic hub node's own palette color), plus ring segments for ≥2 strong memberships.
@@ -159,7 +161,7 @@ export function GraphPage() {
       ? null // nothing to show at all (no vault selected / empty vault) — not a filter problem
       : visibleGraph.edges.length === 0
         ? allLayersOff
-          ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI-found similarity above.'
+          ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.'
           : 'No connections match the current filters — try “Reset view” above.'
         : null;
 

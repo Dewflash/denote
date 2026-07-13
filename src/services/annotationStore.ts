@@ -74,6 +74,12 @@ export class AnnotationStore {
     return this.annotations.filter((a) => a.notePath === relPath);
   }
 
+  /** All live annotations in one pass. Consumers that aggregate across a vault should use this
+   * instead of calling liveFor() once per note. */
+  liveAll(): AiAnnotation[] {
+    return this.annotations.filter((a) => LIVE.has(a.status));
+  }
+
   get(id: string): AiAnnotation | undefined {
     return this.annotations.find((a) => a.id === id);
   }
@@ -82,6 +88,13 @@ export class AnnotationStore {
     return this.annotations.some(
       (a) => a.notePath === relPath && a.contentHash === contentHash && a.model === model,
     );
+  }
+
+  /** True when this note already has any annotation for its current content. Used during vault
+   * startup when the routed backend is temporarily unavailable and therefore has no model id to
+   * compare against. */
+  hasAnnotationsForHash(relPath: string, contentHash: string): boolean {
+    return this.annotations.some((a) => a.notePath === relPath && a.contentHash === contentHash);
   }
 
   isRejected(fingerprint: string, contentHash: string): boolean {

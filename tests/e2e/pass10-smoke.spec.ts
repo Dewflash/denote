@@ -64,16 +64,16 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   await expect(page.getByText('Links you typed', { exact: true })).toBeVisible();
   await expect(page.getByText('Shared tags', { exact: true })).toBeVisible();
   await expect(page.getByText('AI topic groups', { exact: true })).toBeVisible();
-  await expect(page.getByText('AI-found similarity', { exact: true })).toBeVisible();
+  await expect(page.getByText('AI links & similarity', { exact: true })).toBeVisible();
   await expect(page.getByText('Hide AI guesses below 0% sure', { exact: true })).toBeVisible();
   await expect(page.getByText('Outline folders', { exact: true })).toBeVisible();
   const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.';
   await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
 
-  for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI-found similarity']) {
+  for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI links & similarity']) {
     await page.getByLabel(label, { exact: true }).click();
   }
-  const emptyLayerCopy = 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI-found similarity above.';
+  const emptyLayerCopy = 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.';
   await expect(page.getByText(emptyLayerCopy, { exact: true })).toBeVisible();
   const emptyHintBox = await page.getByText(emptyLayerCopy, { exact: true }).boundingBox();
   const canvasBox = await page.getByTestId('graph-canvas').boundingBox();

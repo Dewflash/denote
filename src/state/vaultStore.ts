@@ -19,7 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Repository, type IndexChangeHook } from './repository';
 import { OpLog } from './opLog';
 import { createSearchIndexBinding } from './vaultSearchSync';
-import { createVaultAiBinding, type VaultAiEngine } from './vaultAiEngine';
+import { createVaultAiBinding, type AiQueueState, type VaultAiEngine } from './vaultAiEngine';
 import { createVaultEmbeddingBinding, type VaultEmbeddingEngine } from './vaultEmbeddings';
 import { createVaultOntologyBinding, type VaultOntologyEngine, type OrganizeResult, type OrganizePhase, type CancelToken } from './vaultOntologyEngine';
 import { useGraphStore } from './graphStore';
@@ -37,6 +37,7 @@ import {
 } from '../services/aiClient';
 import { createTauriEmbeddingsBackend } from '../services/embeddings';
 import type { AiAnnotation, SimilarPair } from '../domain';
+import type { AiLinkSuggestion } from '../domain/graphBuilder';
 import type { TakeoverConsent } from './enrichmentQueue';
 import { tauriStorage } from '../services/tauriStorage';
 import { startWatcherBridge } from '../services/watcherBridge';
@@ -146,6 +147,8 @@ interface VaultStoreState {
   getActiveAiEngine: () => VaultAiEngine | undefined;
   /** Vetted ai-similar pairs (pass 7, S15) across the given open vaults, for the graph. */
   graphSimilarPairs: (vaultIds: string[]) => SimilarPair[];
+  /** Live AI link suggestions, shown as dashed graph edges until accepted. */
+  graphAiLinks: (vaultIds: string[]) => AiLinkSuggestion[];
   /** The active vault's ontology engine (pass 8): topics, insights, Organize-vault. */
   getActiveOntologyEngine: () => VaultOntologyEngine | undefined;
   /** Any OPEN vault's ontology engine (the combined graph inspector may target another vault). */
@@ -182,6 +185,7 @@ interface VaultStoreState {
 
   // ── AI (pass 6): all operate on the ACTIVE vault ────────────────────────────
   aiSuggestionsFor: (relPath: string) => AiAnnotation[];
+  aiQueueStateFor: (relPath: string) => AiQueueState;
   acceptSuggestion: (id: string) => Promise<void>;
   rejectSuggestion: (id: string) => Promise<void>;
   acceptSuggestionsAbove: (relPath: string) => Promise<void>;
@@ -591,6 +595,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       ontologyEngines.set(repo.vaultId, ontologyEngine);
       watcherTeardowns.set(repo.vaultId, teardown);
       useGraphStore.getState().addOpenVault(repo.vaultId);
+      // Start AI only after ontology retrieval and the engine registry are ready; existing notes
+      // are seeded during attach and the first background pass can fold topics immediately.
+      aiEngine.start();
 
       const existingEntry = get().registry.find((v) => v.id === repo.vaultId);
       const entry: VaultRegistryEntry = {
@@ -792,6 +799,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       // Cross-vault ai-similar edges (S24) render only when BOTH endpoints are in the selected set.
       ...crossVaultEngine.pairs(vaultIds),
     ],
+    graphAiLinks: (vaultIds) => vaultIds.flatMap((id) => aiEngines.get(id)?.graphLinkSuggestions() ?? []),
     getActiveOntologyEngine: () => {
       const id = get().vaultId;
       return id ? ontologyEngines.get(id) : undefined;
@@ -888,6 +896,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
     aiSuggestionsFor(relPath) {
       return get().getActiveAiEngine()?.suggestionsFor(relPath) ?? [];
+    },
+    aiQueueStateFor(relPath) {
+      return get().getActiveAiEngine()?.queueStateFor(relPath) ?? 'idle';
     },
     async acceptSuggestion(id) {
       await get().getActiveAiEngine()?.accept(id);

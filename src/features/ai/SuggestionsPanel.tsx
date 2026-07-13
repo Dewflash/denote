@@ -116,6 +116,7 @@ export function SuggestionsPanel() {
   const enrich = useVaultStore((s) => s.enrichActiveNote);
   const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
   const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
+  const queueState = useVaultStore((s) => (activeNotePath ? s.aiQueueStateFor(activeNotePath) : 'idle'));
   const refreshAppleAiStatus = useVaultStore((s) => s.refreshAppleAiStatus);
   const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const [running, setRunning] = useState(false);
@@ -226,7 +227,11 @@ export function SuggestionsPanel() {
         {suggestions.length === 0 && !running && (
           <div className="flex flex-col gap-2">
             <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-              No suggestions yet. Keep writing, or press “Get suggestions” — they&apos;ll appear here.
+              {queueState === 'queued'
+                ? 'Preparing suggestions for this note… the map will update when the pass finishes.'
+                : queueState === 'parked'
+                  ? 'Suggestions are waiting for the AI backend. Retry on-device AI when it is available.'
+                  : 'No suggestions yet. Press “Get suggestions” to ask the AI to read this note.'}
             </p>
             {appleAiHealth.status === 'unavailable' && enrichBackend === 'apple' && (
               <div className="flex flex-col items-start gap-2">

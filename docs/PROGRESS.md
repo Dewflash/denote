@@ -915,6 +915,20 @@ what is needed and why, and continues with the rest of the pass if independent.
   S1 hash reference, and `git diff --check` green. Apple Foundation Models remains unavailable
   on this Mac and is reported honestly; native screenshot/owner acceptance is still external.
 
+- 2026-07-13 · automatic-linking follow-up · **fixed the missing initial AI pass and made live AI
+  links visible in the map.** Repository startup indexing intentionally emits no change events, so
+  existing notes were never entering `VaultAiEngine`'s enrichment queue; attach now seeds only
+  notes missing annotations for the routed model, preserves parked/current jobs, and starts the
+  pump after embeddings, ontology, and the engine registry are ready. Live link annotations now
+  become dashed `ai-link` graph edges immediately, with confidence and the model's reason, while
+  the markdown remains unchanged until acceptance. The graph layer label is deliberately
+  `AI links & similarity` rather than the UX amendment's narrower `AI-found similarity` because it
+  now includes both vetted similarity pairs and directed link suggestions. **Verification:** 458
+  TypeScript tests / 58 files, focused AI/graph tests 29/29, lint, `tsc --noEmit`, production build,
+  Playwright e2e 6/6, Rust library tests 19/19, Swift sidecar build + native Tauri boot, S1 hash
+  reference, and `git diff --check` green. Native screenshot capture remains unavailable in this
+  headless session; Apple Foundation Models remains an external runtime/model-availability check.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

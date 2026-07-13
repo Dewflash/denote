@@ -13,14 +13,14 @@ const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
   { key: 'wikilinks', label: 'Links you typed' },
   { key: 'tags', label: 'Shared tags' },
   { key: 'topics', label: 'AI topic groups' },
-  { key: 'aiSimilar', label: 'AI-found similarity' },
+  { key: 'aiSimilar', label: 'AI links & similarity' },
 ];
 
 const LAYER_TOOLTIPS: Record<keyof LayerToggles, string> = {
   wikilinks: '[[links]] written inside notes',
   tags: 'Notes that use the same #tag connect through it',
   topics: 'Topics found by Organize vault',
-  aiSimilar: 'Pairs the on-device AI judged related — each edge shows its reason in the side panel',
+  aiSimilar: 'Dashed edges are AI-suggested links or similarity pairs; inspect the reason before accepting',
 };
 
 export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesIndexOpen: boolean; onToggleNotesIndex: () => void }) {

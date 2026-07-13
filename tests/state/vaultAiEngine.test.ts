@@ -56,6 +56,18 @@ async function open(opts: { router?: AiRouter; localOnly?: boolean } = {}): Prom
 }
 
 describe('VaultAiEngine — enrichment + takeover', () => {
+  it('seeds existing notes when a vault opens', async () => {
+    await backend.writeNote(root, 'Existing.md', '# Existing\nBanking and interest rates.\n');
+    const { repo, engine } = await open();
+
+    expect(engine['queue'].get('Existing.md')).toMatchObject({
+      relPath: 'Existing.md',
+      contentHash: repo.getHash('Existing.md'),
+      state: 'pending',
+    });
+    expect(engine.queueStateFor('Existing.md')).toBe('queued');
+  });
+
   it('a bare note gets provisional ai: structure without changing contentHash (R1)', async () => {
     const body = '# Yen Intervention\nThe BOJ defended the yen as interest rates diverged.\n';
     await backend.writeNote(root, 'Yen.md', '');

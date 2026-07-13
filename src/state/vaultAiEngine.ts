@@ -37,10 +37,12 @@ import { DenoteError } from '../services/errors';
 import type { Op } from './opLog';
 import type { Repository } from './repository';
 import { EnrichmentQueue, QUEUE_PATH, type TakeoverConsent } from './enrichmentQueue';
+import type { AiLinkSuggestion } from '../domain/graphBuilder';
 
 export const ENRICH_DEBOUNCE_MS = 2000;
 /** S28: bulk provisional takeover past this many notes prompts for consent once per vault. */
 export const CONSENT_THRESHOLD = 20;
+export type AiQueueState = 'idle' | 'queued' | 'parked';
 
 export interface VaultAiEngineDeps {
   now?: () => number;
@@ -73,6 +75,7 @@ export class VaultAiEngine {
   private pumpTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private pumping = false;
+  private started = false;
   private idSeq = 0;
   // Chain of background work started from onIndexChange (demotion, delete cleanup). `settle()`
   // awaits it — used by tests for determinism; harmless in production.
@@ -104,11 +107,21 @@ export class VaultAiEngine {
       this.cancelDebounce(rel);
       return this.store.removeForPath(rel);
     });
+    if (this.seedMissingNotes()) await this.persistQueue();
+  }
+
+  /** Start background work after the other per-vault engines have attached. This ordering keeps
+   * the first enrichment pass connected to ontology retrieval instead of racing vaultStore's
+   * embedding/ontology setup. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
     this.schedulePump();
   }
 
   /** Tear down timers (vault close / test cleanup). */
   dispose(): void {
+    this.started = false;
     if (this.pumpTimer) clearTimeout(this.pumpTimer);
     this.pumpTimer = null;
     for (const t of this.debounceTimers.values()) clearTimeout(t);
@@ -127,15 +140,42 @@ export class VaultAiEngine {
   parkedCount(): number {
     return this.queue.parkedCount();
   }
+
+  queueStateFor(relPath: string): AiQueueState {
+    const state = this.queue.get(relPath)?.state;
+    return state === 'parked' ? 'parked' : state ? 'queued' : 'idle';
+  }
   getConsent(): TakeoverConsent {
     return this.queue.getConsent();
   }
 
   /** Retry parked work after the user has restored the on-device backend. */
   retry(): void {
+    this.seedMissingNotes();
     this.queue.resumeParked(this.now());
     void this.persistQueue();
-    this.schedulePump();
+    if (this.started) this.schedulePump();
+  }
+
+  /** Live AI link suggestions are graph edges before the user accepts them. They are deliberately
+   * separate from typed wikilinks and from similarity edges so the inspector can explain exactly
+   * why a connection is present. */
+  graphLinkSuggestions(): AiLinkSuggestion[] {
+    const links: AiLinkSuggestion[] = [];
+    for (const ann of this.store.liveAll()) {
+      if (ann.kind !== 'link' || this.repo.getHash(ann.notePath) !== ann.contentHash) continue;
+      const payload = ann.payload as LinkPayload;
+      if (!payload.target.trim()) continue;
+      links.push({
+        vaultId: this.repo.vaultId,
+        relPath: ann.notePath,
+        target: payload.target,
+        targetPath: payload.targetPath,
+        reason: ann.reason,
+        confidence: ann.confidence,
+      });
+    }
+    return links;
   }
 
   // ── change trigger (from Repository.onIndexChange) ─────────────────────────────
@@ -401,7 +441,7 @@ export class VaultAiEngine {
   }
 
   private schedulePump(): void {
-    if (this.deps.disableTimers || this.pumpTimer || this.pumping) return;
+    if (this.deps.disableTimers || !this.started || this.pumpTimer || this.pumping) return;
     const due = this.queue.due(this.now());
     if (due.length === 0) {
       // Schedule for the soonest future backoff, if any.
@@ -442,6 +482,42 @@ export class VaultAiEngine {
     if (ENRICHABLE_SKIP_DIRS.some((d) => relPath.startsWith(d))) return true;
     if (note.frontmatter.source === 'ai') return true; // D26: materialized topic hubs
     return false;
+  }
+
+  /** Initial Repository indexing intentionally does not call onIndexChange. Seed only missing
+   *  work here so an already-open vault is enriched automatically, without resetting parked or
+   *  already-running jobs on every app launch. */
+  private seedMissingNotes(): boolean {
+    let model: string | undefined;
+    try {
+      model = this.router.route('enrich', { localOnly: this.deps.localOnly?.() ?? false }).modelId;
+    } catch {
+      // Keep unannotated notes queued even when the backend is not registered yet. A routing
+      // change calls retry(), which re-runs this check once a backend becomes available.
+    }
+
+    let changed = false;
+    for (const note of this.repo.index.allNotes()) {
+      if (this.shouldSkip(note.relPath, note)) continue;
+      const hash = this.repo.getHash(note.relPath);
+      if (!hash) continue;
+      const job = this.queue.get(note.relPath);
+      if (job?.contentHash === hash) continue;
+
+      const alreadyAnnotated = model
+        ? this.store.hasAnnotationsFor(note.relPath, hash, model)
+        : this.store.hasAnnotationsForHash(note.relPath, hash);
+      if (alreadyAnnotated) {
+        if (job) {
+          this.queue.remove(note.relPath);
+          changed = true;
+        }
+        continue;
+      }
+      this.queue.enqueue(note.relPath, hash);
+      changed = true;
+    }
+    return changed;
   }
 
   private candidateNotes(selfPath: string) {

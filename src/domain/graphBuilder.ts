@@ -27,9 +27,21 @@ export interface SimilarPair {
   weight?: number;
 }
 
+/** A live AI link suggestion. Unlike a SimilarPair, this has a directed source note and may
+ * resolve to a ghost when the suggested target is not in the vault. */
+export interface AiLinkSuggestion {
+  vaultId: VaultId;
+  relPath: string;
+  target: string;
+  targetPath?: string;
+  reason: string;
+  confidence: number;
+}
+
 export interface GraphBuildInput {
   vaults: GraphVaultInput[];
   similarPairs?: SimilarPair[];
+  aiLinks?: AiLinkSuggestion[];
 }
 
 export interface Graph {
@@ -72,7 +84,9 @@ export function buildGraph(input: GraphBuildInput): Graph {
     const sortedNotes = [...v.notes].sort((a, b) => cmp(a.relPath, b.relPath));
     const refs = sortedNotes.map((n) => ({ relPath: n.relPath, title: n.title }));
     const userLinkTargets = new Set(
-      sortedNotes.flatMap((note) => note.links.map((link) => `${note.relPath}\u0000${link.targetTitle.toLowerCase()}`)),
+      sortedNotes.flatMap((note) =>
+        note.links.map((link) => `${note.relPath}\u0000${resolvedTargetId(resolveLink(link.targetTitle, refs, v.vaultId))}`),
+      ),
     );
 
     // Wikilink / embed edges (resolution is vault-scoped, S4/D17).
@@ -98,9 +112,9 @@ export function buildGraph(input: GraphBuildInput): Graph {
     for (const note of sortedNotes) {
       const from = noteId(v.vaultId, note.relPath);
       for (const target of note.aiFrontmatter?.links ?? []) {
-        const key = `${note.relPath}\u0000${target.toLowerCase()}`;
-        if (userLinkTargets.has(key)) continue;
         const resolution = resolveLink(target, refs, v.vaultId);
+        const key = `${note.relPath}\u0000${resolvedTargetId(resolution)}`;
+        if (userLinkTargets.has(key)) continue;
         const to = resolution.kind === 'note' ? noteId(v.vaultId, resolution.relPath) : resolution.id;
         if (resolution.kind === 'ghost') {
           addNode({ id: resolution.id, type: 'ghost', vaultId: v.vaultId, label: target });
@@ -221,6 +235,46 @@ export function buildGraph(input: GraphBuildInput): Graph {
     });
   }
 
+  // Pass E: live AI link suggestions. These are intentionally not folded into the typed-link
+  // layer: the dashed edge is useful immediately, but the note body remains unchanged until the
+  // owner accepts it in the suggestions panel or inspector.
+  for (const suggestion of input.aiLinks ?? []) {
+    const from = noteId(suggestion.vaultId, suggestion.relPath);
+    if (!noteNodeIds.has(from)) continue;
+    const vault = vaults.find((v) => v.vaultId === suggestion.vaultId);
+    if (!vault) continue;
+    const refs = vault.notes.map((n) => ({ relPath: n.relPath, title: n.title }));
+    const userTargets = new Set(
+      vault.notes
+        .filter((n) => n.relPath === suggestion.relPath)
+        .flatMap((n) => n.links.map((link) => resolvedTargetId(resolveLink(link.targetTitle, refs, suggestion.vaultId)))),
+    );
+    let resolution = suggestion.targetPath
+      ? resolveLink(suggestion.targetPath, refs, suggestion.vaultId)
+      : resolveLink(suggestion.target, refs, suggestion.vaultId);
+    // A cached targetPath can outlive a rename. Prefer the human-readable target when the cached
+    // path is no longer resolvable, so the graph does not invent a ghost for a note that still
+    // exists under its title.
+    if (resolution.kind === 'ghost' && suggestion.targetPath && suggestion.targetPath !== suggestion.target) {
+      resolution = resolveLink(suggestion.target, refs, suggestion.vaultId);
+    }
+    if (userTargets.has(resolvedTargetId(resolution))) continue;
+    const to = resolution.kind === 'note' ? noteId(suggestion.vaultId, resolution.relPath) : resolution.id;
+    if (resolution.kind === 'ghost') {
+      addNode({ id: resolution.id, type: 'ghost', vaultId: suggestion.vaultId, label: suggestion.target });
+    }
+    addEdge({
+      id: `ai-link:${from}->${to}`,
+      from,
+      to,
+      type: 'ai-link',
+      source: 'ai',
+      weight: suggestion.confidence,
+      confidence: suggestion.confidence,
+      reason: suggestion.reason,
+    });
+  }
+
   return {
     nodes: [...nodes.values()].sort((a, b) => cmp(a.id, b.id)),
     edges: [...edges.values()].sort((a, b) => cmp(a.id, b.id)),
@@ -229,4 +283,8 @@ export function buildGraph(input: GraphBuildInput): Graph {
 
 function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function resolvedTargetId(resolution: ReturnType<typeof resolveLink>): string {
+  return resolution.kind === 'note' ? resolution.relPath : resolution.id;
 }

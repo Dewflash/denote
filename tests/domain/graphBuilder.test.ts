@@ -152,6 +152,49 @@ describe('graphBuilder (D6/D6a/D7/D17)', () => {
     expect(g.edges.some((edge) => edge.type === 'wikilink')).toBe(false);
   });
 
+  it('renders live AI link suggestions before they are accepted', () => {
+    const notes = [
+      parseNote('Japan.md', '# Japan\nCentral bank policy.\n'),
+      parseNote('Bank.md', '# Bank of Japan\nInterest rates.\n'),
+    ];
+    const g = buildGraph({
+      vaults: [{ vaultId: V, notes }],
+      aiLinks: [{
+        vaultId: V,
+        relPath: 'Japan.md',
+        target: 'Bank of Japan',
+        targetPath: 'Bank.md',
+        reason: 'Both notes discuss central-bank policy.',
+        confidence: 0.86,
+      }],
+    });
+    expect(g.edges).toContainEqual(expect.objectContaining({
+      id: 'ai-link:vault-1/Japan.md->vault-1/Bank.md',
+      type: 'ai-link',
+      source: 'ai',
+      confidence: 0.86,
+      reason: 'Both notes discuss central-bank policy.',
+    }));
+  });
+
+  it('deduplicates AI links against a differently-worded typed link and recovers stale paths', () => {
+    const notes = [
+      parseNote('Japan.md', '# Japan\nAlready connected: [[Bank]].\n'),
+      parseNote('Bank.md', '# Bank of Japan\n'),
+    ];
+    const duplicate = buildGraph({
+      vaults: [{ vaultId: V, notes }],
+      aiLinks: [{ vaultId: V, relPath: 'Japan.md', target: 'Bank of Japan', targetPath: 'Bank.md', reason: 'same', confidence: 0.9 }],
+    });
+    expect(duplicate.edges.filter((e) => e.type === 'ai-link')).toHaveLength(0);
+
+    const recovered = buildGraph({
+      vaults: [{ vaultId: V, notes: [parseNote('Japan.md', '# Japan\n'), notes[1]] }],
+      aiLinks: [{ vaultId: V, relPath: 'Japan.md', target: 'Bank of Japan', targetPath: 'Old/Bank.md', reason: 'renamed', confidence: 0.9 }],
+    });
+    expect(recovered.edges).toContainEqual(expect.objectContaining({ type: 'ai-link', to: 'vault-1/Bank.md' }));
+  });
+
   it('output is deterministic (nodes and edges sorted by id)', () => {
     const build = () =>
       buildGraph({
