@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import {
   applyThemeTokens,
   BUNDLED_THEMES,
+  clearThemeTokens,
   parseThemeFile,
   type ThemeFile,
 } from '../services/themeSettings';
@@ -243,8 +244,10 @@ export const useUiStore = create<UiState>((set, get) => {
       applyTheme(mode);
       if (mode !== 'custom') {
         localStorage.removeItem(CUSTOM_THEME_KEY);
+        clearThemeTokens();
         set({ themeFile: null });
       }
+      if (mode !== 'custom') applyAccent(get().accent);
       set({ theme: mode });
     },
     setThemeFile(themeFile) {
@@ -254,13 +257,16 @@ export const useUiStore = create<UiState>((set, get) => {
         localStorage.setItem(THEME_KEY, 'custom');
         applyTheme('custom');
         applyThemeTokens(validated);
+        if (get().accent) applyAccent(get().accent);
         set({ theme: 'custom', themeFile: validated });
         return;
       }
       localStorage.removeItem(CUSTOM_THEME_KEY);
       const nextMode = get().theme === 'custom' ? 'system' : get().theme;
       localStorage.setItem(THEME_KEY, nextMode);
+      clearThemeTokens();
       applyTheme(nextMode);
+      applyAccent(get().accent);
       set({ theme: nextMode, themeFile: null });
     },
     updateThemeToken(token, value) {

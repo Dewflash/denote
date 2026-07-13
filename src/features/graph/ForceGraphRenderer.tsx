@@ -158,6 +158,10 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     () => `${positioned.map((node) => node.id).join('\u0000')}\u0001${edges.map((edge) => edge.id).join('\u0000')}`,
     [positioned, edges],
   );
+  // zoomToFit considers node geometry, not the canvas labels painted around each node. A
+  // narrow map needs extra breathing room or the outermost title can be clipped even when its
+  // circle is technically inside the viewport.
+  const fitPadding = size.width <= 520 ? 112 : FIT_PADDING;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -182,18 +186,18 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     fittedGraphKeyRef.current = null;
     const frame = requestAnimationFrame(() => {
       const graph = fgRef.current;
-      graph?.zoomToFit(400, FIT_PADDING);
+      graph?.zoomToFit(400, fitPadding);
     });
     return () => cancelAnimationFrame(frame);
-  }, [graphKey, positioned.length]);
+  }, [fitPadding, graphKey, positioned.length]);
 
   useEffect(() => {
     if (positioned.length === 0 || cameraDirtyRef.current) return;
     const frame = requestAnimationFrame(() => {
-      if (!cameraDirtyRef.current) fgRef.current?.zoomToFit(250, FIT_PADDING);
+      if (!cameraDirtyRef.current) fgRef.current?.zoomToFit(250, fitPadding);
     });
     return () => cancelAnimationFrame(frame);
-  }, [positioned.length, size.width, size.height]);
+  }, [fitPadding, positioned.length, size.width, size.height]);
 
   useEffect(() => {
     if (positioned.length === 0) return;
@@ -273,7 +277,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           // cannot end up outside the initial camera, and do not steal the user's zoom on drag.
           if (positioned.length === 0 || cameraDirtyRef.current || fittedGraphKeyRef.current === graphKey) return;
           fittedGraphKeyRef.current = graphKey;
-          fgRef.current?.zoomToFit(300, FIT_PADDING);
+          fgRef.current?.zoomToFit(300, fitPadding);
         }}
         onRenderFramePre={(ctx, globalScale) => {
           const labelFont = `${LABEL_FONT_PX / globalScale}px ${styleTokens.fontUi || 'sans-serif'}`;

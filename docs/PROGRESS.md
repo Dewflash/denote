@@ -880,6 +880,19 @@ what is needed and why, and continues with the rest of the pass if independent.
 - Remaining explicit scope reductions: OAuth repo creation is post-1.0; capture fallback preserves
   text clipboard data only; a real Tauri-driver harness and owner manual acceptance remain outstanding.
 
+- 2026-07-13 · final bounded UI/AI audit · **several concrete defects fixed and logged.** Narrow
+  graph labels now fit inside the viewport, and sparse-note guidance lives in its own layout strip
+  instead of covering nodes; toolbar copy distinguishes selecting hubs from opening notes. Custom
+  theme changes now clear stale inline tokens and short palettes fill every graph hull slot.
+  Suggestion badges use human backend names, Organize vault clears stale results/errors on close,
+  and context-menu “New folder…” uses an in-app dialog with inline errors instead of a browser
+  prompt. Removed the dead Deep organize routing select and fixed Cloud key refresh to use an
+  effect. **Verification:** 455 TypeScript tests / 58 files, focused theme/graph tests 8/8, lint,
+  `tsc --noEmit`, production build, Playwright e2e 6/6, S1 hash reference, and `git diff --check`
+  green. Desktop/mobile screenshots were inspected at 1280x720 and 390x844; native screenshot
+  capture remains unavailable in this headless session, and Apple Foundation Models remains
+  unavailable on this Mac (reported in-app).
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

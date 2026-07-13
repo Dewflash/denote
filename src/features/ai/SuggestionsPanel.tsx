@@ -30,6 +30,13 @@ function payloadLabel(a: AiAnnotation): string {
   }
 }
 
+function modelLabel(model: string): string {
+  if (model.startsWith('apple')) return 'On-device AI';
+  if (model.startsWith('claude') || model.startsWith('anthropic')) return 'Cloud AI';
+  if (model.startsWith('mock')) return 'Test backend';
+  return model;
+}
+
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   return (
@@ -79,7 +86,7 @@ function SuggestionRow({ ann }: { ann: AiAnnotation }) {
           style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
           title={provisional ? 'Applied provisionally into the ai: block (S10)' : `Suggested by ${ann.model}`}
         >
-          {provisional ? 'AI provisional' : ann.model}
+          {provisional ? 'AI provisional' : modelLabel(ann.model)}
         </span>
         <div className="flex gap-1.5">
           <button

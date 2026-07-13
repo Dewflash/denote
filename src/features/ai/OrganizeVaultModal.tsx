@@ -27,6 +27,18 @@ export function OrganizeVaultModal() {
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<CancelToken>({ aborted: false });
 
+  const resetResult = (): void => {
+    setProgress(null);
+    setResult(null);
+    setError(null);
+  };
+
+  const close = (): void => {
+    if (running) return;
+    setOpen(false);
+    resetResult();
+  };
+
   const start = async (): Promise<void> => {
     setRunning(true);
     setResult(null);
@@ -49,7 +61,7 @@ export function OrganizeVaultModal() {
   const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !running && setOpen(o)}>
+    <Dialog.Root open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
         <Dialog.Content
@@ -111,7 +123,7 @@ export function OrganizeVaultModal() {
                 <button
                   className="rounded px-3 py-1.5 text-xs"
                   style={{ border: '1px solid var(--border)', color: 'var(--fg)' }}
-                  onClick={() => setOpen(false)}
+                  onClick={close}
                 >
                   Close
                 </button>

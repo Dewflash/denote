@@ -67,11 +67,12 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   await expect(page.getByText('AI-found similarity', { exact: true })).toBeVisible();
   await expect(page.getByText('Hide AI guesses below 0% sure', { exact: true })).toBeVisible();
   await expect(page.getByText('Outline folders', { exact: true })).toBeVisible();
+  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.';
+  await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
 
   for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI-found similarity']) {
     await page.getByLabel(label, { exact: true }).click();
   }
-  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.';
   await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Dismiss graph hint' }).click();
   await expect(page.getByText(sparseCopy, { exact: true })).toBeHidden();

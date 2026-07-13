@@ -5,6 +5,7 @@
 // dependency-free positioned div — Open / Rename / Move to folder / Delete (two-step confirm),
 // all routed through the existing vaultStore actions so every path stays pipeline-safe.
 
+import * as Dialog from '@radix-ui/react-dialog';
 import { useMemo, useState } from 'react';
 import { useVaultStore } from '../../state/vaultStore';
 import { useUiStore } from '../../state/uiStore';
@@ -17,6 +18,12 @@ interface MenuState {
   path: string;
   displayName: string;
   mode: 'main' | 'move' | 'confirm-delete';
+}
+
+interface FolderMoveDraft {
+  notePath: string;
+  baseName: string;
+  currentDir: string;
 }
 
 interface TreeActions {
@@ -378,21 +385,43 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [sessionFolders, setSessionFolders] = useState<string[]>([]);
   const [rootDropActive, setRootDropActive] = useState(false);
+  const [folderMoveDraft, setFolderMoveDraft] = useState<FolderMoveDraft | null>(null);
+  const [folderName, setFolderName] = useState('New folder');
+  const [folderError, setFolderError] = useState<string | null>(null);
 
   function rememberFolder(path: string): void {
     setSessionFolders((current) => current.includes(path) ? current : [...current, path]);
     onFolderCreated?.(path);
   }
 
-  async function createFolder(path: string): Promise<boolean> {
-    if (!repo || !path.trim()) return false;
+  async function createFolder(path: string): Promise<string | null> {
+    if (!repo || !path.trim()) return null;
     try {
       const createdPath = await useVaultStore.getState().createFolder(path.trim());
       rememberFolder(createdPath);
-      return true;
+      return createdPath;
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
-      return false;
+      setFolderError(error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }
+
+  async function submitFolderMove(): Promise<void> {
+    if (!folderMoveDraft) return;
+    const name = folderName.trim();
+    if (!name) {
+      setFolderError('Enter a folder name.');
+      return;
+    }
+    const path = `${folderMoveDraft.currentDir ? `${folderMoveDraft.currentDir}/` : ''}${name}`;
+    setFolderError(null);
+    const createdPath = await createFolder(path);
+    if (!createdPath) return;
+    try {
+      await useVaultStore.getState().moveNote(folderMoveDraft.notePath, `${createdPath}/${folderMoveDraft.baseName}`);
+      setFolderMoveDraft(null);
+    } catch (error) {
+      setFolderError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -481,15 +510,10 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
             setHistoryPath(path);
           }}
           onCreateFolderAndMove={(notePath, baseName, currentDir) => {
-            const name = window.prompt('New folder name:', 'New folder');
-            if (!name?.trim()) return;
-            const path = `${currentDir ? `${currentDir}/` : ''}${name.trim()}`;
-            void createFolder(path).then((created) => {
-              if (created) {
-                void useVaultStore.getState().moveNote(notePath, `${created}/${baseName}`);
-                setMenu(null);
-              }
-            });
+            setMenu(null);
+            setFolderName('New folder');
+            setFolderError(null);
+            setFolderMoveDraft({ notePath, baseName, currentDir });
           }}
           onRename={(path) => {
             setMenu(null);
@@ -499,6 +523,45 @@ export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?
         />
       )}
       <NoteHistoryDialog open={historyPath !== null} onOpenChange={(open) => { if (!open) setHistoryPath(null); }} relPath={historyPath} />
+      <Dialog.Root
+        open={folderMoveDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFolderMoveDraft(null);
+            setFolderError(null);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-50 w-[360px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 p-4"
+            style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}
+          >
+            <Dialog.Title className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>New folder</Dialog.Title>
+            <Dialog.Description className="mt-1 text-xs" style={{ color: 'var(--fg-muted)' }}>
+              Create a folder and move “{folderMoveDraft?.baseName}” into it.
+            </Dialog.Description>
+            <form className="mt-4 flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void submitFolderMove(); }}>
+              <input
+                autoFocus
+                aria-label="Folder name"
+                value={folderName}
+                onChange={(event) => setFolderName(event.target.value)}
+                className="rounded px-2 py-1.5 text-sm"
+                style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg)' }}
+              />
+              {folderError && <div role="alert" className="text-xs" style={{ color: 'var(--danger)' }}>{folderError}</div>}
+              <div className="flex justify-end gap-2">
+                <Dialog.Close asChild>
+                  <button type="button" className="rounded px-2 py-1 text-xs" style={{ border: '1px solid var(--border)' }}>Cancel</button>
+                </Dialog.Close>
+                <button type="submit" className="rounded px-2 py-1 text-xs" style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>Create and move</button>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

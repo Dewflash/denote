@@ -129,6 +129,29 @@ export function serializeThemeFile(theme: ThemeFile): string {
   return JSON.stringify(parseThemeFile(JSON.stringify(theme)), null, 2) + '\n';
 }
 
+const THEME_CSS_KEYS = [
+  '--bg',
+  '--bg-panel',
+  '--fg',
+  '--fg-muted',
+  '--accent',
+  '--border',
+  '--danger',
+  '--graph-node-note',
+  '--graph-node-ghost',
+  '--graph-node-tag',
+  '--graph-node-topic',
+  '--graph-edge-solid',
+  '--graph-edge-ai',
+  ...Array.from({ length: 8 }, (_, i) => `--graph-hull-${i}`),
+] as const;
+
+/** Remove only the inline variables owned by a custom theme so the stylesheet or explicit
+ * light/dark theme can become authoritative again. */
+export function clearThemeTokens(root: HTMLElement = document.documentElement): void {
+  for (const key of THEME_CSS_KEYS) root.style.removeProperty(key);
+}
+
 export function applyThemeTokens(theme: ThemeFile, root: HTMLElement = document.documentElement): void {
   const t = theme.tokens;
   const pairs: Array<[string, string]> = [
@@ -146,6 +169,8 @@ export function applyThemeTokens(theme: ThemeFile, root: HTMLElement = document.
     ['--graph-edge-solid', t.graphEdgeSolid],
     ['--graph-edge-ai', t.graphEdgeAi],
   ];
-  t.graphPalette.forEach((color, i) => pairs.push([`--graph-hull-${i}`, color]));
+  for (let i = 0; i < 8; i++) {
+    pairs.push([`--graph-hull-${i}`, t.graphPalette[i % t.graphPalette.length]]);
+  }
   for (const [key, value] of pairs) root.style.setProperty(key, value);
 }

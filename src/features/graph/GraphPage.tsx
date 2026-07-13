@@ -144,7 +144,12 @@ export function GraphPage() {
     }
     return ids;
   }, [visibleGraph.edges, visibleNotes]);
-  const sparseHint = !sparseHintDismissed && visibleNotes.length > 0 && visibleNotes.length - connectedNoteIds.size > visibleNotes.length / 2;
+  const orphanNoteCount = visibleNotes.length - connectedNoteIds.size;
+  // A single orphan is worth explaining in a small map; requiring a majority meant the common
+  // "three linked notes plus one new note" case looked like a broken renderer.
+  const sparseHint = !sparseHintDismissed && orphanNoteCount > 0 && (
+    visibleNotes.length <= 8 || orphanNoteCount > visibleNotes.length / 2
+  );
 
   // Empty-state guidance (post-06 fix #2): silent dots with no edges confused the owner (all
   // layers off, or imported notes with few wikilinks). Surface a one-line hint instead.
@@ -227,7 +232,7 @@ export function GraphPage() {
             onClose={() => setNotesIndexOpen(false)}
           />
         )}
-        <div className="graph-map flex-1" style={{ minWidth: 0, position: 'relative' }}>
+        <div className="graph-map flex min-w-0 flex-1 flex-col" style={{ position: 'relative' }}>
           {localView.enabled && localView.centerId && (
             <div
               className="absolute left-1/2 top-3 z-10 flex max-w-[min(700px,calc(100%-24px))] -translate-x-1/2 items-center gap-3 rounded px-3 py-2 text-xs shadow-sm"
@@ -254,10 +259,7 @@ export function GraphPage() {
             </div>
           )}
           {sparseHint && (
-            <div
-              className="absolute left-1/2 top-24 z-10 flex max-w-[min(760px,calc(100%-24px))] -translate-x-1/2 items-start gap-2 rounded px-3 py-2 text-xs shadow-sm"
-              style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--fg)' }}
-            >
+            <div className="flex shrink-0 items-start gap-2 px-3 py-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}>
               <span>
                 Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.
               </span>
@@ -266,21 +268,23 @@ export function GraphPage() {
               </button>
             </div>
           )}
-          <ForceGraphRenderer
-            edges={visibleGraph.edges}
-            positioned={positioned}
-            groupings={{ hullsEnabled }}
-            styleTokens={styleTokens}
-            vaultColors={vaultColors}
-            nodeColors={nodeColors}
-            nodeRings={nodeRings}
-            selectedId={selectedNodeId}
-            onNodeClick={(node, opts) => {
-              if (typeof window !== 'undefined' && window.innerWidth <= 720) setNotesIndexOpen(false);
-              void handleNodeClick(node, opts);
-            }}
-            onBackgroundClick={() => setSelectedNode(null)}
-          />
+          <div className="min-h-0 flex-1">
+            <ForceGraphRenderer
+              edges={visibleGraph.edges}
+              positioned={positioned}
+              groupings={{ hullsEnabled }}
+              styleTokens={styleTokens}
+              vaultColors={vaultColors}
+              nodeColors={nodeColors}
+              nodeRings={nodeRings}
+              selectedId={selectedNodeId}
+              onNodeClick={(node, opts) => {
+                if (typeof window !== 'undefined' && window.innerWidth <= 720) setNotesIndexOpen(false);
+                void handleNodeClick(node, opts);
+              }}
+              onBackgroundClick={() => setSelectedNode(null)}
+            />
+          </div>
         </div>
         {selectedNodeId && (
           <div className="graph-inspector" style={{ width: 280 }}>

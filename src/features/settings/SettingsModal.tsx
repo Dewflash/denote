@@ -442,7 +442,6 @@ const AI_TASKS: { id: string; label: string }[] = [
   { id: 'summarize', label: 'Summarize' },
   { id: 'enrich', label: 'Suggest tags & links' },
   { id: 'label-similarity', label: 'Judge similarity' },
-  { id: 'deep-organize', label: 'Deep organize' },
 ];
 
 // Per-note tasks route only to the free/local backends. The paid Anthropic backend is deliberately
@@ -479,7 +478,7 @@ function CloudSection() {
     return useVaultStore.getState().spendRuns();
   }, [revision]);
 
-  useMemo(() => {
+  useEffect(() => {
     void useVaultStore.getState().refreshAnthropicKeyPresence();
   }, []);
 

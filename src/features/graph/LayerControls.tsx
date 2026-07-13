@@ -137,7 +137,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         Organize vault…
       </button>
 
-      <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Click a dot to open that note.</span>
+      <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Select a dot; click a note to open it.</span>
       <button
         className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
