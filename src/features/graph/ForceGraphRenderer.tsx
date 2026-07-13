@@ -25,6 +25,79 @@ const HULL_PAD = 24;
 const FIT_PADDING = 72;
 const LAYOUT_TICKS = 120;
 const LAYOUT_MAX_MS = 1800;
+const LABEL_FONT_PX = 12;
+const LABEL_LINE_HEIGHT_PX = 16;
+const LABEL_PADDING_X_PX = 5;
+const LABEL_PADDING_Y_PX = 3;
+
+type LabelRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+type NodeObstacle = LabelRect & { id: string };
+
+type LabelLayout = LabelRect & {
+  text: string;
+  x: number;
+  y: number;
+  font: string;
+};
+
+const LABEL_DIRECTIONS = [
+  { x: 0, y: 1 },
+  { x: 1, y: 0 },
+  { x: 0, y: -1 },
+  { x: -1, y: 0 },
+  { x: 1, y: 1 },
+  { x: -1, y: 1 },
+  { x: 1, y: -1 },
+  { x: -1, y: -1 },
+] as const;
+
+function overlaps(a: LabelRect, b: LabelRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+function addToSpatialGrid(grid: Map<string, LabelRect[]>, rect: LabelRect, cellSize: number): void {
+  const minX = Math.floor(rect.left / cellSize);
+  const maxX = Math.floor(rect.right / cellSize);
+  const minY = Math.floor(rect.top / cellSize);
+  const maxY = Math.floor(rect.bottom / cellSize);
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      const key = `${x}:${y}`;
+      const bucket = grid.get(key);
+      if (bucket) bucket.push(rect);
+      else grid.set(key, [rect]);
+    }
+  }
+}
+
+function gridHasOverlap(
+  grid: Map<string, LabelRect[]>,
+  rect: LabelRect,
+  cellSize: number,
+  shouldIgnore?: (other: LabelRect) => boolean,
+): boolean {
+  const minX = Math.floor(rect.left / cellSize);
+  const maxX = Math.floor(rect.right / cellSize);
+  const minY = Math.floor(rect.top / cellSize);
+  const maxY = Math.floor(rect.bottom / cellSize);
+  const seen = new Set<LabelRect>();
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      for (const other of grid.get(`${x}:${y}`) ?? []) {
+        if (seen.has(other)) continue;
+        seen.add(other);
+        if (!shouldIgnore?.(other) && overlaps(rect, other)) return true;
+      }
+    }
+  }
+  return false;
+}
 
 function useContainerSize(): [React.RefObject<HTMLDivElement | null>, { width: number; height: number }] {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -52,6 +125,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
   const fittedGraphKeyRef = useRef<string | null>(null);
   const cameraDirtyRef = useRef(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const labelLayoutsRef = useRef(new Map<string, LabelLayout>());
 
   // Never hand our domain edge objects to the renderer: force-graph mutates `source`/`target`
   // (here aliased to `from`/`to`) into live node references once the simulation starts, which
@@ -113,6 +187,22 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     return () => cancelAnimationFrame(frame);
   }, [positioned.length, size.width, size.height]);
 
+  useEffect(() => {
+    if (positioned.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      const graph = fgRef.current;
+      if (!graph) return;
+      const charge = graph.d3Force('charge') as unknown as { strength?: (value: number) => unknown } | undefined;
+      const link = graph.d3Force('link') as unknown as { distance?: (value: number) => unknown } | undefined;
+      // Keep unlinked notes in the same readable field as the connected component while still
+      // giving real edges room to breathe. This changes only placement, never graph structure.
+      charge?.strength?.(-18);
+      link?.distance?.(72);
+      graph.d3ReheatSimulation();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [positioned.length]);
+
   return (
     <div
       ref={containerRef}
@@ -147,6 +237,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
         onBackgroundClick={() => onBackgroundClick?.()}
         cooldownTicks={LAYOUT_TICKS}
         cooldownTime={LAYOUT_MAX_MS}
+        warmupTicks={40}
         onEngineStop={() => {
           // Seeded positions live in a 800px world, while the graph viewport is usually much
           // smaller. Fit once per node set after the force simulation settles so isolated notes
@@ -156,6 +247,63 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           fgRef.current?.zoomToFit(300, FIT_PADDING);
         }}
         onRenderFramePre={(ctx, globalScale) => {
+          const labelFont = `${LABEL_FONT_PX / globalScale}px ${styleTokens.fontUi || 'sans-serif'}`;
+          const labelHeight = LABEL_LINE_HEIGHT_PX / globalScale;
+          const labelPaddingX = LABEL_PADDING_X_PX / globalScale;
+          const labelPaddingY = LABEL_PADDING_Y_PX / globalScale;
+          const labelGap = 8 / globalScale;
+          const labelCandidates = positioned
+            .filter((node) => node.label && (node.id === selectedId || node.id === hoveredId || globalScale > labelScaleGate))
+            .map((node) => ({
+              node,
+              priority: (node.id === selectedId || node.id === hoveredId ? 100 : 0) + (node.type === 'note' ? 20 : 0),
+            }))
+            .sort((a, b) => b.priority - a.priority || String(a.node.id).localeCompare(String(b.node.id)));
+          const nodeRects: NodeObstacle[] = positioned.map((node) => {
+            const r = node.type === 'note'
+              ? NOTE_BASE_R + Math.sqrt(degree.get(String(node.id)) ?? 0) * NOTE_DEGREE_SCALE
+              : node.type === 'topic' || node.type === 'topicmerge' ? TOPIC_R : node.type === 'ghost' ? GHOST_R : TAG_HALF;
+            return { id: String(node.id), left: node.x - r - labelGap, top: node.y - r - labelGap, right: node.x + r + labelGap, bottom: node.y + r + labelGap };
+          });
+          const spatialCellSize = 64 / globalScale;
+          const nodeGrid = new Map<string, LabelRect[]>();
+          for (const rect of nodeRects) addToSpatialGrid(nodeGrid, rect, spatialCellSize);
+          const labelGrid = new Map<string, LabelRect[]>();
+          const nextLabels = new Map<string, LabelLayout>();
+          ctx.save();
+          ctx.font = labelFont;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          for (const { node } of labelCandidates) {
+            const text = node.label ?? String(node.id);
+            const textWidth = ctx.measureText(text).width;
+            const width = textWidth + labelPaddingX * 2;
+            const height = labelHeight + labelPaddingY * 2;
+            const nodeRadius = node.type === 'note'
+              ? NOTE_BASE_R + Math.sqrt(degree.get(String(node.id)) ?? 0) * NOTE_DEGREE_SCALE
+              : node.type === 'topic' || node.type === 'topicmerge' ? TOPIC_R : node.type === 'ghost' ? GHOST_R : TAG_HALF;
+            let chosen: LabelLayout | null = null;
+            for (const direction of LABEL_DIRECTIONS) {
+              const x = node.x + direction.x * (nodeRadius + labelGap + (direction.x === 0 ? 0 : width / 2));
+              const y = node.y + direction.y * (nodeRadius + labelGap + (direction.y === 0 ? 0 : height / 2));
+              const rect = { left: x - width / 2, top: y - height / 2, right: x + width / 2, bottom: y + height / 2 };
+              const overlapsNode = gridHasOverlap(nodeGrid, rect, spatialCellSize, (other) => (other as NodeObstacle).id === String(node.id));
+              if (!overlapsNode && !gridHasOverlap(labelGrid, rect, spatialCellSize)) {
+                chosen = { ...rect, text, x, y, font: labelFont };
+                break;
+              }
+            }
+            if (!chosen) {
+              const x = node.x;
+              const y = node.y + nodeRadius + labelGap + height / 2;
+              chosen = { left: x - width / 2, top: y - height / 2, right: x + width / 2, bottom: y + height / 2, text, x, y, font: labelFont };
+            }
+            addToSpatialGrid(labelGrid, chosen, spatialCellSize);
+            nextLabels.set(String(node.id), chosen);
+          }
+          ctx.restore();
+          labelLayoutsRef.current = nextLabels;
+
           if (!groupings?.hullsEnabled) return;
           // Computed FRESH every frame from the live node objects (same references the
           // simulation/drag mutate in place) — hull geometry is a per-frame rendering concern,
@@ -197,7 +345,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
             if (globalScale > 0.4) {
               const label = hull.folderPath.split('/').pop() || hull.vaultId;
               const top = outline.kind === 'polygon' ? outline.points.reduce((a, p) => (p.y < a.y ? p : a)) : { x: outline.cx, y: outline.cy - outline.r };
-              ctx.font = `${11 / globalScale}px var(--font-ui, sans-serif)`;
+              ctx.font = `${11 / globalScale}px ${styleTokens.fontUi || 'sans-serif'}`;
               ctx.fillStyle = withAlpha(styleTokens.fgMuted, 0.9);
               ctx.textAlign = 'center';
               ctx.fillText(label, top.x, top.y - 4 / globalScale);
@@ -270,12 +418,15 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
               break;
             }
           }
-          const emphasized = node.id === selectedId || node.id === hoveredId;
-          if ((emphasized || globalScale > labelScaleGate) && node.label) {
-            ctx.font = `${10 / globalScale}px var(--font-ui, sans-serif)`;
+          const label = labelLayoutsRef.current.get(String(node.id));
+          if (label) {
+            ctx.fillStyle = withAlpha(styleTokens.bg, 0.9);
+            ctx.fillRect(label.left, label.top, label.right - label.left, label.bottom - label.top);
+            ctx.font = label.font;
             ctx.fillStyle = styleTokens.fg;
             ctx.textAlign = 'center';
-            ctx.fillText(node.label, x, y + TOPIC_R + 8 / globalScale);
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label.text, label.x, label.y);
           }
           ctx.restore();
         }}

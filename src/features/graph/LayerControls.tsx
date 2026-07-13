@@ -44,18 +44,18 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
 
   return (
     <div
-      className="flex flex-wrap items-center gap-4 px-3 py-2 text-xs"
+      className="graph-layer-controls flex flex-wrap items-center gap-4 px-3 py-2 text-xs"
       style={{ borderBottom: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
     >
       {LAYER_LABELS.map(({ key, label }) => (
-        <label key={key} className="flex items-center gap-1.5" title={LAYER_TOOLTIPS[key]}>
+        <label key={key} className="graph-layer-toggle flex items-center gap-1.5" title={LAYER_TOOLTIPS[key]}>
           <input type="checkbox" checked={layers[key]} onChange={() => toggleLayer(key)} />
           {label}
         </label>
       ))}
 
       {openVaults.length > 1 && (
-        <div className="flex items-center gap-2" style={{ borderLeft: '1px solid var(--border)', paddingLeft: 12 }}>
+        <div className="graph-vault-filter flex items-center gap-2" style={{ borderLeft: '1px solid var(--border)', paddingLeft: 12 }}>
           {openVaults.map((v) => (
             <label key={v.id} className="flex items-center gap-1">
               <input
@@ -79,7 +79,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         </div>
       )}
 
-      <label className="flex items-center gap-1.5">
+      <label className="graph-confidence flex items-center gap-1.5">
         Hide AI guesses below {Math.round(minConfidence * 100)}% sure
         <input
           type="range"
@@ -91,13 +91,13 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         />
       </label>
 
-      <label className="flex items-center gap-1.5" title="Draw a shaded outline around each folder's notes">
+      <label className="graph-hulls-toggle flex items-center gap-1.5" title="Draw a shaded outline around each folder's notes">
         <input type="checkbox" checked={hullsEnabled} onChange={toggleHulls} />
         Outline folders
       </label>
 
       <button
-        className="rounded px-2 py-0.5"
+        className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={resetView}
         title="Turn all connection types back on"
@@ -106,7 +106,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
       </button>
 
       <button
-        className="rounded px-2 py-0.5"
+        className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={onToggleNotesIndex}
         title={notesIndexOpen ? 'Hide the note list to give the map more room' : 'Show the note list'}
@@ -118,7 +118,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         <>
           <span style={{ color: 'var(--fg)' }}>Showing {localView.hops}-hop neighborhood</span>
           <button
-            className="rounded px-2 py-0.5"
+            className="graph-toolbar-button rounded px-2 py-0.5"
             style={{ border: '1px solid var(--border)' }}
             onClick={exitLocalView}
             title="Show every note in the selected vaults"
@@ -129,7 +129,7 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
       )}
 
       <button
-        className="rounded px-2 py-0.5"
+        className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
         title="Group your notes into topics with the on-device AI — runs privately on this Mac"
@@ -137,9 +137,9 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         Organize vault…
       </button>
 
-      <span style={{ marginLeft: 'auto' }}>Click a dot to open that note.</span>
+      <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Click a dot to open that note.</span>
       <button
-        className="rounded px-2 py-0.5"
+        className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={() => {
           exitLocalView();

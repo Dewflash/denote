@@ -21,3 +21,64 @@ body {
   border-bottom-color: var(--accent);
 }
 
+.graph-layer-controls {
+  min-height: 44px;
+  row-gap: 8px;
+}
+
+.graph-toolbar-button {
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+.graph-click-hint {
+  white-space: nowrap;
+}
+
+.graph-inspector {
+  flex: 0 0 280px;
+}
+
+@media (max-width: 720px) {
+  .graph-layer-controls {
+    align-items: flex-start;
+    column-gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .graph-confidence {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .graph-confidence input[type="range"] {
+    flex: 1 1 120px;
+    min-width: 90px;
+  }
+
+  .graph-vault-filter {
+    flex-wrap: wrap;
+  }
+
+  .graph-click-hint {
+    flex: 1 1 150px;
+    margin-left: 0 !important;
+    white-space: normal;
+  }
+
+  .graph-notes-index {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    width: min(280px, calc(100vw - 48px));
+    box-shadow: 10px 0 24px rgba(0, 0, 0, 0.24);
+  }
+
+  .graph-inspector {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    width: min(360px, calc(100vw - 24px)) !important;
+    box-shadow: -10px 0 24px rgba(0, 0, 0, 0.24);
+  }
+}

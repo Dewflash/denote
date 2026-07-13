@@ -761,6 +761,21 @@ what is needed and why, and continues with the rest of the pass if independent.
   no unrelated formatting was changed. Owner manual Tauri/Safari/private-GitHub/real-key scripts
   remain outstanding per Checkpoint E.
 
+- 2026-07-13 · final responsive graph audit · **PASS with no new scope deviations.** Re-ran the
+  graph at 1280x720 and 390x844 through the browser harness. The full graph keeps all four fixture
+  notes discoverable, labels remain readable without collisions, connected and isolated notes sit
+  in a compact readable field, and the desktop map measures 1040px with the list open (760px with
+  the inspector open). On narrow windows the note list starts closed, keeps the map at 390px, and
+  closes before an inspector opens so the two panels never stack over the graph. Added the focused
+  mobile orphan-note assertion to the e2e suite. Label placement uses a spatial occupancy grid so
+  zooming into a large graph does not fall back to a quadratic collision scan. No graph edges were
+  fabricated and no persisted layer keys were renamed. **Verification:** 449 TypeScript tests / 57
+  files, lint, `tsc --noEmit`, production build, Playwright e2e 4/4, Rust library tests 19/19,
+  Swift sidecar build, S1 hash reference suite, and `git diff --check` green. Full `cargo
+  fmt --check` still reports pre-existing formatting in unrelated Rust files; no Rust files were
+  changed in this audit. Remaining gaps are owner-only Tauri/Safari capture, real-key cloud, and
+  private-GitHub acceptance scripts from Checkpoint E.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with

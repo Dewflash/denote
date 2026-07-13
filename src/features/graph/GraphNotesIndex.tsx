@@ -27,7 +27,7 @@ export function GraphNotesIndex({ notes, selectedId, onOpenNote, onClose }: Grap
   return (
     <aside
       data-testid="graph-notes-index"
-      className="flex h-full w-60 shrink-0 flex-col"
+      className="graph-notes-index flex h-full w-60 shrink-0 flex-col"
       style={{ borderRight: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}
     >
       <div className="shrink-0 px-3 py-3" style={{ borderBottom: '1px solid var(--border)' }}>

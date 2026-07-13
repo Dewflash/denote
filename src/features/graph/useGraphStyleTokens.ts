@@ -14,6 +14,7 @@ function cssVar(name: string): string {
 
 function readTokens(): GraphStyleTokens {
   return {
+    fontUi: cssVar('--font-ui'),
     noteFill: cssVar('--graph-node-note'),
     ghostStroke: cssVar('--graph-node-ghost'),
     tagFill: cssVar('--graph-node-tag'),
@@ -29,6 +30,7 @@ function readTokens(): GraphStyleTokens {
 }
 
 const FALLBACK_TOKENS: GraphStyleTokens = {
+  fontUi: '-apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial, sans-serif',
   noteFill: '#5b7cae',
   ghostStroke: '#9a9a94',
   tagFill: '#b07aa1',

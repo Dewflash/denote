@@ -81,3 +81,25 @@ test('graph explains sparse structure and gives isolated notes an editor path', 
   await expect(page.getByText("This note isn't connected to anything yet. Open it and type [[ to link it to another note.", { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open note' })).toBeVisible();
 });
+
+test('graph keeps the map usable on a narrow window', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?graphMock=1');
+
+  const graph = page.getByTestId('graph-canvas');
+  await expect(graph).toBeVisible();
+  const graphWidth = await graph.evaluate((element) => element.getBoundingClientRect().width);
+  expect(graphWidth).toBeGreaterThan(300);
+  await expect(page.getByTestId('graph-notes-index')).toBeHidden();
+  const showNoteList = page.getByRole('button', { name: 'Show note list' });
+  await expect(showNoteList).toBeVisible();
+
+  await showNoteList.click();
+  await expect(page.getByTestId('graph-notes-index')).toBeVisible();
+  const graphWidthWithIndexOpen = await graph.evaluate((element) => element.getBoundingClientRect().width);
+  expect(graphWidthWithIndexOpen).toBeGreaterThan(300);
+
+  await page.getByTestId('graph-note-index-item').filter({ hasText: 'Miso Soup Recipe' }).click();
+  await expect(page.getByTestId('graph-notes-index')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Open note' })).toBeVisible();
+});

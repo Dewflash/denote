@@ -164,7 +164,9 @@ export function GraphPage() {
   // render itself.
   const registryRef = useRef(new Map<string, PositionedNode>());
   const [positioned, setPositioned] = useState<PositionedNode[]>([]);
-  const [notesIndexOpen, setNotesIndexOpen] = useState(true);
+  const [notesIndexOpen, setNotesIndexOpen] = useState(() =>
+    typeof window === 'undefined' || window.innerWidth > 720,
+  );
   useEffect(() => {
     setPositioned(reconcileNodePositions(registryRef.current, visibleGraph.nodes));
   }, [visibleGraph.nodes]);
@@ -200,18 +202,21 @@ export function GraphPage() {
   }
 
   return (
-    <div className="flex h-full flex-col" style={{ minHeight: 0 }}>
+    <div className="graph-page flex h-full flex-col" style={{ minHeight: 0 }}>
       <LayerControls notesIndexOpen={notesIndexOpen} onToggleNotesIndex={() => setNotesIndexOpen((open) => !open)} />
-      <div className="flex flex-1" style={{ minHeight: 0 }}>
+      <div className="graph-content relative flex flex-1" style={{ minHeight: 0 }}>
         {notesIndexOpen && (
           <GraphNotesIndex
             notes={visibleNotes}
             selectedId={selectedNodeId}
-            onOpenNote={(node) => void handleNodeClick(node, { metaKey: false })}
+            onOpenNote={(node) => {
+              if (typeof window !== 'undefined' && window.innerWidth <= 720) setNotesIndexOpen(false);
+              void handleNodeClick(node, { metaKey: false });
+            }}
             onClose={() => setNotesIndexOpen(false)}
           />
         )}
-        <div className="flex-1" style={{ minWidth: 0, position: 'relative' }}>
+        <div className="graph-map flex-1" style={{ minWidth: 0, position: 'relative' }}>
           {localView.enabled && localView.centerId && (
             <div
               className="absolute left-1/2 top-3 z-10 flex max-w-[min(700px,calc(100%-24px))] -translate-x-1/2 items-center gap-3 rounded px-3 py-2 text-xs shadow-sm"
@@ -264,7 +269,7 @@ export function GraphPage() {
           />
         </div>
         {selectedNodeId && (
-          <div style={{ width: 280 }}>
+          <div className="graph-inspector" style={{ width: 280 }}>
             <NodeInspector graph={fullGraph} onClose={() => setSelectedNode(null)} />
           </div>
         )}

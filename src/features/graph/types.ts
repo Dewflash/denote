@@ -6,6 +6,7 @@
 import type { GraphEdge, GraphNode } from '../../domain';
 
 export interface GraphStyleTokens {
+  fontUi: string;
   noteFill: string;
   ghostStroke: string;
   tagFill: string;
