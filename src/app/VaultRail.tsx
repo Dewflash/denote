@@ -18,7 +18,6 @@ export function VaultRail() {
   const openVaultIds = useVaultStore((s) => s.openVaultIds);
   const switchVault = useVaultStore((s) => s.switchVault);
   const openVaultAt = useVaultStore((s) => s.openVaultAt);
-  const createVaultAt = useVaultStore((s) => s.createVaultAt);
   const closeVault = useVaultStore((s) => s.closeVault);
 
   return (
@@ -61,16 +60,14 @@ export function VaultRail() {
           </div>
         );
       })}
+      {/* One gesture, no hidden double-click: openVaultAt adopt-or-bootstraps (D2 — ensureMeta
+          creates `.denote/meta.json` in any folder that lacks one), so "open" and "create"
+          were always the same action underneath. */}
       <button
-        title="Open or create a vault"
+        title="Add a vault — choose any folder (existing notes or a new empty one)"
         onClick={() =>
-          void pickFolder('Open or create a vault').then((p) => {
+          void pickFolder('Add a vault — choose any folder').then((p) => {
             if (p) void openVaultAt(p);
-          })
-        }
-        onDoubleClick={() =>
-          void pickFolder('Create a new vault').then((p) => {
-            if (p) void createVaultAt(p);
           })
         }
         className="flex h-9 w-9 items-center justify-center rounded-full text-lg"
