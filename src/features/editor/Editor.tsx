@@ -128,7 +128,7 @@ export function Editor() {
             Reading view
           </button>
           <button
-            title="Show local graph (2-hop neighborhood)"
+            title="See what this note is connected to (shows notes up to 2 links away)"
             className="rounded px-2 py-1 text-xs"
             style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
             onClick={() => {
@@ -136,7 +136,7 @@ export function Editor() {
               useUiStore.getState().setGraphViewOpen(true);
             }}
           >
-            Local graph
+            Graph: this note
           </button>
         </div>
       )}

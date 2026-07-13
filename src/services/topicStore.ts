@@ -15,6 +15,7 @@
 import { foldTopicName, type TopicMatchInput } from '../domain/ontology';
 import type { Topic } from '../domain/types';
 import type { InternalStoreIO } from './annotationStore';
+import { loadMigratedJson } from './migrations';
 
 export const TOPICS_PATH = '.denote/ai/topics.json';
 
@@ -89,10 +90,10 @@ export class TopicStore {
   constructor(private readonly io: InternalStoreIO) {}
 
   async load(): Promise<void> {
-    const raw = await this.io.read(TOPICS_PATH);
-    if (raw == null) return;
+    const result = await loadMigratedJson(this.io, TOPICS_PATH);
+    if (!result || !result.ok) return;
     try {
-      const f = JSON.parse(raw) as Partial<TopicsFile>;
+      const f = result.data as Partial<TopicsFile>;
       this.topics = (f.topics ?? []).map(normalizeRecord);
       this.folderProfiles = f.folderProfiles ?? [];
       this.dismissals = f.resurfacingDismissals ?? [];

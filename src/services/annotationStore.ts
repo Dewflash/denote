@@ -11,6 +11,7 @@
 
 import { rejectionFingerprint } from '../domain/aiPayloads';
 import type { AiAnnotation } from '../domain/types';
+import { loadMigratedJson } from './migrations';
 
 export const ANNOTATIONS_PATH = '.denote/ai/annotations.json';
 export const REJECTIONS_PATH = '.denote/ai/rejections.json';
@@ -39,6 +40,7 @@ interface RejectionsFile {
 export interface InternalStoreIO {
   read(relPath: string): Promise<string | null>;
   write(relPath: string, content: string): Promise<void>;
+  delete?(relPath: string): Promise<void>;
 }
 
 const LIVE = new Set<AiAnnotation['status']>(['suggested', 'applied-provisional']);
@@ -172,12 +174,7 @@ export class AnnotationStore {
   }
 
   private async readJson<T>(relPath: string): Promise<T | null> {
-    const raw = await this.io.read(relPath);
-    if (raw == null) return null;
-    try {
-      return JSON.parse(raw) as T;
-    } catch {
-      return null; // corrupt store → treated as empty (rebuilt from files, D3)
-    }
+    const result = await loadMigratedJson(this.io, relPath);
+    return result?.ok ? result.data as T : null;
   }
 }

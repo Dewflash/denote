@@ -42,6 +42,18 @@ describe('KeymapRegistry defaults (S21)', () => {
     expect(reg.invoke('new-note')).toBe(true);
     expect(ran).toBe(true);
   });
+
+  it('rebinds an id while retaining its handler and rejecting collisions', () => {
+    const reg = new KeymapRegistry([{ id: 'a', combo: 'cmd-a', description: 'A' }, { id: 'b', combo: 'cmd-b', description: 'B' }]);
+    let ran = false;
+    reg.setHandler('a', () => { ran = true; });
+    reg.rebind('a', 'cmd-shift-a');
+    expect(reg.lookupByCombo('cmd-a')).toBeUndefined();
+    expect(reg.lookupByCombo('cmd-shift-a')?.id).toBe('a');
+    expect(reg.invoke('a')).toBe(true);
+    expect(ran).toBe(true);
+    expect(() => reg.rebind('a', 'cmd-b')).toThrow(/already bound/);
+  });
 });
 
 describe('comboFromEvent', () => {

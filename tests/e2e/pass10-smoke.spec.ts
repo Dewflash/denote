@@ -33,3 +33,22 @@ test('pass-10 smoke covers vault, links, graph, search, capture, and hostile sni
   await expect(page.getByTestId('settings-dialog')).toBeVisible();
   await expect(page.getByTestId('settings-visible')).toContainText('outside the snippet scope');
 });
+
+test('graph view keeps isolated notes discoverable', async ({ page }) => {
+  await page.goto('/?graphMock=1');
+
+  await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-node-count', '8');
+  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-note-count', '4');
+  const noteIndex = page.getByTestId('graph-notes-index');
+  await expect(noteIndex).toBeVisible();
+  await expect(noteIndex).toContainText('Notes in map');
+  await expect(noteIndex.locator('[data-testid="graph-note-index-item"]')).toHaveCount(4);
+  await expect(noteIndex).toContainText('Miso Soup Recipe');
+
+  const noteSearch = noteIndex.locator('input[aria-label="Find a note in the map"]');
+  await expect(noteSearch).toHaveCount(1);
+  await noteSearch.fill('miso');
+  await expect(noteIndex.locator('[data-testid="graph-note-index-item"]')).toHaveCount(1);
+  await expect(noteIndex).toContainText('Miso Soup Recipe');
+});

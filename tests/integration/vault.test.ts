@@ -76,6 +76,21 @@ describe('external edit → index update', () => {
   });
 });
 
+describe('folder creation', () => {
+  it('creates an empty folder through the repository without entering the note pipeline', async () => {
+    const onPipeline = vi.fn();
+    const repo = await Repository.openVault(backend, root, { onPipeline });
+
+    await repo.createFolder('Projects/Ideas');
+    expect(await backend.exists(root, 'Projects/Ideas')).toBe(true);
+    expect(repo.listNotePaths()).toEqual([]);
+
+    // A recursive watcher can report the directory itself; it must not become a note or trigger AI.
+    await repo.onWatcherEvent({ relPath: 'Projects/Ideas', kind: 'create' });
+    expect(onPipeline).not.toHaveBeenCalled();
+  });
+});
+
 describe('app-write → classified (no re-pipeline)', () => {
   it('does not fire the pipeline for the app\'s own write echo (R1)', async () => {
     await externalWrite(root, 'note.md', '# Note');

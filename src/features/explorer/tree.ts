@@ -8,9 +8,29 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
-export function buildTree(entries: { relPath: string; kind: 'note' | 'asset' }[]): TreeNode[] {
+export function buildTree(entries: { relPath: string; kind: 'note' | 'asset' }[], extraFolders: string[] = []): TreeNode[] {
   const root: TreeNode[] = [];
   const folders = new Map<string, TreeNode>();
+
+  const ensureFolder = (folderPath: string): TreeNode => {
+    const segs = folderPath.split('/').filter(Boolean);
+    let siblings = root;
+    let curPath = '';
+    let folder: TreeNode | undefined;
+    for (const segment of segs) {
+      curPath = curPath ? `${curPath}/${segment}` : segment;
+      folder = folders.get(curPath);
+      if (!folder) {
+        folder = { name: segment, path: curPath, kind: 'folder', children: [] };
+        folders.set(curPath, folder);
+        siblings.push(folder);
+      }
+      siblings = folder.children!;
+    }
+    return folder!;
+  };
+
+  for (const folderPath of extraFolders) ensureFolder(folderPath);
 
   for (const { relPath, kind } of entries) {
     const segs = relPath.split('/');
@@ -18,12 +38,7 @@ export function buildTree(entries: { relPath: string; kind: 'note' | 'asset' }[]
     let curPath = '';
     for (let i = 0; i < segs.length - 1; i++) {
       curPath = curPath ? `${curPath}/${segs[i]}` : segs[i];
-      let folder = folders.get(curPath);
-      if (!folder) {
-        folder = { name: segs[i], path: curPath, kind: 'folder', children: [] };
-        folders.set(curPath, folder);
-        siblings.push(folder);
-      }
+      const folder = folders.get(curPath) ?? ensureFolder(curPath);
       siblings = folder.children!;
     }
     siblings.push({ name: segs[segs.length - 1], path: relPath, kind });

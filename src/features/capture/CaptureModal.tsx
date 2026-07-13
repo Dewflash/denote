@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useUiStore, type CaptureDraft } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { fileCapture } from './pasteCapture';
@@ -21,21 +22,36 @@ function seedTitle(text: string): string {
   return text.split(/\r?\n/, 1)[0]?.trim().slice(0, 80) || 'Untitled';
 }
 
+function displayBackend(id: string): string {
+  if (id === 'anthropic') return 'Cloud: Anthropic';
+  if (id === 'apple') return 'On this Mac: Apple';
+  if (id === 'mock') return 'On this Mac: Mock';
+  return id;
+}
+
 function CaptureReview({ draft }: { draft: CaptureDraft }) {
   const text = draft.text;
   const closeCapture = useUiStore((s) => s.closeCapture);
   const suggestForCapture = useVaultStore((s) => s.suggestForCapture);
   const routingBackendFor = useVaultStore((s) => s.routingBackendFor);
+  const registry = useVaultStore((s) => s.registry);
+  const activeVaultId = useVaultStore((s) => s.vaultId);
 
   const [title, setTitle] = useState(() => seedTitle(text));
   const [summary, setSummary] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [enabledTags, setEnabledTags] = useState<Set<string>>(() => new Set());
-  const [folder, setFolder] = useState('Inbox');
+  const [folder, setFolder] = useState(() => localStorage.getItem('denote:captureFolder') ?? 'Inbox');
+  const [vaultId, setVaultId] = useState(activeVaultId ?? registry[0]?.id ?? '');
   const [loading, setLoading] = useState(true);
 
   const backend = routingBackendFor('summarize');
   const preview = text.slice(0, 600);
+
+  useEffect(() => {
+    void getCurrentWindow().setAlwaysOnTop(true).catch(() => {});
+    return () => { void getCurrentWindow().setAlwaysOnTop(false).catch(() => {}); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +88,9 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
       sourceApp: draft.sourceApp,
       sourceTitle: draft.sourceTitle,
       capturedAt: draft.capturedAt,
+      vaultId: vaultId || undefined,
     });
+    localStorage.setItem('denote:captureFolder', folder.trim() || 'Inbox');
     closeCapture();
   }
 
@@ -89,12 +107,23 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
             boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
           }}
         >
+          <form onSubmit={(event) => { event.preventDefault(); void create(); }}>
           <div className="mb-3 flex items-center justify-between">
             <Dialog.Title className="text-base font-semibold">Capture note</Dialog.Title>
             <span className="text-xs" style={{ color: 'var(--fg-muted)' }}>
-              {loading ? 'Analyzing on-device…' : `Suggested by ${backend}`}
+              {loading ? 'Analyzing on-device…' : `Suggested by ${displayBackend(backend)}`}
             </span>
           </div>
+
+          <label className="mb-1 block text-xs" style={{ color: 'var(--fg-muted)' }}>Vault</label>
+          <select
+            className="mb-3 w-full rounded px-2 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}
+            value={vaultId}
+            onChange={(event) => setVaultId(event.target.value)}
+          >
+            {registry.map((vault) => <option key={vault.id} value={vault.id}>{vault.name}{vault.localOnly ? ' · local only' : ''}</option>)}
+          </select>
 
           <label className="mb-1 block text-xs" style={{ color: 'var(--fg-muted)' }}>
             Title
@@ -138,6 +167,7 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
                   const on = enabledTags.has(t);
                   return (
                     <button
+                      type="button"
                       key={t}
                       onClick={() => toggleTag(t)}
                       className="rounded-full px-2 py-0.5 text-xs"
@@ -173,6 +203,7 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
 
           <div className="flex justify-end gap-2">
             <button
+              type="button"
               className="rounded px-3 py-1.5 text-sm"
               style={{ color: 'var(--fg-muted)' }}
               onClick={() => closeCapture()}
@@ -180,13 +211,14 @@ function CaptureReview({ draft }: { draft: CaptureDraft }) {
               Cancel
             </button>
             <button
+              type="submit"
               className="rounded px-3 py-1.5 text-sm"
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
-              onClick={() => void create()}
             >
               Create note
             </button>
           </div>
+          </form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

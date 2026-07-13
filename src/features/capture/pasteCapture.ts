@@ -1,6 +1,6 @@
 // src/features/capture/pasteCapture.ts — paste-to-capture v1 (pass-03 brief) + the shared
-// "one-keystroke new note" helper (cmd-N). Global-hotkey capture (D27) arrives in pass 10 and
-// will reuse `uniquePath`/`createUntitledNote` rather than duplicating the naming logic.
+// "one-keystroke new note" helper (cmd-N). Native global capture reuses the same repository
+// filing path rather than duplicating note naming or provenance logic.
 
 import { useVaultStore } from '../../state/vaultStore';
 import { useUiStore } from '../../state/uiStore';
@@ -82,7 +82,12 @@ export async function fileCapture(opts: {
   sourceApp?: string;
   sourceTitle?: string;
   capturedAt?: string;
+  vaultId?: string;
 }): Promise<void> {
+  const currentVaultId = useVaultStore.getState().vaultId;
+  if (opts.vaultId && opts.vaultId !== currentVaultId) {
+    await useVaultStore.getState().switchVault(opts.vaultId);
+  }
   const title = sanitizeTitle(opts.title || 'Untitled');
   const relPath = uniquePath(opts.folder || DEFAULT_INBOX, title);
   const frontmatter = captureFrontmatter(opts);

@@ -28,4 +28,10 @@ describe('buildTree', () => {
     expect(tree[0].children![0].children![0].path).toBe('a/b/c');
     expect(tree[0].children![0].children![0].children![0].path).toBe('a/b/c/note.md');
   });
+
+  it('keeps a session-created empty folder visible without creating a placeholder file', () => {
+    const tree = buildTree([{ relPath: 'Notes/First.md', kind: 'note' }], ['Projects/Ideas']);
+    expect(tree.map((n) => n.path)).toEqual(['Notes', 'Projects']);
+    expect(tree.find((n) => n.path === 'Projects')?.children?.[0].path).toBe('Projects/Ideas');
+  });
 });

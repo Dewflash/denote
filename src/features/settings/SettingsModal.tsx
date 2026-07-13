@@ -1,31 +1,39 @@
-// src/features/settings/SettingsModal.tsx — Settings sections skeleton (pass-03 brief):
-// Vaults, Editor, Appearance (functional), AI & Models, Graph, Hotkeys, Data. Vaults (pass-05)
-// and Appearance do real work; everything else is a stub that later passes fill in, so the
-// section structure never needs to be reshuffled.
+// src/features/settings/SettingsModal.tsx — operational settings surface: vaults, editor,
+// appearance, AI/cloud, graph, hotkeys, import, history, and sync controls.
 
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useMemo, useState } from 'react';
-import { useUiStore, type ThemeMode } from '../../state/uiStore';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useUiStore, type ThemeMode, type UiDensity } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import { pickFolder } from '../../services/dialogs';
-import { appKeymap } from '../../app/keymap';
+import { appKeymap, comboFromEvent, DEFAULT_BINDINGS, formatCombo, persistKeymap } from '../../app/keymap';
+import { setGlobalCaptureHotkey } from '../../services/nativeCapture';
 import { VAULT_COLOR_PALETTE } from '../../services/vaultRegistry';
+import { appSupportRoot } from '../../services/appSupport';
+import { createAppSupportIO } from '../../services/appSupportStore';
+import { SnippetStore } from '../../services/snippets';
+import { tauriStorage } from '../../services/tauriStorage';
+import {
+  BUNDLED_THEMES,
+  parseThemeFile,
+  serializeThemeFile,
+  type ThemeTokens,
+} from '../../services/themeSettings';
+import { useGraphStore } from '../../state/graphStore';
 import {
   gitCommitAll,
-  gitFileHistory,
   gitHistoryEnable,
   gitHistoryStatus,
   gitPullFastForward,
   gitPushOrigin,
-  gitReadFileAt,
   gitSetRemote,
   githubRepoVisibility,
-  type GitCommitInfo,
   type GitStatusInfo,
 } from '../../services/nativeGit';
 import { clearGitHubToken, hasGitHubToken, setGitHubToken } from '../../services/keychain';
 import { planFolderImport } from '../../services/nativeImport';
 import type { ImportPlanItem } from '../../services/importer';
+import { VersionTimeline } from '../history/VersionTimeline';
 
 const ACCENT_PRESETS = ['#3b6fd6', '#6f9bef', '#d6763b', '#3bd6a0', '#a03bd6', '#d63b6f'];
 
@@ -40,10 +48,6 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'hotkeys', label: 'Hotkeys' },
   { id: 'data', label: 'Data' },
 ];
-
-function Stub({ text }: { text: string }) {
-  return <p style={{ color: 'var(--fg-muted)' }}>{text}</p>;
-}
 
 function RelocateRow({ vaultId, expectedPath }: { vaultId: string; expectedPath: string }) {
   const registry = useVaultStore((s) => s.registry);
@@ -204,14 +208,72 @@ function VaultsSection() {
   );
 }
 
+const THEME_COLOR_TOKENS: { key: keyof ThemeTokens; label: string }[] = [
+  { key: 'bg', label: 'Background' },
+  { key: 'bgPanel', label: 'Panels' },
+  { key: 'fg', label: 'Text' },
+  { key: 'fgMuted', label: 'Muted text' },
+  { key: 'accent', label: 'Accent' },
+  { key: 'border', label: 'Borders' },
+  { key: 'danger', label: 'Danger' },
+  { key: 'graphNodeNote', label: 'Graph notes' },
+  { key: 'graphNodeGhost', label: 'Graph ghosts' },
+  { key: 'graphNodeTag', label: 'Graph tags' },
+  { key: 'graphNodeTopic', label: 'Graph topics' },
+  { key: 'graphEdgeSolid', label: 'Graph links' },
+  { key: 'graphEdgeAi', label: 'Graph AI links' },
+];
+
 function AppearanceSection() {
   const theme = useUiStore((s) => s.theme);
+  const themeFile = useUiStore((s) => s.themeFile);
   const accent = useUiStore((s) => s.accent);
   const setTheme = useUiStore((s) => s.setTheme);
+  const setThemeFile = useUiStore((s) => s.setThemeFile);
+  const updateThemeToken = useUiStore((s) => s.updateThemeToken);
   const setAccent = useUiStore((s) => s.setAccent);
+  const density = useUiStore((s) => s.density);
+  const setDensity = useUiStore((s) => s.setDensity);
+  const [snippets, setSnippets] = useState<{ name: string; enabled: boolean }[]>([]);
+  const [snippetError, setSnippetError] = useState<string | null>(null);
+  const bumpSnippetsRevision = useUiStore((s) => s.bumpSnippetsRevision);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const activeTheme = themeFile ?? (theme === 'dark' ? BUNDLED_THEMES[1] : BUNDLED_THEMES[0]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void appSupportRoot()
+      .then((root) => new SnippetStore(createAppSupportIO(tauriStorage, root)).load())
+      .then((loaded) => {
+        if (!cancelled) setSnippets(loaded.map((snippet) => ({ name: snippet.name, enabled: snippet.enabled })));
+      })
+      .catch(() => {
+        if (!cancelled) setSnippetError('Snippets are available in the desktop app after a vault is opened.');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  function exportTheme(): void {
+    const blob = new Blob([serializeThemeFile(activeTheme)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${activeTheme.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'denote-theme'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importTheme(file: File | undefined): void {
+    if (!file) return;
+    void file.text().then((raw) => {
+      setThemeFile(parseThemeFile(raw));
+    }).catch(() => {
+      window.alert('That theme file is invalid.');
+    });
+  }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div>
         <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>
           Theme
@@ -257,15 +319,130 @@ function AppearanceSection() {
           </button>
         </div>
       </div>
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>Theme file</div>
+        <div className="mb-2 flex items-center gap-2">
+          <select
+            value={themeFile?.name ?? ''}
+            onChange={(event) => {
+              const selected = BUNDLED_THEMES.find((candidate) => candidate.name === event.target.value);
+              if (selected) setThemeFile(selected);
+              else setTheme('system');
+            }}
+            className="min-w-0 flex-1 rounded px-2 py-1.5 text-sm"
+            style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}
+          >
+            <option value="">Base theme ({theme})</option>
+            {BUNDLED_THEMES.map((candidate) => <option key={candidate.name} value={candidate.name}>{candidate.name}</option>)}
+          </select>
+          <button type="button" className="rounded px-2 py-1.5 text-xs" style={{ border: '1px solid var(--border)' }} onClick={exportTheme}>Export JSON</button>
+          <button type="button" className="rounded px-2 py-1.5 text-xs" style={{ border: '1px solid var(--border)' }} onClick={() => fileInput.current?.click()}>Import JSON</button>
+          <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { importTheme(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+        </div>
+        <div className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          {themeFile ? `${themeFile.name} is live. Edit a token below to create or update a custom theme.` : 'Pick a bundled theme or import a JSON theme to edit its tokens live.'}
+        </div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          {THEME_COLOR_TOKENS.map(({ key, label }) => {
+            const value = activeTheme.tokens[key];
+            if (typeof value !== 'string') return null;
+            return (
+              <label key={key} className="flex items-center justify-between gap-2 text-xs">
+                <span>{label}</span>
+                <span className="flex items-center gap-1">
+                  <input type="color" aria-label={label} value={value} onChange={(event) => updateThemeToken(key, event.target.value)} className="h-5 w-7" />
+                  <code style={{ color: 'var(--fg-muted)' }}>{value}</code>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-1.5">
+          {activeTheme.tokens.graphPalette.map((color, index) => (
+            <label key={`palette-${index}`} className="flex items-center justify-between text-xs">
+              Hull {index + 1}
+              <input type="color" aria-label={`Graph hull ${index + 1}`} value={color} onChange={(event) => {
+                const palette = [...activeTheme.tokens.graphPalette];
+                palette[index] = event.target.value;
+                updateThemeToken('graphPalette', palette);
+              }} className="h-5 w-7" />
+            </label>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>Interface density</div>
+        <div className="flex gap-2">
+          {(['comfortable', 'compact'] as UiDensity[]).map((value) => (
+            <button key={value} type="button" className="rounded px-3 py-1.5 text-sm capitalize" style={{ border: '1px solid var(--border)', backgroundColor: density === value ? 'var(--bg-panel)' : 'transparent' }} onClick={() => setDensity(value)}>{value}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>CSS snippets</div>
+        <p className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>Files in the app support snippets folder are scoped to the main surface and reload as soon as you toggle them.</p>
+        {snippetError ? <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{snippetError}</p> : snippets.length === 0 ? <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No `.css` snippets found.</p> : (
+          <div className="flex flex-col gap-1">
+            {snippets.map((snippet) => (
+              <label key={snippet.name} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={snippet.enabled} onChange={(event) => {
+                  void appSupportRoot().then((root) => new SnippetStore(createAppSupportIO(tauriStorage, root)).setEnabled(snippet.name, event.target.checked)).then(() => {
+                    setSnippets((current) => current.map((item) => item.name === snippet.name ? { ...item, enabled: event.target.checked } : item));
+                    bumpSnippetsRevision();
+                  });
+                }} />
+                <span>{snippet.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditorSection() {
+  const editorFont = useUiStore((s) => s.editorFont);
+  const editorFontSize = useUiStore((s) => s.editorFontSize);
+  const editorLineWidth = useUiStore((s) => s.editorLineWidth);
+  const setEditorFont = useUiStore((s) => s.setEditorFont);
+  const setEditorFontSize = useUiStore((s) => s.setEditorFontSize);
+  const setEditorLineWidth = useUiStore((s) => s.setEditorLineWidth);
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <div className="mb-1 text-xs uppercase" style={{ color: 'var(--fg-muted)' }}>Editor font</div>
+        <select value={editorFont} onChange={(event) => setEditorFont(event.target.value)} className="w-full rounded px-2 py-1.5 text-sm" style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}>
+          <option value="SF Mono, ui-monospace, Menlo, monospace">SF Mono</option>
+          <option value="ui-monospace, Menlo, monospace">System monospace</option>
+          <option value="-apple-system, BlinkMacSystemFont, sans-serif">System sans</option>
+          <option value="Georgia, serif">Serif</option>
+        </select>
+      </div>
+      <label className="flex items-center gap-3 text-sm"><span className="w-28">Font size</span><input type="range" min={12} max={20} value={editorFontSize} onChange={(event) => setEditorFontSize(Number(event.target.value))} className="flex-1" /><span className="w-10 text-right tabular-nums" style={{ color: 'var(--fg-muted)' }}>{editorFontSize}px</span></label>
+      <label className="flex items-center gap-3 text-sm"><span className="w-28">Line width</span><input type="range" min={560} max={1200} step={20} value={editorLineWidth} onChange={(event) => setEditorLineWidth(Number(event.target.value))} className="flex-1" /><span className="w-12 text-right tabular-nums" style={{ color: 'var(--fg-muted)' }}>{editorLineWidth}px</span></label>
+    </div>
+  );
+}
+
+function GraphSection() {
+  const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
+  const toggleHulls = useGraphStore((s) => s.toggleHulls);
+  const resetView = useGraphStore((s) => s.resetView);
+  return (
+    <div className="flex flex-col gap-4">
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hullsEnabled} onChange={toggleHulls} /> Show topic/folder hulls</label>
+      <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>Graph node, edge, and hull colors are edited in Appearance so the map and the rest of the app share one theme.</p>
+      <button type="button" className="self-start rounded px-3 py-1.5 text-sm" style={{ border: '1px solid var(--border)' }} onClick={resetView}>Reset graph filters</button>
     </div>
   );
 }
 
 const AI_TASKS: { id: string; label: string }[] = [
   { id: 'summarize', label: 'Summarize' },
-  { id: 'enrich', label: 'Enrich note' },
-  { id: 'label-similarity', label: 'Label similarity' },
-  { id: 'deep-organize', label: 'Deep organize (vault)' },
+  { id: 'enrich', label: 'Suggest tags & links' },
+  { id: 'label-similarity', label: 'Judge similarity' },
+  { id: 'deep-organize', label: 'Deep organize' },
 ];
 
 // Per-note tasks route only to the free/local backends. The paid Anthropic backend is deliberately
@@ -576,19 +753,70 @@ function AiSection() {
 }
 
 function HotkeysSection() {
+  const globalCaptureError = useUiStore((s) => s.globalCaptureError);
+  const [version, setVersion] = useState(0);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function rebind(id: string, event: KeyboardEvent<HTMLButtonElement>): void {
+    event.preventDefault();
+    const combo = comboFromEvent(event.nativeEvent);
+    if (!combo) {
+      setMessage('Use a Command-key shortcut.');
+      return;
+    }
+    try {
+      appKeymap.rebind(id, combo);
+      persistKeymap(appKeymap);
+      setEditing(null);
+      setVersion((value) => value + 1);
+      if (id === 'global-capture') {
+        void setGlobalCaptureHotkey(combo).then(() => setMessage(`Global capture is now ${formatCombo(combo)}.`)).catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
+      } else {
+        setMessage(`${appKeymap.all().find((binding) => binding.id === id)?.description ?? 'Shortcut'} is now ${formatCombo(combo)}.`);
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function reset(id: string): void {
+    const original = DEFAULT_BINDINGS.find((binding) => binding.id === id);
+    if (!original) return;
+    try {
+      appKeymap.rebind(id, original.combo);
+      persistKeymap(appKeymap);
+      setVersion((value) => value + 1);
+      if (id === 'global-capture') void setGlobalCaptureHotkey(original.combo).catch(() => {});
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  void version;
   return (
     <div className="flex flex-col gap-1 text-sm">
       {appKeymap.all().map((b) => (
-        <div key={b.id} className="flex items-center justify-between">
+        <div key={b.id} className="flex items-center justify-between gap-3">
           <span>{b.description}</span>
-          <code
-            className="rounded px-2 py-0.5"
-            style={{ backgroundColor: 'var(--bg-panel)', fontFamily: 'var(--font-editor)' }}
-          >
-            {b.combo}
-          </code>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              aria-label={`Change ${b.description} shortcut`}
+              title={editing === b.id ? 'Press a Command-key shortcut' : 'Change shortcut'}
+              onClick={() => { setEditing(b.id); setMessage(null); }}
+              onKeyDown={(event) => { if (editing === b.id) rebind(b.id, event); }}
+              className="rounded px-2 py-0.5"
+              style={{ backgroundColor: 'var(--bg-panel)', fontFamily: 'var(--font-editor)', border: editing === b.id ? '1px solid var(--accent)' : '1px solid transparent' }}
+            >
+              {editing === b.id ? 'Press keys…' : formatCombo(b.combo)}
+            </button>
+            {b.combo !== DEFAULT_BINDINGS.find((defaultBinding) => defaultBinding.id === b.id)?.combo && <button type="button" aria-label={`Reset ${b.description} shortcut`} onClick={() => reset(b.id)} style={{ color: 'var(--fg-muted)' }}>Reset</button>}
+          </div>
         </div>
       ))}
+      {globalCaptureError && <p className="mt-2 text-xs" style={{ color: 'var(--danger)' }}>Global capture is unavailable: {globalCaptureError}. Choose another shortcut or grant Accessibility permission.</p>}
+      {message && <p className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>{message}</p>}
     </div>
   );
 }
@@ -604,6 +832,10 @@ function DataSection() {
   const [token, setToken] = useState('');
   const [tokenPresent, setTokenPresent] = useState(false);
   const [importReview, setImportReview] = useState<ImportPlanItem[]>([]);
+  const autoSyncMinutes = useUiStore((s) => s.autoSyncMinutes);
+  const setAutoSyncMinutes = useUiStore((s) => s.setAutoSyncMinutes);
+  const activeVaultId = useVaultStore((s) => s.vaultId);
+  const activeLocalOnly = useVaultStore((s) => s.registry.find((v) => v.id === activeVaultId)?.localOnly ?? false);
 
   const snapshots = useMemo(() => {
     void revision;
@@ -669,9 +901,9 @@ function DataSection() {
               if (!folder) return;
               const plan = await planFolderImport(repo, folder);
               let imported = 0;
-              const reviewItems = plan.items.filter((item) => item.decision === 'review-near');
+              const reviewItems = plan.items.filter((item) => item.decision === 'review-near' || item.decision === 'warn-ai-key');
               for (const item of plan.items) {
-                if (item.decision === 'skip-exact' || item.decision === 'review-near') continue;
+                if (item.decision === 'skip-exact' || item.decision === 'review-near' || item.decision === 'warn-ai-key') continue;
                 try {
                   await useVaultStore.getState().createNote(item.incoming.relPath, item.incoming.content);
                   imported += 1;
@@ -680,7 +912,7 @@ function DataSection() {
                 }
               }
               setImportReview(reviewItems);
-              setMessage(`Imported ${imported}; skipped ${plan.exactSkipped} exact duplicates; ${plan.nearReview} near duplicates need review.`);
+              setMessage(`Imported ${imported}; skipped ${plan.exactSkipped} exact duplicates; ${reviewItems.length} incoming file${reviewItems.length === 1 ? '' : 's'} need review.`);
               void repo.rebuildDerivedCaches();
             }).catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
           }}
@@ -698,11 +930,11 @@ function DataSection() {
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{item.incoming.relPath}</span>
                   <span style={{ color: 'var(--fg-muted)' }}>
-                    {Math.round((item.similarity ?? 0) * 100)}% similar
+                    {item.decision === 'review-near' ? `${Math.round((item.similarity ?? 0) * 100)}% similar` : 'reserved metadata'}
                   </span>
                 </div>
                 <div className="mb-2 truncate" style={{ color: 'var(--fg-muted)' }}>
-                  Matches {item.duplicateOf ?? 'an existing note'}
+                  {item.decision === 'review-near' ? `Matches ${item.duplicateOf ?? 'an existing note'}` : item.reason}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -791,6 +1023,7 @@ function DataSection() {
           Pushes are manual unless you explicitly run them. New GitHub repositories should be
           private; paste only a token you created for this app.
         </p>
+        {activeLocalOnly && remote.trim() && <p className="mb-2 rounded p-2 text-xs" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}>This vault is marked local-only. GitHub sync is separate from AI privacy, but uploading these notes still leaves the device.</p>}
         <div className="mb-2 flex gap-2">
           <input
             className="min-w-0 flex-1 rounded px-2 py-1 text-sm"
@@ -910,6 +1143,15 @@ function DataSection() {
             Pull
           </button>
         </div>
+        <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+          <span>Automatic sync</span>
+          <select value={autoSyncMinutes} onChange={(event) => setAutoSyncMinutes(Number(event.target.value))} className="rounded px-2 py-1 text-xs" style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--fg)' }}>
+            <option value={0}>Off</option>
+            <option value={5}>Every 5 minutes</option>
+            <option value={15}>Every 15 minutes</option>
+            <option value={30}>Every 30 minutes</option>
+          </select>
+        </label>
       </div>
 
       {activeNotePath && (
@@ -924,130 +1166,6 @@ function DataSection() {
       {message && <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{message}</p>}
     </div>
   );
-}
-
-type VersionEntry =
-  | { id: string; kind: 'snapshot'; label: string; at: number; size: number; name: string }
-  | { id: string; kind: 'git'; label: string; at: number; oid: string; summary: string };
-
-function VersionTimeline({ snapshots, root, relPath }: { snapshots: Promise<{ name: string; at: number; size: number }[]>; root: string | null; relPath: string }) {
-  const repo = useVaultStore((s) => s.repo);
-  const revision = useVaultStore((s) => s.revision);
-  const [entries, setEntries] = useState<VersionEntry[]>([]);
-  const [preview, setPreview] = useState<{ entry: VersionEntry; content: string; diff: string } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      snapshots,
-      root ? gitFileHistory(root, relPath).catch(() => [] as GitCommitInfo[]) : Promise.resolve([] as GitCommitInfo[]),
-    ])
-      .then(([snapshotItems, commits]) => {
-        if (cancelled) return;
-        const combined: VersionEntry[] = [
-          ...snapshotItems.map((s) => ({
-            id: `snapshot:${s.name}`,
-            kind: 'snapshot' as const,
-            label: new Date(s.at).toLocaleString(),
-            at: s.at,
-            size: s.size,
-            name: s.name,
-          })),
-          ...commits.map((c) => ({
-            id: `git:${c.oid}`,
-            kind: 'git' as const,
-            label: new Date(c.time * 1000).toLocaleString(),
-            at: c.time * 1000,
-            oid: c.oid,
-            summary: c.summary,
-          })),
-        ].sort((a, b) => b.at - a.at).slice(0, 12);
-        setEntries(combined);
-      })
-      .catch(() => {
-        if (!cancelled) setEntries([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [root, relPath, revision, snapshots]);
-
-  const readEntry = async (entry: VersionEntry): Promise<string> => {
-    if (!repo) throw new Error('vault not open');
-    if (entry.kind === 'snapshot') return repo.readSnapshot(relPath, entry.name);
-    if (!root) throw new Error('history is not enabled');
-    return gitReadFileAt(root, relPath, entry.oid);
-  };
-
-  if (entries.length === 0) return <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>No versions yet.</p>;
-  return (
-    <div className="mt-3 flex flex-col gap-1 text-xs">
-      {entries.map((entry) => (
-        <div key={entry.id} className="flex items-center justify-between gap-2">
-          <span className="truncate">
-            {entry.label} · {entry.kind === 'git' ? entry.summary : `${Math.round(entry.size / 1024)} KB snapshot`}
-          </span>
-          <div className="flex shrink-0 gap-2">
-            <button
-              style={{ color: 'var(--fg-muted)' }}
-              onClick={() => {
-                void readEntry(entry)
-                  .then(async (content) => {
-                    const current = await repo?.readNote(relPath).catch(() => '') ?? '';
-                    setPreview({ entry, content, diff: lineDiff(current, content) });
-                  })
-                  .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
-              }}
-            >
-              Diff
-            </button>
-            <button
-              style={{ color: 'var(--fg-muted)' }}
-              onClick={() => {
-                void readEntry(entry)
-                  .then((content) => repo?.restoreNoteVersion(relPath, content))
-                  .then(() => setMessage(`Restored ${entry.kind === 'git' ? entry.oid.slice(0, 8) : entry.name}.`))
-                  .catch((err) => setMessage(err instanceof Error ? err.message : String(err)));
-              }}
-            >
-              Restore
-            </button>
-          </div>
-        </div>
-      ))}
-      {preview && (
-        <div className="mt-2 rounded p-2" style={{ border: '1px solid var(--border)' }}>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="truncate">{preview.entry.label}</span>
-            <button style={{ color: 'var(--fg-muted)' }} onClick={() => setPreview(null)}>Close</button>
-          </div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap" style={{ color: 'var(--fg-muted)' }}>
-            {preview.diff || preview.content}
-          </pre>
-        </div>
-      )}
-      {message && <div style={{ color: 'var(--fg-muted)' }}>{message}</div>}
-    </div>
-  );
-}
-
-function lineDiff(current: string, older: string): string {
-  if (current === older) return 'No textual differences.';
-  const a = current.split(/\r?\n/);
-  const b = older.split(/\r?\n/);
-  const max = Math.max(a.length, b.length);
-  const out: string[] = [];
-  for (let i = 0; i < max; i++) {
-    if (a[i] === b[i]) continue;
-    if (a[i] !== undefined) out.push(`- ${a[i]}`);
-    if (b[i] !== undefined) out.push(`+ ${b[i]}`);
-    if (out.length > 120) {
-      out.push('...');
-      break;
-    }
-  }
-  return out.join('\n');
 }
 
 export function SettingsModal() {
@@ -1086,10 +1204,10 @@ export function SettingsModal() {
           </nav>
           <div className="flex-1 overflow-auto p-4">
             {section === 'vaults' && <VaultsSection />}
-            {section === 'editor' && <Stub text="Editor settings arrive alongside their features." />}
+            {section === 'editor' && <EditorSection />}
             {section === 'appearance' && <AppearanceSection />}
             {section === 'ai' && <AiSection />}
-            {section === 'graph' && <Stub text="Graph settings arrive in pass 04." />}
+            {section === 'graph' && <GraphSection />}
             {section === 'hotkeys' && <HotkeysSection />}
             {section === 'data' && <DataSection />}
           </div>

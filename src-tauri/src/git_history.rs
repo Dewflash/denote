@@ -178,6 +178,9 @@ pub fn git_pull_fast_forward(root: String, token: Option<String>, state: tauri::
     let fetch_commit = repo
         .reference_to_annotated_commit(&fetch_head)
         .map_err(|e| e.message().to_string())?;
+    if status_inner(&repo)?.dirty {
+        return Err("Commit local note changes before pulling from origin.".into());
+    }
     let analysis = repo.merge_analysis(&[&fetch_commit]).map_err(|e| e.message().to_string())?;
     if analysis.0.is_up_to_date() {
         return Ok(GitPullDto {
@@ -186,11 +189,25 @@ pub fn git_pull_fast_forward(root: String, token: Option<String>, state: tauri::
         });
     }
     if !analysis.0.is_fast_forward() {
-        let conflicts = materialize_remote_conflicts(&repo, &path, fetch_commit.id())?;
-        return Ok(GitPullDto {
-            status: status_inner(&repo)?,
-            conflicts,
-        });
+        // Match `git pull --rebase`: replay local commits on top of origin/main. If git2
+        // reports a conflict, abort the rebase first, then materialize the remote Markdown
+        // alongside the untouched local note rather than writing merge markers into it.
+        let mut rebase = repo
+            .rebase(None, Some(&fetch_commit), None, None)
+            .map_err(|e| e.message().to_string())?;
+        let sig = signature()?;
+        while let Some(operation) = rebase.next() {
+            if operation.is_err() || repo.index().map_err(|e| e.message().to_string())?.has_conflicts() {
+                rebase.abort().map_err(|e| e.message().to_string())?;
+                let conflicts = materialize_remote_conflicts(&repo, &path, fetch_commit.id())?;
+                return Ok(GitPullDto { status: status_inner(&repo)?, conflicts });
+            }
+            rebase
+                .commit(None, &sig, None)
+                .map_err(|e| e.message().to_string())?;
+        }
+        rebase.finish(Some(&sig)).map_err(|e| e.message().to_string())?;
+        return Ok(GitPullDto { status: status_inner(&repo)?, conflicts: Vec::new() });
     }
     let refname = "refs/heads/main";
     match repo.find_reference(refname) {

@@ -14,6 +14,7 @@
 
 import { ownerOf, pairKey, type PairEndpoint } from '../domain/similarity';
 import type { InternalStoreIO } from './annotationStore';
+import { loadMigratedJson } from './migrations';
 
 export const SIMILAR_PATH = '.denote/ai/similar.json';
 
@@ -48,10 +49,10 @@ export class SimilarStore {
   constructor(private readonly io: InternalStoreIO) {}
 
   async load(): Promise<void> {
-    const raw = await this.io.read(SIMILAR_PATH);
-    if (raw == null) return;
+    const result = await loadMigratedJson(this.io, SIMILAR_PATH);
+    if (!result || !result.ok) return;
     try {
-      const f = JSON.parse(raw) as SimilarFile;
+      const f = result.data as unknown as SimilarFile;
       this.pairs = f.pairs ?? [];
       this.rejected = f.rejectedPairs ?? [];
     } catch {

@@ -3,10 +3,18 @@
 // only settings persisted this pass (Appearance is the one functional Settings section).
 
 import { create } from 'zustand';
+import {
+  applyThemeTokens,
+  BUNDLED_THEMES,
+  parseThemeFile,
+  type ThemeFile,
+} from '../services/themeSettings';
+import type { ImportPlanItem } from '../services/importer';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark' | 'system' | 'custom';
 export type ViewMode = 'editor' | 'reading';
 export type RightPanelTab = 'backlinks' | 'outgoing' | 'suggestions';
+export type UiDensity = 'comfortable' | 'compact';
 
 export interface CaptureDraft {
   text: string;
@@ -17,8 +25,21 @@ export interface CaptureDraft {
   capturedAt: string;
 }
 
+export interface ImportReviewDraft {
+  sourceLabel: string;
+  items: ImportPlanItem[];
+  exactSkipped: number;
+  warnings: string[];
+}
+
 const THEME_KEY = 'denote:theme';
+const CUSTOM_THEME_KEY = 'denote:themeFile';
 const ACCENT_KEY = 'denote:accent';
+const EDITOR_FONT_KEY = 'denote:editorFont';
+const EDITOR_SIZE_KEY = 'denote:editorSize';
+const EDITOR_WIDTH_KEY = 'denote:editorWidth';
+const DENSITY_KEY = 'denote:density';
+const AUTO_SYNC_KEY = 'denote:autoSyncMinutes';
 const AI_THRESHOLD_KEY = 'denote:aiTakeoverThreshold';
 const SIM_TOPK_KEY = 'denote:similarityTopK';
 const SIM_MINCOS_KEY = 'denote:similarityMinCos';
@@ -40,18 +61,53 @@ function loadMinCos(): number {
 
 function loadTheme(): ThemeMode {
   const v = localStorage.getItem(THEME_KEY);
-  return v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
+  return v === 'light' || v === 'dark' || v === 'system' || v === 'custom' ? v : 'system';
 }
 
 function loadAccent(): string | null {
   return localStorage.getItem(ACCENT_KEY);
 }
 
+function loadCustomTheme(): ThemeFile | null {
+  const raw = localStorage.getItem(CUSTOM_THEME_KEY);
+  if (!raw) return null;
+  try {
+    return parseThemeFile(raw);
+  } catch {
+    localStorage.removeItem(CUSTOM_THEME_KEY);
+    return null;
+  }
+}
+
+function loadEditorFont(): string {
+  const value = localStorage.getItem(EDITOR_FONT_KEY);
+  return value && value.length < 160 ? value : 'SF Mono, ui-monospace, Menlo, monospace';
+}
+
+function loadEditorSize(): number {
+  const value = Number(localStorage.getItem(EDITOR_SIZE_KEY));
+  return Number.isFinite(value) ? Math.max(12, Math.min(20, Math.round(value))) : 14;
+}
+
+function loadEditorWidth(): number {
+  const value = Number(localStorage.getItem(EDITOR_WIDTH_KEY));
+  return Number.isFinite(value) ? Math.max(560, Math.min(1200, Math.round(value))) : 860;
+}
+
+function loadDensity(): UiDensity {
+  return localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+}
+
+function loadAutoSyncMinutes(): number {
+  const value = Number(localStorage.getItem(AUTO_SYNC_KEY));
+  return value === 5 || value === 15 || value === 30 ? value : 0;
+}
+
 /** `system` = defer to the `prefers-color-scheme` rules already in tokens.css; anything else is
  *  the explicit `[data-theme]` override tokens.css already defines. */
 function applyTheme(mode: ThemeMode): void {
   const root = document.documentElement;
-  if (mode === 'system') root.removeAttribute('data-theme');
+  if (mode === 'system' || mode === 'custom') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', mode);
 }
 
@@ -61,9 +117,26 @@ function applyAccent(accent: string | null): void {
   else root.style.removeProperty('--accent');
 }
 
+function applyEditorPreferences(font: string, size: number, width: number, density: UiDensity): void {
+  const root = document.documentElement;
+  root.style.setProperty('--font-editor', font);
+  root.style.setProperty('--editor-font-size', `${size}px`);
+  root.style.setProperty('--editor-line-width', `${width}px`);
+  root.setAttribute('data-density', density);
+}
+
 interface UiState {
   theme: ThemeMode;
+  themeFile: ThemeFile | null;
   accent: string | null;
+  editorFont: string;
+  editorFontSize: number;
+  editorLineWidth: number;
+  density: UiDensity;
+  autoSyncMinutes: number;
+  snippetsRevision: number;
+  globalCaptureError: string | null;
+  importReview: ImportReviewDraft | null;
   /** Takeover confidence floor (S10). AI setting; persisted (Settings → AI & Models). */
   aiTakeoverThreshold: number;
   /** ai-similar retrieval params (S15): topK neighbors + cosine floor. Persisted. */
@@ -88,7 +161,18 @@ interface UiState {
   captureDraft: CaptureDraft | null;
 
   setTheme: (mode: ThemeMode) => void;
+  setThemeFile: (theme: ThemeFile | null) => void;
+  updateThemeToken: (token: keyof ThemeFile['tokens'], value: string | string[]) => void;
   setAccent: (accent: string | null) => void;
+  setEditorFont: (font: string) => void;
+  setEditorFontSize: (size: number) => void;
+  setEditorLineWidth: (width: number) => void;
+  setDensity: (density: UiDensity) => void;
+  setAutoSyncMinutes: (minutes: number) => void;
+  bumpSnippetsRevision: () => void;
+  setGlobalCaptureError: (message: string | null) => void;
+  openImportReview: (draft: ImportReviewDraft) => void;
+  closeImportReview: () => void;
   setAiTakeoverThreshold: (v: number) => void;
   setSimilarityTopK: (v: number) => void;
   setSimilarityMinCos: (v: number) => void;
@@ -112,15 +196,32 @@ interface UiState {
   closeCapture: () => void;
 }
 
-export const useUiStore = create<UiState>((set) => {
+export const useUiStore = create<UiState>((set, get) => {
   const theme = loadTheme();
+  const themeFile = loadCustomTheme();
   const accent = loadAccent();
   applyTheme(theme);
-  applyAccent(accent);
+  if (themeFile) applyThemeTokens(themeFile);
+  if (accent) applyAccent(accent);
+  else if (!themeFile) applyAccent(null);
+  const editorFont = loadEditorFont();
+  const editorFontSize = loadEditorSize();
+  const editorLineWidth = loadEditorWidth();
+  const density = loadDensity();
+  applyEditorPreferences(editorFont, editorFontSize, editorLineWidth, density);
 
   return {
     theme,
+    themeFile,
     accent,
+    editorFont,
+    editorFontSize,
+    editorLineWidth,
+    density,
+    autoSyncMinutes: loadAutoSyncMinutes(),
+    snippetsRevision: 0,
+    globalCaptureError: null,
+    importReview: null,
     aiTakeoverThreshold: loadThreshold(),
     similarityTopK: loadTopK(),
     similarityMinCos: loadMinCos(),
@@ -140,13 +241,85 @@ export const useUiStore = create<UiState>((set) => {
     setTheme(mode) {
       localStorage.setItem(THEME_KEY, mode);
       applyTheme(mode);
+      if (mode !== 'custom') {
+        localStorage.removeItem(CUSTOM_THEME_KEY);
+        set({ themeFile: null });
+      }
       set({ theme: mode });
+    },
+    setThemeFile(themeFile) {
+      if (themeFile) {
+        const validated = parseThemeFile(JSON.stringify(themeFile));
+        localStorage.setItem(CUSTOM_THEME_KEY, JSON.stringify(validated));
+        localStorage.setItem(THEME_KEY, 'custom');
+        applyTheme('custom');
+        applyThemeTokens(validated);
+        set({ theme: 'custom', themeFile: validated });
+        return;
+      }
+      localStorage.removeItem(CUSTOM_THEME_KEY);
+      const nextMode = get().theme === 'custom' ? 'system' : get().theme;
+      localStorage.setItem(THEME_KEY, nextMode);
+      applyTheme(nextMode);
+      set({ theme: nextMode, themeFile: null });
+    },
+    updateThemeToken(token, value) {
+      const current = get().themeFile ?? BUNDLED_THEMES[0];
+      const next: ThemeFile = {
+        ...current,
+        name: get().themeFile?.name ?? 'Custom',
+        tokens: { ...current.tokens, [token]: value },
+      };
+      get().setThemeFile(next);
     },
     setAccent(accent) {
       if (accent) localStorage.setItem(ACCENT_KEY, accent);
       else localStorage.removeItem(ACCENT_KEY);
-      applyAccent(accent);
+      if (accent) applyAccent(accent);
+      else if (get().themeFile) applyThemeTokens(get().themeFile!);
+      else applyAccent(null);
       set({ accent });
+    },
+    setEditorFont(font) {
+      const clean = font.trim().slice(0, 160) || 'SF Mono, ui-monospace, Menlo, monospace';
+      localStorage.setItem(EDITOR_FONT_KEY, clean);
+      applyEditorPreferences(clean, get().editorFontSize, get().editorLineWidth, get().density);
+      set({ editorFont: clean });
+    },
+    setEditorFontSize(size) {
+      const clamped = Math.max(12, Math.min(20, Math.round(size)));
+      localStorage.setItem(EDITOR_SIZE_KEY, String(clamped));
+      applyEditorPreferences(get().editorFont, clamped, get().editorLineWidth, get().density);
+      set({ editorFontSize: clamped });
+    },
+    setEditorLineWidth(width) {
+      const clamped = Math.max(560, Math.min(1200, Math.round(width)));
+      localStorage.setItem(EDITOR_WIDTH_KEY, String(clamped));
+      applyEditorPreferences(get().editorFont, get().editorFontSize, clamped, get().density);
+      set({ editorLineWidth: clamped });
+    },
+    setDensity(density) {
+      localStorage.setItem(DENSITY_KEY, density);
+      applyEditorPreferences(get().editorFont, get().editorFontSize, get().editorLineWidth, density);
+      set({ density });
+    },
+    setAutoSyncMinutes(minutes) {
+      const value = minutes === 5 || minutes === 15 || minutes === 30 ? minutes : 0;
+      if (value === 0) localStorage.removeItem(AUTO_SYNC_KEY);
+      else localStorage.setItem(AUTO_SYNC_KEY, String(value));
+      set({ autoSyncMinutes: value });
+    },
+    bumpSnippetsRevision() {
+      set((state) => ({ snippetsRevision: state.snippetsRevision + 1 }));
+    },
+    setGlobalCaptureError(message) {
+      set({ globalCaptureError: message });
+    },
+    openImportReview(draft) {
+      set({ importReview: draft });
+    },
+    closeImportReview() {
+      set({ importReview: null });
     },
     setAiTakeoverThreshold(v) {
       const clamped = Math.max(0, Math.min(1, v));

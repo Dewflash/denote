@@ -16,12 +16,15 @@ import { paletteColor } from './layout';
 import { withAlpha } from './colorUtils';
 import { buildFolderHulls, hullOutline, noteRelPath, type FolderNote } from './hulls';
 
-const NOTE_BASE_R = 3;
-const NOTE_DEGREE_SCALE = 1.1;
-const GHOST_R = 4;
+const NOTE_BASE_R = 6;
+const NOTE_DEGREE_SCALE = 1.4;
+const GHOST_R = 5;
 const TAG_HALF = 2.5;
 const TOPIC_R = 8;
 const HULL_PAD = 24;
+const FIT_PADDING = 72;
+const LAYOUT_TICKS = 120;
+const LAYOUT_MAX_MS = 1800;
 
 function useContainerSize(): [React.RefObject<HTMLDivElement | null>, { width: number; height: number }] {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -46,6 +49,9 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
   const { positioned, edges, groupings, styleTokens, vaultColors, nodeColors, nodeRings, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
   const [containerRef, size] = useContainerSize();
   const fgRef = useRef<ForceGraphMethods<PositionedNode, GraphEdge> | undefined>(undefined);
+  const fittedGraphKeyRef = useRef<string | null>(null);
+  const cameraDirtyRef = useRef(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Never hand our domain edge objects to the renderer: force-graph mutates `source`/`target`
   // (here aliased to `from`/`to`) into live node references once the simulation starts, which
@@ -62,14 +68,60 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     return d;
   }, [edges]);
 
-  // Node-label zoom gate. On large graphs labels only appear when zoomed in (>2.2) to avoid an
-  // unreadable text hairball; but on SMALL graphs (post-06 fix #4: owner saw unlabeled dots at
-  // default zoom) they should be legible immediately, so the gate drops well below any default
-  // fit-zoom.
-  const labelScaleGate = positioned.length < 100 ? 0.3 : 2.2;
+  // Keep the original large-graph hairball guard, but soften its cliff and make the selected or
+  // hovered node self-identifying even when the map is zoomed far out.
+  const noteCount = positioned.filter((node) => node.type === 'note').length;
+  const labelScaleGate = positioned.length < 100 ? 0.3 : positioned.length < 300 ? 1.2 : 2.2;
+  const graphKey = useMemo(
+    () => `${positioned.map((node) => node.id).join('\u0000')}\u0001${edges.map((edge) => edge.id).join('\u0000')}`,
+    [positioned, edges],
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const markCameraDirty = () => {
+      cameraDirtyRef.current = true;
+    };
+    el.addEventListener('pointerdown', markCameraDirty);
+    el.addEventListener('wheel', markCameraDirty, { passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', markCameraDirty);
+      el.removeEventListener('wheel', markCameraDirty);
+    };
+  }, [containerRef]);
+
+  useEffect(() => {
+    if (positioned.length === 0) {
+      fittedGraphKeyRef.current = null;
+      return;
+    }
+    cameraDirtyRef.current = false;
+    fittedGraphKeyRef.current = null;
+    const frame = requestAnimationFrame(() => {
+      const graph = fgRef.current;
+      graph?.zoomToFit(400, FIT_PADDING);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [graphKey, positioned.length]);
+
+  useEffect(() => {
+    if (positioned.length === 0 || cameraDirtyRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (!cameraDirtyRef.current) fgRef.current?.zoomToFit(250, FIT_PADDING);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [positioned.length, size.width, size.height]);
 
   return (
-    <div ref={containerRef} className="h-full w-full" style={{ backgroundColor: styleTokens.bg }}>
+    <div
+      ref={containerRef}
+      data-testid="graph-canvas"
+      data-node-count={positioned.length}
+      data-note-count={noteCount}
+      className="h-full w-full"
+      style={{ backgroundColor: styleTokens.bg }}
+    >
       <ForceGraph2D<PositionedNode, GraphEdge>
         ref={fgRef}
         width={size.width}
@@ -91,7 +143,18 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           if (node.x !== undefined && node.y !== undefined) onNodeDragEnd?.(node as GraphNode, node.x, node.y);
         }}
         onNodeClick={(node, event) => onNodeClick?.(node as GraphNode, { metaKey: event.metaKey })}
+        onNodeHover={(node) => setHoveredId(node ? String(node.id) : null)}
         onBackgroundClick={() => onBackgroundClick?.()}
+        cooldownTicks={LAYOUT_TICKS}
+        cooldownTime={LAYOUT_MAX_MS}
+        onEngineStop={() => {
+          // Seeded positions live in a 800px world, while the graph viewport is usually much
+          // smaller. Fit once per node set after the force simulation settles so isolated notes
+          // cannot end up outside the initial camera, and do not steal the user's zoom on drag.
+          if (positioned.length === 0 || cameraDirtyRef.current || fittedGraphKeyRef.current === graphKey) return;
+          fittedGraphKeyRef.current = graphKey;
+          fgRef.current?.zoomToFit(300, FIT_PADDING);
+        }}
         onRenderFramePre={(ctx, globalScale) => {
           if (!groupings?.hullsEnabled) return;
           // Computed FRESH every frame from the live node objects (same references the
@@ -207,7 +270,8 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
               break;
             }
           }
-          if (globalScale > labelScaleGate && node.label) {
+          const emphasized = node.id === selectedId || node.id === hoveredId;
+          if ((emphasized || globalScale > labelScaleGate) && node.label) {
             ctx.font = `${10 / globalScale}px var(--font-ui, sans-serif)`;
             ctx.fillStyle = styleTokens.fg;
             ctx.textAlign = 'center';
@@ -226,7 +290,6 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           ctx.arc(x, y, Math.max(r + 2, 9), 0, Math.PI * 2);
           ctx.fill();
         }}
-        cooldownTicks={200}
       />
     </div>
   );

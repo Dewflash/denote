@@ -30,6 +30,7 @@ import {
   type ParsedNote,
 } from '../domain';
 import { AnnotationStore } from '../services/annotationStore';
+import { loadMigratedJson } from '../services/migrations';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../services/aiClient';
 import type { EnrichResult, TopicStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
@@ -91,7 +92,12 @@ export class VaultAiEngine {
   /** Load persisted annotations + queue and register the D4a/delete hooks. */
   async attach(): Promise<void> {
     await this.store.load();
-    this.queue.loadFrom(await this.repo.readInternal(QUEUE_PATH));
+    const queueResult = await loadMigratedJson({
+      read: (p) => this.repo.readInternal(p),
+      write: (p, c) => this.repo.writeInternal(p, c),
+      delete: (p) => this.repo.deleteInternal(p),
+    }, QUEUE_PATH);
+    this.queue.loadFrom(queueResult?.ok ? JSON.stringify(queueResult.data) : null);
     this.repo.registerRekeyHook((oldRel, newRel) => this.store.remapPath(oldRel, newRel));
     this.repo.registerDeleteHook((rel) => {
       this.queue.remove(rel);
@@ -534,7 +540,7 @@ export function createVaultAiBinding(opts: AiBindingOptions = {}): {
     },
     async attach(repo: Repository) {
       const store = new AnnotationStore(
-        { read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) },
+        { read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c), delete: (p) => repo.deleteInternal(p) },
         opts.now,
       );
       engine = new VaultAiEngine(repo, router, store, opts);

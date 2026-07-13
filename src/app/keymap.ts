@@ -4,8 +4,8 @@
 // same combo is a programming error and throws immediately (build-time-ish: caught by the unit
 // test over DEFAULT_BINDINGS, and by any future rebind going through `KeymapRegistry.bind`).
 //
-// Mac-only combos (D1): `cmd` = the Meta key. Rebinding in Settings → Hotkeys is future scope
-// (S21 says "all rebindable"); this pass ships the registry + the read-only Hotkeys listing.
+// Mac-only combos (D1): `cmd` = the Meta key. The registry owns rebinding so buttons, in-app
+// keydown handling, and the native capture bridge all read the same live definition.
 
 export type ComboString = string; // normalized, e.g. "cmd-n", "cmd-shift-f", "cmd-,"
 
@@ -15,9 +15,7 @@ export interface BindingDef {
   description: string;
 }
 
-/** S21 defaults. Some ids have no handler wired yet in this pass (later passes own them):
- *  `quick-switcher` (pass 5), `search` (pass 5), `global-capture` (pass 10), `graph-view`
- *  (pass 4). They are still registered so their combos can never collide with anything else. */
+/** S21 defaults. Every id is registered here once; Shell attaches the feature handlers at boot. */
 export const DEFAULT_BINDINGS: readonly BindingDef[] = [
   { id: 'new-note', combo: 'cmd-n', description: 'New note' },
   { id: 'quick-switcher', combo: 'cmd-o', description: 'Quick switcher' },
@@ -58,6 +56,21 @@ export class KeymapRegistry {
     const def: BindingDef = { id, combo, description };
     this.byCombo.set(combo, def);
     this.byId.set(id, def);
+  }
+
+  /** Change one binding without losing its handler. Throws on unknown ids or collisions. */
+  rebind(id: string, combo: ComboString): void {
+    const current = this.byId.get(id);
+    if (!current) throw new Error(`keymap: unknown binding id "${id}"`);
+    if (current.combo === combo) return;
+    const collision = this.byCombo.get(combo);
+    if (collision && collision.id !== id) {
+      throw new Error(`keymap: combo "${combo}" is already bound to "${collision.id}"`);
+    }
+    this.byCombo.delete(current.combo);
+    const next: BindingDef = { ...current, combo };
+    this.byCombo.set(combo, next);
+    this.byId.set(id, next);
   }
 
   /** Attach (or replace) the runtime handler for a registered id. */
@@ -129,9 +142,31 @@ function isInsideEditor(target: EventTarget | null): boolean {
   return target instanceof Element ? target.closest(`[${EDITOR_ROOT_ATTR}]`) !== null : false;
 }
 
-/** The app's one keymap instance (App.tsx wires handlers into it; Settings → Hotkeys lists it
- *  read-only). Tests should construct their own `KeymapRegistry` rather than sharing this. */
+/** The app's one keymap instance. Tests should construct their own registry. */
 export const appKeymap = new KeymapRegistry();
+
+const KEYMAP_STORAGE_KEY = 'denote:keymap';
+
+export function restoreSavedKeymap(registry: KeymapRegistry): void {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KEYMAP_STORAGE_KEY) ?? '{}') as Record<string, unknown>;
+    for (const binding of registry.all()) {
+      const combo = parsed[binding.id];
+      if (typeof combo !== 'string' || combo === binding.combo) continue;
+      try {
+        registry.rebind(binding.id, combo);
+      } catch {
+        // Invalid or colliding saved definitions are ignored; defaults remain usable.
+      }
+    }
+  } catch {
+    // A malformed preference must never prevent the app from starting.
+  }
+}
+
+export function persistKeymap(registry: KeymapRegistry): void {
+  localStorage.setItem(KEYMAP_STORAGE_KEY, JSON.stringify(Object.fromEntries(registry.all().map((b) => [b.id, b.combo]))));
+}
 
 /** Install the single global keydown listener. Returns a teardown function. */
 export function installGlobalKeymap(registry: KeymapRegistry): () => void {

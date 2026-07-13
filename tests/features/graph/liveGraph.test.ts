@@ -10,6 +10,14 @@ describe('reconcileNodePositions', () => {
     expect(typeof a.y).toBe('number');
   });
 
+  it('keeps a large graph inside a compact initial world for readable fit-to-view', () => {
+    const registry = new Map<string, PositionedNode>();
+    const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `v/${i}.md`, type: 'note' as const }));
+    const positioned = reconcileNodePositions(registry, nodes as GraphNode[]);
+    const farthest = Math.max(...positioned.map((node) => Math.hypot(node.x, node.y)));
+    expect(farthest).toBeLessThanOrEqual(241);
+  });
+
   it('reuses the SAME object reference across calls for an id seen before', () => {
     const registry = new Map<string, PositionedNode>();
     const first = reconcileNodePositions(registry, [{ id: 'v/A.md', type: 'note', label: 'A' } as GraphNode])[0];

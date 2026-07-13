@@ -17,6 +17,12 @@ export interface PositionedNode extends GraphNode {
   fy?: number;
 }
 
+function seedRadiusForGraph(nodeCount: number): number {
+  // Small vaults should read as one compact map. Grow by sqrt so larger vaults still have room
+  // to separate, without placing a four-note graph across an unnecessarily large world.
+  return Math.min(190, Math.max(28, 20 + Math.sqrt(Math.max(1, nodeCount)) * 20));
+}
+
 /** Mutates and returns `registry` in place: `registry` is the caller's persistent id→node map
  *  (e.g. a useRef in the page component). Stale ids (no longer present in `freshNodes`) are
  *  removed so the registry doesn't grow unbounded across renames/deletes. */
@@ -30,6 +36,7 @@ export function reconcileNodePositions(
   }
 
   const out: PositionedNode[] = [];
+  const seedRadius = seedRadiusForGraph(freshNodes.length);
   for (const n of freshNodes) {
     const existing = registry.get(n.id);
     if (existing) {
@@ -38,7 +45,7 @@ export function reconcileNodePositions(
       existing.vaultId = n.vaultId;
       out.push(existing);
     } else {
-      const seed = seedPosition(n.id);
+      const seed = seedPosition(n.id, seedRadius);
       const fresh: PositionedNode = { ...n, x: seed.x, y: seed.y };
       registry.set(n.id, fresh);
       out.push(fresh);

@@ -48,6 +48,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             capture::capture_current_context,
+            capture::set_global_hotkey,
             fs_commands::register_vault_root,
             fs_commands::app_support_dir,
             fs_commands::read_note,

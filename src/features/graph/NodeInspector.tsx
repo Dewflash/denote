@@ -67,6 +67,13 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   }
   const outboundCount = connections.filter((c) => c.direction === 'out').length;
   const inboundCount = connections.filter((c) => c.direction === 'in').length;
+  const openNote = () => {
+    void (async () => {
+      if (node.vaultId) await switchVault(node.vaultId);
+      if (relPath) await setActiveNote(relPath);
+      setGraphViewOpen(false);
+    })();
+  };
 
   return (
     <div
@@ -184,17 +191,11 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
         </button>
       )}
 
-      {node.type === 'note' && relPath && (
+      {node.type === 'note' && relPath && connections.length > 0 && (
         <button
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)', width: 'fit-content' }}
-          onClick={() => {
-            void (async () => {
-              if (node.vaultId) await switchVault(node.vaultId);
-              await setActiveNote(relPath);
-              setGraphViewOpen(false);
-            })();
-          }}
+          onClick={openNote}
         >
           Open note
         </button>
@@ -234,7 +235,21 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
             )}
           </button>
         ))}
-        {connections.length === 0 && <div style={{ color: 'var(--fg-muted)' }}>No connections.</div>}
+        {connections.length === 0 && node.type === 'note' && relPath ? (
+          <div className="flex flex-col gap-2" style={{ color: 'var(--fg-muted)' }}>
+            <div>This note isn&apos;t connected to anything yet. Open it and type [[ to link it to another note.</div>
+            <button
+              type="button"
+              className="self-start rounded px-2 py-1 text-xs"
+              style={{ border: '1px solid var(--border)', color: 'var(--fg)' }}
+              onClick={openNote}
+            >
+              Open note
+            </button>
+          </div>
+        ) : connections.length === 0 ? (
+          <div style={{ color: 'var(--fg-muted)' }}>No connections.</div>
+        ) : null}
       </div>
     </div>
   );

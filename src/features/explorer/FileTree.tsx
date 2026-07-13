@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { useVaultStore } from '../../state/vaultStore';
 import { useUiStore } from '../../state/uiStore';
 import { buildTree, type TreeNode } from './tree';
+import { NoteHistoryDialog } from '../history/VersionTimeline';
 
 interface MenuState {
   x: number;
@@ -16,6 +17,10 @@ interface MenuState {
   path: string;
   displayName: string;
   mode: 'main' | 'move' | 'confirm-delete';
+}
+
+interface TreeActions {
+  onDropNote: (notePath: string, folder: string) => void;
 }
 
 function NoteRow({
@@ -70,6 +75,12 @@ function NoteRow({
         e.preventDefault();
         onContextMenu(e, node.path, displayName);
       }}
+      draggable={!isAsset && !isRenaming}
+      onDragStart={(e) => {
+        if (isAsset) return;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('application/x-denote-note', node.path);
+      }}
     >
       {isRenaming ? (
         <input
@@ -98,6 +109,7 @@ function FolderRow({
   onRequestRename,
   onRenameDone,
   onContextMenu,
+  onDropNote,
 }: {
   node: TreeNode;
   depth: number;
@@ -105,8 +117,10 @@ function FolderRow({
   onRequestRename: (path: string) => void;
   onRenameDone: () => void;
   onContextMenu: (e: React.MouseEvent, path: string, displayName: string) => void;
+  onDropNote: TreeActions['onDropNote'];
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [dropActive, setDropActive] = useState(false);
   const selectedFolder = useUiStore((s) => s.selectedFolder);
   const setSelectedFolder = useUiStore((s) => s.setSelectedFolder);
   const isSelected = selectedFolder === node.path;
@@ -116,8 +130,24 @@ function FolderRow({
       <div
         className="flex items-center gap-1 rounded px-2 py-1 text-sm font-medium"
         style={{
-          backgroundColor: isSelected ? 'var(--bg-panel)' : 'transparent',
+          backgroundColor: dropActive ? 'var(--accent)' : isSelected ? 'var(--bg-panel)' : 'transparent',
+          color: dropActive ? '#fff' : 'inherit',
           cursor: 'pointer',
+        }}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes('application/x-denote-note')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          setDropActive(true);
+        }}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropActive(false);
+          const path = e.dataTransfer.getData('application/x-denote-note');
+          if (path) onDropNote(path, node.path);
         }}
         onClick={() => {
           setExpanded((v) => !v);
@@ -136,6 +166,7 @@ function FolderRow({
             onRequestRename={onRequestRename}
             onRenameDone={onRenameDone}
             onContextMenu={onContextMenu}
+            onDropNote={onDropNote}
           />
         </div>
       )}
@@ -150,6 +181,7 @@ function TreeChildren({
   onRequestRename,
   onRenameDone,
   onContextMenu,
+  onDropNote,
 }: {
   nodes: TreeNode[];
   depth: number;
@@ -157,6 +189,7 @@ function TreeChildren({
   onRequestRename: (path: string) => void;
   onRenameDone: () => void;
   onContextMenu: (e: React.MouseEvent, path: string, displayName: string) => void;
+  onDropNote: TreeActions['onDropNote'];
 }) {
   return (
     <>
@@ -170,6 +203,7 @@ function TreeChildren({
             onRequestRename={onRequestRename}
             onRenameDone={onRenameDone}
             onContextMenu={onContextMenu}
+            onDropNote={onDropNote}
           />
         ) : (
           <NoteRow
@@ -194,12 +228,16 @@ function NoteContextMenu({
   onClose,
   onRename,
   onSetMode,
+  onHistory,
+  onCreateFolderAndMove,
 }: {
   menu: MenuState;
   folders: string[];
   onClose: () => void;
   onRename: (path: string) => void;
   onSetMode: (mode: MenuState['mode']) => void;
+  onHistory: (path: string) => void;
+  onCreateFolderAndMove: (notePath: string, baseName: string, currentDir: string) => void;
 }) {
   const currentDir = menu.path.includes('/') ? menu.path.slice(0, menu.path.lastIndexOf('/')) : '';
   const baseName = menu.path.includes('/') ? menu.path.slice(menu.path.lastIndexOf('/') + 1) : menu.path;
@@ -234,11 +272,11 @@ function NoteContextMenu({
             <button className={MENU_ITEM_CLASS} onClick={() => onRename(menu.path)}>
               Rename…
             </button>
+            <button className={MENU_ITEM_CLASS} onClick={() => onHistory(menu.path)}>
+              History…
+            </button>
             <button
               className={MENU_ITEM_CLASS}
-              disabled={moveTargets.length === 0}
-              style={moveTargets.length === 0 ? { color: 'var(--fg-muted)' } : undefined}
-              title={moveTargets.length === 0 ? 'No other folders in this vault yet' : undefined}
               onClick={() => onSetMode('move')}
             >
               Move to folder…
@@ -271,6 +309,13 @@ function NoteContextMenu({
                 {folder || 'Vault root (top level)'}
               </button>
             ))}
+            <button
+              className={MENU_ITEM_CLASS}
+              style={{ color: 'var(--fg-muted)' }}
+              onClick={() => onCreateFolderAndMove(menu.path, baseName, currentDir)}
+            >
+              New folder…
+            </button>
             <button className={MENU_ITEM_CLASS} style={{ color: 'var(--fg-muted)' }} onClick={() => onSetMode('main')}>
               ← Back
             </button>
@@ -302,11 +347,38 @@ function NoteContextMenu({
   );
 }
 
-export function FileTree() {
+export function FileTree({ extraFolders = [], onFolderCreated }: { extraFolders?: string[]; onFolderCreated?: (path: string) => void }) {
   const repo = useVaultStore((s) => s.repo);
   const revision = useVaultStore((s) => s.revision);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
+  const [sessionFolders, setSessionFolders] = useState<string[]>([]);
+  const [rootDropActive, setRootDropActive] = useState(false);
+
+  function rememberFolder(path: string): void {
+    setSessionFolders((current) => current.includes(path) ? current : [...current, path]);
+    onFolderCreated?.(path);
+  }
+
+  async function createFolder(path: string): Promise<boolean> {
+    if (!repo || !path.trim()) return false;
+    try {
+      await useVaultStore.getState().createFolder(path.trim());
+      rememberFolder(path.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''));
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
+  function moveNote(notePath: string, folder: string): void {
+    const baseName = notePath.split('/').pop() ?? notePath;
+    const nextPath = `${folder ? `${folder}/` : ''}${baseName}`;
+    if (nextPath === notePath) return;
+    void useVaultStore.getState().moveNote(notePath, nextPath);
+  }
 
   const tree = useMemo(() => {
     if (!repo) return [];
@@ -314,9 +386,9 @@ export function FileTree() {
       ...repo.listNotePaths().map((relPath) => ({ relPath, kind: 'note' as const })),
       ...[...repo.index.assets.keys()].map((relPath) => ({ relPath, kind: 'asset' as const })),
     ];
-    return buildTree(entries);
+    return buildTree(entries, [...extraFolders, ...sessionFolders]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, revision]);
+  }, [repo, revision, extraFolders, sessionFolders]);
 
   // Move targets: the vault root plus every folder that currently holds a note or asset.
   const folders = useMemo(() => {
@@ -329,12 +401,35 @@ export function FileTree() {
         dir = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '';
       }
     }
+    for (const folder of [...extraFolders, ...sessionFolders]) {
+      let dir = folder;
+      while (dir) {
+        set.add(dir);
+        dir = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '';
+      }
+    }
     return [...set].sort((a, b) => a.localeCompare(b));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, revision]);
+  }, [repo, revision, extraFolders, sessionFolders]);
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <div
+      className="flex flex-col gap-0.5 rounded"
+      style={{ backgroundColor: rootDropActive ? 'var(--bg-panel)' : 'transparent', outline: rootDropActive ? '1px dashed var(--accent)' : 'none' }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('application/x-denote-note')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setRootDropActive(true);
+      }}
+      onDragLeave={() => setRootDropActive(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setRootDropActive(false);
+        const path = e.dataTransfer.getData('application/x-denote-note');
+        if (path) moveNote(path, '');
+      }}
+    >
       <TreeChildren
         nodes={tree}
         depth={0}
@@ -344,12 +439,28 @@ export function FileTree() {
         onContextMenu={(e, path, displayName) =>
           setMenu({ x: e.clientX, y: e.clientY, path, displayName, mode: 'main' })
         }
+        onDropNote={moveNote}
       />
       {menu && (
         <NoteContextMenu
           menu={menu}
           folders={folders}
           onClose={() => setMenu(null)}
+          onHistory={(path) => {
+            setMenu(null);
+            setHistoryPath(path);
+          }}
+          onCreateFolderAndMove={(notePath, baseName, currentDir) => {
+            const name = window.prompt('New folder name:', 'New folder');
+            if (!name?.trim()) return;
+            const path = `${currentDir ? `${currentDir}/` : ''}${name.trim()}`;
+            void createFolder(path).then((created) => {
+              if (created) {
+                void useVaultStore.getState().moveNote(notePath, `${path}/${baseName}`);
+                setMenu(null);
+              }
+            });
+          }}
           onRename={(path) => {
             setMenu(null);
             setRenameTarget(path);
@@ -357,6 +468,7 @@ export function FileTree() {
           onSetMode={(mode) => setMenu((m) => (m ? { ...m, mode } : m))}
         />
       )}
+      <NoteHistoryDialog open={historyPath !== null} onOpenChange={(open) => { if (!open) setHistoryPath(null); }} relPath={historyPath} />
     </div>
   );
 }

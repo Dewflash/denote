@@ -5,22 +5,26 @@ import { useUiStore } from "./state/uiStore";
 import { VaultRail } from "./app/VaultRail";
 import { RightPanel } from "./app/RightPanel";
 import { StatusBar } from "./app/StatusBar";
+import { ErrorBoundary } from "./app/ErrorBoundary";
 import { CommandPalette } from "./app/CommandPalette";
 import { ExplorerPanel, TodayView } from "./features/explorer";
 import { Editor, ReadingView } from "./features/editor";
 import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { SearchPanel, QuickSwitcher } from "./features/search";
+import { ImportReviewModal } from "./features/import";
 import { AiProvisionalBar, AiConsentModal, OrganizeVaultModal, DeepOrganizeModal } from "./features/ai";
 import { createUntitledNote, CaptureModal, globalCaptureFromClipboard } from "./features/capture";
-import { appKeymap, installGlobalKeymap } from "./app/keymap";
+import { appKeymap, installGlobalKeymap, restoreSavedKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
 import { appSupportRoot } from "./services/appSupport";
 import { createAppSupportIO } from "./services/appSupportStore";
 import { SnippetStore } from "./services/snippets";
+import { setGlobalCaptureHotkey, installNativeCaptureListener } from "./services/nativeCapture";
 import { tauriStorage } from "./services/tauriStorage";
-import { installNativeCaptureListener } from "./services/nativeCapture";
+import { gitHistoryStatus, gitPullFastForward, gitPushOrigin } from "./services/nativeGit";
 import { E2ESmoke } from "./e2e/E2ESmoke";
+import { useGraphStore } from "./state/graphStore";
 
 function ConflictBar() {
   const conflict = useVaultStore((s) => s.conflict);
@@ -117,9 +121,35 @@ function CenterPane() {
   const graphViewOpen = useUiStore((s) => s.graphViewOpen);
   const viewMode = useUiStore((s) => s.viewMode);
   const buffer = useVaultStore((s) => s.buffer);
+  const repo = useVaultStore((s) => s.repo);
 
   if (graphViewOpen) return <GraphPage />;
   if (todayViewOpen) return <TodayView />;
+
+  if (!buffer && repo && repo.listNotePaths().length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-6" style={{ color: 'var(--fg)' }}>
+        <div className="w-full max-w-lg rounded p-5" style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)' }}>
+          <h2 className="mb-4 text-base font-semibold">Start your vault</h2>
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="flex items-start gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>1</span>
+              <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => appKeymap.invoke('new-note')}>Create your first note</button>
+            </div>
+            <div className="flex items-start gap-3" style={{ color: 'var(--fg-muted)' }}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ border: '1px solid var(--border)' }}>2</span>
+              <span>Type [[ inside a note to link to another one — links are what build your graph</span>
+            </div>
+            <div className="flex items-start gap-3" style={{ color: 'var(--fg-muted)' }}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ border: '1px solid var(--border)' }}>3</span>
+              <span>Press the graph icon (or ⌘G) once you have a few linked notes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!buffer) {
     return (
       <div className="flex h-full items-center justify-center" style={{ color: "var(--fg-muted)" }}>
@@ -138,7 +168,15 @@ function CenterPane() {
 }
 
 function Shell() {
-  useEffect(() => installNativeCaptureListener(), []);
+  const graphViewOpen = useUiStore((s) => s.graphViewOpen);
+
+  useEffect(() => {
+    restoreSavedKeymap(appKeymap);
+    const unlisten = installNativeCaptureListener();
+    const capture = appKeymap.all().find((binding) => binding.id === "global-capture");
+    if (capture) void setGlobalCaptureHotkey(capture.combo).catch(() => {});
+    return unlisten;
+  }, []);
 
   useEffect(() => {
     appKeymap.setHandler("new-note", () => {
@@ -151,7 +189,12 @@ function Shell() {
     });
     appKeymap.setHandler("reading-view", () => useUiStore.getState().toggleViewMode());
     appKeymap.setHandler("today-view", () => useUiStore.getState().toggleTodayView());
-    appKeymap.setHandler("graph-view", () => useUiStore.getState().toggleGraphView());
+    appKeymap.setHandler("graph-view", () => {
+      // The toolbar/shortcut opens the full map. Local graph is an explicit editor action and
+      // must not leak into the next normal graph visit after the map is closed.
+      useGraphStore.getState().exitLocalView();
+      useUiStore.getState().toggleGraphView();
+    });
     appKeymap.setHandler("settings", () => {
       const ui = useUiStore.getState();
       ui.setSettingsOpen(!ui.settingsOpen);
@@ -169,27 +212,28 @@ function Shell() {
     <div
       className="snippet-scope grid h-screen"
       style={{
-        gridTemplateColumns: "56px 260px 1fr 300px",
+        gridTemplateColumns: graphViewOpen ? "56px 0 1fr 0" : "56px 260px 1fr 300px",
         gridTemplateRows: "1fr 24px",
         backgroundColor: "var(--bg)",
       }}
     >
       <div style={{ gridRow: "1 / 2" }}>
-        <VaultRail />
+        <ErrorBoundary surface="Vault rail"><VaultRail /></ErrorBoundary>
       </div>
       <aside
         style={{
           gridRow: "1 / 2",
           borderRight: "1px solid var(--border)",
           backgroundColor: "var(--bg-panel)",
+          display: graphViewOpen ? "none" : undefined,
         }}
       >
-        <ExplorerPanel />
+        <ErrorBoundary surface="Explorer"><ExplorerPanel /></ErrorBoundary>
       </aside>
       <main style={{ gridRow: "1 / 2", display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <ConflictBar />
+        <ErrorBoundary surface="Editor"><ConflictBar /></ErrorBoundary>
         <div style={{ flex: 1, minHeight: 0 }}>
-          <CenterPane />
+          <ErrorBoundary surface="Editor"><CenterPane /></ErrorBoundary>
         </div>
       </main>
       <aside
@@ -197,12 +241,13 @@ function Shell() {
           gridRow: "1 / 2",
           borderLeft: "1px solid var(--border)",
           backgroundColor: "var(--bg-panel)",
+          display: graphViewOpen ? "none" : undefined,
         }}
       >
-        <RightPanel />
+        <ErrorBoundary surface="Inspector"><RightPanel /></ErrorBoundary>
       </aside>
       <div style={{ gridColumn: "1 / -1", gridRow: "2 / 3" }}>
-        <StatusBar />
+        <ErrorBoundary surface="Status bar"><StatusBar /></ErrorBoundary>
       </div>
       <CommandPalette />
       <SearchPanel />
@@ -212,14 +257,43 @@ function Shell() {
       <DeepOrganizeModal />
       <CaptureModal />
       <SnippetStyleInjector />
+      <AutoSync />
     </div>
-    <SettingsModal />
+    <ErrorBoundary surface="Settings"><SettingsModal /></ErrorBoundary>
+    <ImportReviewModal />
     </>
   );
 }
 
+function AutoSync() {
+  const root = useVaultStore((s) => s.root);
+  const minutes = useUiStore((s) => s.autoSyncMinutes);
+
+  useEffect(() => {
+    if (!root || minutes === 0) return undefined;
+    let cancelled = false;
+    const sync = async (): Promise<void> => {
+      try {
+        const status = await gitHistoryStatus(root);
+        if (!status.enabled || !status.remoteUrl) return;
+        const pulled = await gitPullFastForward(root);
+        if (!cancelled && pulled.conflicts.length === 0) await gitPushOrigin(root);
+      } catch {
+        // Automatic sync is best-effort; the manual Data surface remains authoritative.
+      }
+    };
+    const timer = window.setInterval(() => { void sync(); }, minutes * 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [root, minutes]);
+  return null;
+}
+
 function SnippetStyleInjector() {
   const [css, setCss] = useState('');
+  const snippetsRevision = useUiStore((s) => s.snippetsRevision);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -235,7 +309,7 @@ function SnippetStyleInjector() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [snippetsRevision]);
   return <style data-denote-snippets>{css}</style>;
 }
 

@@ -33,13 +33,19 @@ export interface ExistingNoteForImport {
   parsed?: ParsedNote;
 }
 
-const NEAR_DUPLICATE_THRESHOLD = 0.95;
+export interface ImportEmbeddingVectors {
+  existing: Map<string, number[]>;
+  incoming: Map<string, number[]>;
+}
 
-export function planImport(existing: ExistingNoteForImport[], incoming: IncomingFile[]): ImportPlan {
+const NEAR_DUPLICATE_THRESHOLD = 0.95;
+type SimilarityVector = Map<string, number> | number[];
+
+export function planImport(existing: ExistingNoteForImport[], incoming: IncomingFile[], embeddings?: ImportEmbeddingVectors): ImportPlan {
   const existingByHash = new Map<string, string>();
   const existingVectors = existing.map((e) => ({
     relPath: e.relPath,
-    vector: tokenVector((e.parsed ?? parseNote(e.relPath, e.content)).bodyText || stripAiBlock(e.content)),
+    vector: embeddings?.existing.get(e.relPath) ?? tokenVector((e.parsed ?? parseNote(e.relPath, e.content)).bodyText || stripAiBlock(e.content)),
   }));
   for (const note of existing) existingByHash.set(contentHash(note.content), note.relPath);
 
@@ -64,7 +70,7 @@ export function planImport(existing: ExistingNoteForImport[], incoming: Incoming
       continue;
     }
 
-    const vector = tokenVector(parseNote(file.relPath, file.content).bodyText || stripAiBlock(file.content));
+    const vector = embeddings?.incoming.get(file.relPath) ?? tokenVector(parseNote(file.relPath, file.content).bodyText || stripAiBlock(file.content));
     let best: { relPath: string; score: number } | null = null;
     for (const candidate of existingVectors) {
       const score = cosine(vector, candidate.vector);
@@ -130,7 +136,20 @@ function tokenVector(text: string): Map<string, number> {
   return out;
 }
 
-function cosine(a: Map<string, number>, b: Map<string, number>): number {
+function cosine(a: SimilarityVector, b: SimilarityVector): number {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return 0;
+    let dot = 0;
+    let a2 = 0;
+    let b2 = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      a2 += a[i] * a[i];
+      b2 += b[i] * b[i];
+    }
+    if (a2 === 0 || b2 === 0) return 0;
+    return dot / (Math.sqrt(a2) * Math.sqrt(b2));
+  }
   let dot = 0;
   let a2 = 0;
   let b2 = 0;

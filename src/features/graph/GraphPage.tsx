@@ -2,10 +2,8 @@
 // vault selector: checkbox set of open vaults → combined graph", D17): buildGraph (domain) fed
 // by every SELECTED open vault's index → layer/confidence filter → local-view neighborhood →
 // position reconciliation (liveGraph.ts, "graph updates live when a note is edited") →
-// ForceGraphRenderer + LayerControls + NodeInspector. No AI edges/topics exist yet this pass
-// (buildGraph gets an empty `similarPairs`/no `topics`, per D26/pass-6 — the styling machinery
-// is built and proven against `mockFixture.ts` in dev instead, so pass 7/8 plug in real data
-// with zero UI changes).
+// ForceGraphRenderer + LayerControls + NodeInspector. AI-similar edges and topic hubs are fed
+// from the live per-vault engines; the mock fixture remains a dev-only visual harness.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildGraph, dominantTopic, strongMemberships, type Graph, type Membership } from '../../domain';
@@ -22,6 +20,7 @@ import { localNeighborhood } from './neighborhood';
 import { reconcileNodePositions, type PositionedNode } from './liveGraph';
 import { buildMockGraphFixture } from './mockFixture';
 import { noteRelPath } from './hulls';
+import { GraphNotesIndex } from './GraphNotesIndex';
 import type { GraphNode } from '../../domain';
 
 function useDevMockGraph(): boolean {
@@ -44,6 +43,7 @@ export function GraphPage() {
   const minConfidence = useGraphStore((s) => s.minConfidence);
   const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
   const localView = useGraphStore((s) => s.localView);
+  const exitLocalView = useGraphStore((s) => s.exitLocalView);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
@@ -64,9 +64,10 @@ export function GraphPage() {
       .filter((r): r is NonNullable<typeof r> => r != null)
       .map((r) => ({
         vaultId: r.vaultId,
-        // `_topics/*` hub notes are off-graph by default (D8c) — their concepts are the topic
-        // hub nodes; showing the files too would double them up.
-        notes: r.index.allNotes().filter((n) => !n.relPath.startsWith('_topics/') && n.frontmatter.source !== 'ai'),
+        // Generated `_topics/*` hub notes are represented by topic nodes, so keep those files
+        // out of the note layer. Every other Markdown file belongs in the map, including notes
+        // carrying reserved `source: ai` metadata from an import or an older DeNote version.
+        notes: r.index.allNotes().filter((n) => !n.relPath.startsWith('_topics/')),
         topics: topicsByVault.get(r.vaultId),
       }));
     if (vaults.length === 0) return { nodes: [], edges: [] };
@@ -116,6 +117,34 @@ export function GraphPage() {
     () => filterGraph(scopedGraph, layers, minConfidence),
     [scopedGraph, layers, minConfidence],
   );
+  const visibleNotes = useMemo(
+    () => visibleGraph.nodes.filter((node) => node.type === 'note'),
+    [visibleGraph.nodes],
+  );
+
+  const fullNoteCount = useMemo(
+    () => fullGraph.nodes.filter((node) => node.type === 'note').length,
+    [fullGraph.nodes],
+  );
+  const localCenterTitle = useMemo(
+    () => fullGraph.nodes.find((node) => node.id === localView.centerId)?.label ?? localView.centerId ?? 'this note',
+    [fullGraph.nodes, localView.centerId],
+  );
+  const localVisibleNoteCount = useMemo(
+    () => scopedGraph.nodes.filter((node) => node.type === 'note').length,
+    [scopedGraph.nodes],
+  );
+  const [sparseHintDismissed, setSparseHintDismissed] = useState(false);
+  const connectedNoteIds = useMemo(() => {
+    const ids = new Set<string>();
+    const noteIds = new Set(visibleNotes.map((note) => String(note.id)));
+    for (const edge of visibleGraph.edges) {
+      if (noteIds.has(String(edge.from))) ids.add(String(edge.from));
+      if (noteIds.has(String(edge.to))) ids.add(String(edge.to));
+    }
+    return ids;
+  }, [visibleGraph.edges, visibleNotes]);
+  const sparseHint = !sparseHintDismissed && visibleNotes.length > 0 && visibleNotes.length - connectedNoteIds.size > visibleNotes.length / 2;
 
   // Empty-state guidance (post-06 fix #2): silent dots with no edges confused the owner (all
   // layers off, or imported notes with few wikilinks). Surface a one-line hint instead.
@@ -125,7 +154,7 @@ export function GraphPage() {
       ? null // nothing to show at all (no vault selected / empty vault) — not a filter problem
       : visibleGraph.edges.length === 0
         ? allLayersOff
-          ? 'No edge layers active — enable Wikilinks / Tags / Topics / AI-similar above.'
+          ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI-found similarity above.'
           : 'No connections match the current filters — try “Reset view” above.'
         : null;
 
@@ -135,6 +164,7 @@ export function GraphPage() {
   // render itself.
   const registryRef = useRef(new Map<string, PositionedNode>());
   const [positioned, setPositioned] = useState<PositionedNode[]>([]);
+  const [notesIndexOpen, setNotesIndexOpen] = useState(true);
   useEffect(() => {
     setPositioned(reconcileNodePositions(registryRef.current, visibleGraph.nodes));
   }, [visibleGraph.nodes]);
@@ -171,12 +201,33 @@ export function GraphPage() {
 
   return (
     <div className="flex h-full flex-col" style={{ minHeight: 0 }}>
-      <LayerControls />
+      <LayerControls notesIndexOpen={notesIndexOpen} onToggleNotesIndex={() => setNotesIndexOpen((open) => !open)} />
       <div className="flex flex-1" style={{ minHeight: 0 }}>
+        {notesIndexOpen && (
+          <GraphNotesIndex
+            notes={visibleNotes}
+            selectedId={selectedNodeId}
+            onOpenNote={(node) => void handleNodeClick(node, { metaKey: false })}
+            onClose={() => setNotesIndexOpen(false)}
+          />
+        )}
         <div className="flex-1" style={{ minWidth: 0, position: 'relative' }}>
+          {localView.enabled && localView.centerId && (
+            <div
+              className="absolute left-1/2 top-3 z-10 flex max-w-[min(700px,calc(100%-24px))] -translate-x-1/2 items-center gap-3 rounded px-3 py-2 text-xs shadow-sm"
+              style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--fg)' }}
+            >
+              <span>
+                Showing only notes linked within {localView.hops} steps of “{localCenterTitle}” — {localVisibleNoteCount} of {fullNoteCount} notes visible.
+              </span>
+              <button type="button" className="shrink-0 rounded px-2 py-1" style={{ border: '1px solid var(--border)' }} onClick={exitLocalView}>
+                Show all notes
+              </button>
+            </div>
+          )}
           {emptyHint && (
             <div
-              className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded px-3 py-1.5 text-xs"
+              className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2 rounded px-3 py-1.5 text-xs"
               style={{
                 backgroundColor: 'var(--bg-panel)',
                 border: '1px solid var(--border)',
@@ -184,6 +235,19 @@ export function GraphPage() {
               }}
             >
               {emptyHint}
+            </div>
+          )}
+          {sparseHint && (
+            <div
+              className="absolute left-1/2 top-24 z-10 flex max-w-[min(760px,calc(100%-24px))] -translate-x-1/2 items-start gap-2 rounded px-3 py-2 text-xs shadow-sm"
+              style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--fg)' }}
+            >
+              <span>
+                Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the on-device AI group them into topics.
+              </span>
+              <button type="button" aria-label="Dismiss graph hint" title="Dismiss until the next app launch" className="shrink-0 text-base leading-none" style={{ color: 'var(--fg-muted)' }} onClick={() => setSparseHintDismissed(true)}>
+                ×
+              </button>
             </div>
           )}
           <ForceGraphRenderer

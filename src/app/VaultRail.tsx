@@ -4,9 +4,12 @@
 // existing `.denote/`, pass-05 brief). A small dot marks vaults that are currently open (have a
 // live Repository + watcher) vs merely registered.
 
+import { useState } from 'react';
 import { useVaultStore } from '../state/vaultStore';
+import { useUiStore } from '../state/uiStore';
 import { pickFolder } from '../services/dialogs';
 import { appKeymap, formatCombo } from './keymap';
+import { importDroppedFiles } from '../features/import';
 
 function vaultInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
@@ -19,12 +22,42 @@ export function VaultRail() {
   const switchVault = useVaultStore((s) => s.switchVault);
   const openVaultAt = useVaultStore((s) => s.openVaultAt);
   const closeVault = useVaultStore((s) => s.closeVault);
+  const repo = useVaultStore((s) => s.repo);
+  const createNote = useVaultStore((s) => s.createNote);
+  const openImportReview = useUiStore((s) => s.openImportReview);
+  const [dropActive, setDropActive] = useState(false);
+  const [dropMessage, setDropMessage] = useState<string | null>(null);
+
+  async function handleDrop(files: FileList | null): Promise<void> {
+    setDropActive(false);
+    if (!repo) return;
+    try {
+      const result = await importDroppedFiles(files, repo, createNote);
+      if (result.reviewItems.length > 0) openImportReview({ sourceLabel: 'Dropped files', items: result.reviewItems, exactSkipped: result.exactSkipped, warnings: result.warnings });
+      setDropMessage(`Imported ${result.imported}; ${result.exactSkipped} exact duplicate${result.exactSkipped === 1 ? '' : 's'} skipped${result.reviewItems.length ? `; ${result.reviewItems.length} need review` : ''}.`);
+      void repo.rebuildDerivedCaches();
+    } catch (error) {
+      setDropMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return (
     <div
       className="flex h-full flex-col items-center gap-2 py-3"
-      style={{ backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border)' }}
+      style={{ backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border)', position: 'relative' }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files') || !repo) return;
+        event.preventDefault();
+        setDropActive(true);
+      }}
+      onDragLeave={() => setDropActive(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        void handleDrop(event.dataTransfer.files);
+      }}
     >
+      {dropActive && <div className="absolute inset-1 z-10 flex items-center justify-center rounded p-1 text-center text-[10px]" style={{ backgroundColor: 'var(--bg)', border: '1px dashed var(--accent)', color: 'var(--accent)' }}>Drop notes</div>}
+      {dropMessage && <button type="button" title={dropMessage} aria-label={dropMessage} onClick={() => setDropMessage(null)} className="absolute bottom-12 z-20 h-5 w-5 rounded-full text-[10px]" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }}>i</button>}
       {registry.map((v) => {
         const isActive = v.id === vaultId;
         const isOpen = openVaultIds.includes(v.id);

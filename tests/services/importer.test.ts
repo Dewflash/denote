@@ -31,4 +31,17 @@ describe('import planner', () => {
     expect(mapObsidianRelPath('.obsidian/plugins/foo.md')).toBeNull();
     expect(mapObsidianRelPath('Folder/Note.txt')).toBe('Folder/Note.md');
   });
+
+  it('uses supplied embedding vectors for the near-duplicate threshold', () => {
+    const plan = planImport(
+      [{ relPath: 'source.md', content: '# Source\nwords that do not overlap' }],
+      [{ relPath: 'incoming.md', content: '# Incoming\ncompletely different words' }],
+      {
+        existing: new Map([['source.md', [1, 0]]]),
+        incoming: new Map([['incoming.md', [0.99, 0.01]]]),
+      },
+    );
+    expect(plan.items[0]?.decision).toBe('review-near');
+    expect(plan.items[0]?.similarity).toBeGreaterThan(0.95);
+  });
 });

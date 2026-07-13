@@ -70,6 +70,14 @@ const dirname = (rel: string): string => {
 const isMarkdown = (rel: string): boolean => /\.md$/i.test(rel);
 const utf8Size = (s: string): number => new TextEncoder().encode(s).length;
 
+function normalizeFolderPath(relPath: string): string {
+  const normalized = relPath.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (normalized.some((segment) => segment === '.' || segment === '..' || segment.startsWith('.'))) {
+    throw new DenoteError('fs', `invalid folder path: ${relPath}`, { path: relPath });
+  }
+  return normalized.join('/');
+}
+
 /** Reconstruct a wikilink token with a new target, preserving `!`/heading/alias verbatim (S9). */
 function renderWikiLink(link: WikiLink, newTarget: string): string {
   const bang = link.embed ? '!' : '';
@@ -273,6 +281,13 @@ export class Repository {
   /** In-app move (folder changes, basename stays): rewrite only path-form inbound links (S9). */
   async moveNote(oldRel: string, newRel: string): Promise<void> {
     return this.relocate(oldRel, newRel, 'path-only');
+  }
+
+  /** Create a user-visible folder without adding placeholder content to the vault. */
+  async createFolder(relDir: string): Promise<void> {
+    const normalized = normalizeFolderPath(relDir);
+    if (!normalized) throw new DenoteError('fs', 'folder name cannot be empty');
+    await this.backend.createDir(this.root, normalized);
   }
 
   /** Force a snapshot of the current on-disk content (ignores the debounce gate). */
@@ -604,11 +619,16 @@ async function ensureMeta(
   now: () => number,
 ): Promise<VaultId> {
   if (await backend.exists(root, META_PATH)) {
+    const raw = await backend.readNote(root, META_PATH).catch(() => null);
     try {
-      const parsed = JSON.parse(await backend.readNote(root, META_PATH));
+      const parsed = raw == null ? null : JSON.parse(raw);
       if (parsed && typeof parsed.vaultId === 'string') return parsed.vaultId;
     } catch {
-      /* corrupt meta → regenerate below */
+      // Quarantine below; the Markdown files remain the source of truth.
+    }
+    if (raw != null) {
+      await backend.writeNote(root, `${META_PATH}.corrupt-${Date.now()}`, raw);
+      await backend.deletePath(root, META_PATH).catch(() => {});
     }
   }
   const vaultId = crypto.randomUUID();

@@ -772,7 +772,7 @@ export function createVaultOntologyBinding(opts: OntologyBindingOptions): {
       engine?.noteChanged(relPath, note);
     },
     async attach(repo: Repository) {
-      const store = new TopicStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
+      const store = new TopicStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c), delete: (p) => repo.deleteInternal(p) });
       engine = new VaultOntologyEngine(repo, opts.backend, opts.router, store, opts);
       await engine.attach();
       return engine;

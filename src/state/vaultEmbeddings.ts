@@ -266,6 +266,7 @@ export function createVaultEmbeddingBinding(opts: EmbeddingBindingOptions): {
       const store = new SimilarStore({
         read: (p) => repo.readInternal(p),
         write: (p, c) => repo.writeInternal(p, c),
+        delete: (p) => repo.deleteInternal(p),
       });
       engine = new VaultEmbeddingEngine(repo, opts.backend, opts.router, store, opts);
       await engine.attach();

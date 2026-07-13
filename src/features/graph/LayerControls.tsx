@@ -10,13 +10,20 @@ import { useVaultStore } from '../../state/vaultStore';
 import type { LayerToggles } from './filter';
 
 const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
-  { key: 'wikilinks', label: 'Wikilinks' },
-  { key: 'tags', label: 'Tags' },
-  { key: 'topics', label: 'Topics' },
-  { key: 'aiSimilar', label: 'AI-similar' },
+  { key: 'wikilinks', label: 'Links you typed' },
+  { key: 'tags', label: 'Shared tags' },
+  { key: 'topics', label: 'AI topic groups' },
+  { key: 'aiSimilar', label: 'AI-found similarity' },
 ];
 
-export function LayerControls() {
+const LAYER_TOOLTIPS: Record<keyof LayerToggles, string> = {
+  wikilinks: '[[links]] written inside notes',
+  tags: 'Notes that use the same #tag connect through it',
+  topics: 'Topics found by Organize vault',
+  aiSimilar: 'Pairs the on-device AI judged related — each edge shows its reason in the side panel',
+};
+
+export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesIndexOpen: boolean; onToggleNotesIndex: () => void }) {
   const layers = useGraphStore((s) => s.layers);
   const toggleLayer = useGraphStore((s) => s.toggleLayer);
   const minConfidence = useGraphStore((s) => s.minConfidence);
@@ -41,7 +48,7 @@ export function LayerControls() {
       style={{ borderBottom: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
     >
       {LAYER_LABELS.map(({ key, label }) => (
-        <label key={key} className="flex items-center gap-1.5">
+        <label key={key} className="flex items-center gap-1.5" title={LAYER_TOOLTIPS[key]}>
           <input type="checkbox" checked={layers[key]} onChange={() => toggleLayer(key)} />
           {label}
         </label>
@@ -73,7 +80,7 @@ export function LayerControls() {
       )}
 
       <label className="flex items-center gap-1.5">
-        AI confidence ≥ {minConfidence.toFixed(2)}
+        Hide AI guesses below {Math.round(minConfidence * 100)}% sure
         <input
           type="range"
           min={0}
@@ -84,28 +91,41 @@ export function LayerControls() {
         />
       </label>
 
-      <label className="flex items-center gap-1.5">
+      <label className="flex items-center gap-1.5" title="Draw a shaded outline around each folder's notes">
         <input type="checkbox" checked={hullsEnabled} onChange={toggleHulls} />
-        Structural hulls
+        Outline folders
       </label>
 
       <button
         className="rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={resetView}
-        title="Restore all edge layers and a low confidence floor"
+        title="Turn all connection types back on"
       >
         Reset view
       </button>
 
+      <button
+        className="rounded px-2 py-0.5"
+        style={{ border: '1px solid var(--border)' }}
+        onClick={onToggleNotesIndex}
+        title={notesIndexOpen ? 'Hide the note list to give the map more room' : 'Show the note list'}
+      >
+        {notesIndexOpen ? 'Hide note list' : 'Show note list'}
+      </button>
+
       {localView.enabled && (
-        <button
-          className="rounded px-2 py-0.5"
-          style={{ border: '1px solid var(--border)' }}
-          onClick={exitLocalView}
-        >
-          Exit local view ({localView.hops}-hop)
-        </button>
+        <>
+          <span style={{ color: 'var(--fg)' }}>Showing {localView.hops}-hop neighborhood</span>
+          <button
+            className="rounded px-2 py-0.5"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={exitLocalView}
+            title="Show every note in the selected vaults"
+          >
+            Show all notes
+          </button>
+        </>
       )}
 
       <button
@@ -121,7 +141,10 @@ export function LayerControls() {
       <button
         className="rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
-        onClick={() => useUiStore.getState().setGraphViewOpen(false)}
+        onClick={() => {
+          exitLocalView();
+          useUiStore.getState().setGraphViewOpen(false);
+        }}
         title="Back to your notes (⌘G)"
       >
         ✕ Close graph
