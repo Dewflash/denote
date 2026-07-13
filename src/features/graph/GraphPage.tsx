@@ -203,7 +203,18 @@ export function GraphPage() {
 
   return (
     <div className="graph-page flex h-full flex-col" style={{ minHeight: 0 }}>
-      <LayerControls notesIndexOpen={notesIndexOpen} onToggleNotesIndex={() => setNotesIndexOpen((open) => !open)} />
+      <LayerControls
+        notesIndexOpen={notesIndexOpen}
+        onToggleNotesIndex={() => {
+          const nextOpen = !notesIndexOpen;
+          // The two mobile overlays share the graph viewport. Opening one must dismiss the
+          // other, otherwise a node inspector can sit underneath the note list.
+          if (nextOpen && typeof window !== 'undefined' && window.innerWidth <= 720) {
+            setSelectedNode(null);
+          }
+          setNotesIndexOpen(nextOpen);
+        }}
+      />
       <div className="graph-content relative flex flex-1" style={{ minHeight: 0 }}>
         {notesIndexOpen && (
           <GraphNotesIndex
@@ -264,7 +275,10 @@ export function GraphPage() {
             nodeColors={nodeColors}
             nodeRings={nodeRings}
             selectedId={selectedNodeId}
-            onNodeClick={(node, opts) => void handleNodeClick(node, opts)}
+            onNodeClick={(node, opts) => {
+              if (typeof window !== 'undefined' && window.innerWidth <= 720) setNotesIndexOpen(false);
+              void handleNodeClick(node, opts);
+            }}
             onBackgroundClick={() => setSelectedNode(null)}
           />
         </div>

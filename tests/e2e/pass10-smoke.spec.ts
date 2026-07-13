@@ -104,6 +104,27 @@ test('graph keeps the map usable on a narrow window', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open note' })).toBeVisible();
 });
 
+test('graph overlays stay mutually exclusive on a narrow window', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?graphMock=1');
+
+  const canvas = page.locator('canvas');
+  await expect(canvas).toBeVisible();
+  await page.getByRole('button', { name: 'Show note list' }).click();
+  await expect(page.getByTestId('graph-notes-index')).toBeVisible();
+  await page.waitForTimeout(1800);
+
+  // A seeded ghost node remains visible in the uncovered right-hand strip while the note index
+  // is open, which exercises the canvas click path without relying on the covered labels.
+  await canvas.click({ position: { x: 385, y: 373 } });
+  await expect(page.getByTestId('graph-notes-index')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Show note list' }).click();
+  await expect(page.getByTestId('graph-notes-index')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeHidden();
+});
+
 test('welcome and smoke shell stay inside a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');

@@ -788,6 +788,17 @@ what is needed and why, and continues with the rest of the pass if independent.
   cannot exercise native Tauri vault/capture bridges, so owner-only acceptance items remain those
   listed under Checkpoint E.
 
+- 2026-07-13 · UX/pass 10–11 follow-up audit · **one responsive graph interaction gap found and
+  fixed.** The prior audit verified that selecting a note from the mobile "Notes in map" index
+  closed that index before opening the inspector, but direct canvas selection could still leave
+  both overlays visible; opening the index from an already-selected node had the inverse problem.
+  `GraphPage` now enforces mutual exclusion in both directions at the 720px breakpoint. Added a
+  Playwright regression that clicks the seeded canvas node with the index open, then reopens the
+  index and verifies the inspector closes. **Verification:** 449 TypeScript tests / 57 files,
+  lint, `tsc --noEmit`, production build, Playwright e2e 6/6, Rust library tests 19/19, Swift
+  release build, hash reference suite, and `git diff --check` all green. No graph data, persisted
+  layer keys, or note-edge rules changed.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with
