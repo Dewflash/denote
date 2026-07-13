@@ -893,6 +893,18 @@ what is needed and why, and continues with the rest of the pass if independent.
   capture remains unavailable in this headless session, and Apple Foundation Models remains
   unavailable on this Mac (reported in-app).
 
+- 2026-07-13 · interaction polish + AI recovery audit · **remaining browser-native interruptions
+  removed.** Invalid theme imports now report inline; first GitHub push visibility is confirmed in
+  an in-app dialog naming PRIVATE / PUBLIC / UNKNOWN before upload; topic rename/delete use an
+  in-app, keyboard-friendly dialog with validation instead of `prompt` / `confirm`; and the AI
+  suggestions panel exposes a direct Retry on-device AI action when Apple is unavailable. The
+  retry affordance is hidden when the user has deliberately selected the test backend. **Verification:**
+  455 TypeScript tests / 58 files, focused 10/10, lint, `tsc --noEmit`, production build,
+  Playwright e2e 6/6, S1 hash reference, `git diff --check`, zero browser alert/prompt/confirm
+  calls in `src`, and live graph preview with zero console errors. Apple Foundation Models is
+  still unavailable on this Mac and remains reported honestly; native owner acceptance remains
+  the outstanding external check.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

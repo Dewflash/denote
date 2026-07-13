@@ -3,6 +3,8 @@
 // confidence, reason — D8c). Always reads the full (unfiltered) graph so provenance is honest
 // even when a layer is toggled off in the canvas.
 
+import * as Dialog from '@radix-ui/react-dialog';
+import { useState } from 'react';
 import type { Graph, GraphEdge, GraphNode } from '../../domain';
 import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
@@ -56,6 +58,9 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const setGraphViewOpen = useUiStore((s) => s.setGraphViewOpen);
   const getOntology = useVaultStore((s) => s.getOpenOntologyEngine);
+  const [topicAction, setTopicAction] = useState<{ mode: 'rename' | 'delete'; topicId: string; topicName: string } | null>(null);
+  const [topicNameDraft, setTopicNameDraft] = useState('');
+  const [topicActionError, setTopicActionError] = useState<string | null>(null);
 
   const node = graph.nodes.find((n) => n.id === selectedId);
   if (!node) return null;
@@ -69,6 +74,27 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
   const ontology = node.vaultId ? getOntology(node.vaultId) : undefined;
   const topicId = node.type === 'topic' ? node.id.replace(/^topic:/, '') : null;
   const topic = topicId ? ontology?.topicInsights(topicId) : undefined;
+
+  async function submitTopicAction(): Promise<void> {
+    if (!topicAction || !ontology) return;
+    setTopicActionError(null);
+    try {
+      if (topicAction.mode === 'rename') {
+        const name = topicNameDraft.trim();
+        if (!name) {
+          setTopicActionError('Enter a topic name.');
+          return;
+        }
+        await ontology.renameTopic(topicAction.topicId, name);
+      } else {
+        await ontology.deleteTopic(topicAction.topicId);
+        setSelectedNode(null);
+      }
+      setTopicAction(null);
+    } catch (error) {
+      setTopicActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   const byId = new Map<string, GraphNode>(graph.nodes.map((n) => [n.id, n]));
   const connections: ConnectionRow[] = [];
@@ -160,8 +186,9 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
               className="rounded px-2 py-1 text-xs"
               style={{ border: '1px solid var(--border)' }}
               onClick={() => {
-                const name = window.prompt('Rename topic (old name becomes an alias):', topic.name);
-                if (name && name.trim()) void ontology.renameTopic(topic.id, name.trim());
+                setTopicNameDraft(topic.name);
+                setTopicActionError(null);
+                setTopicAction({ mode: 'rename', topicId: topic.id, topicName: topic.name });
               }}
             >
               Rename
@@ -170,10 +197,8 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
               className="rounded px-2 py-1 text-xs"
               style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}
               onClick={() => {
-                if (window.confirm(`Delete topic “${topic.name}”? Memberships return to suggestions.`)) {
-                  void ontology.deleteTopic(topic.id);
-                  setSelectedNode(null);
-                }
+                setTopicActionError(null);
+                setTopicAction({ mode: 'delete', topicId: topic.id, topicName: topic.name });
               }}
             >
               Delete
@@ -265,6 +290,52 @@ export function NodeInspector({ graph, onClose }: { graph: Graph; onClose: () =>
           <div style={{ color: 'var(--fg-muted)' }}>No connections.</div>
         ) : null}
       </div>
+      <Dialog.Root
+        open={topicAction !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTopicAction(null);
+            setTopicActionError(null);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-50 w-[380px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 p-4"
+            style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}
+          >
+            <Dialog.Title className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>
+              {topicAction?.mode === 'rename' ? 'Rename topic' : 'Delete topic'}
+            </Dialog.Title>
+            <Dialog.Description className="mt-1 text-xs" style={{ color: 'var(--fg-muted)' }}>
+              {topicAction?.mode === 'rename'
+                ? 'The old name becomes an alias so existing notes keep their meaning.'
+                : `Delete “${topicAction?.topicName}”? Its memberships will return to suggestions.`}
+            </Dialog.Description>
+            {topicAction?.mode === 'rename' && (
+              <input
+                autoFocus
+                aria-label="Topic name"
+                value={topicNameDraft}
+                onChange={(event) => setTopicNameDraft(event.target.value)}
+                className="mt-4 w-full rounded px-2 py-1.5 text-sm"
+                style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg)' }}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submitTopicAction(); } }}
+              />
+            )}
+            {topicActionError && <div role="alert" className="mt-3 text-xs" style={{ color: 'var(--danger)' }}>{topicActionError}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <button type="button" className="rounded px-2 py-1 text-xs" style={{ border: '1px solid var(--border)' }}>Cancel</button>
+              </Dialog.Close>
+              <button type="button" className="rounded px-2 py-1 text-xs" style={{ backgroundColor: topicAction?.mode === 'delete' ? 'var(--danger)' : 'var(--accent)', color: '#fff' }} onClick={() => void submitTopicAction()}>
+                {topicAction?.mode === 'rename' ? 'Rename' : 'Delete topic'}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

@@ -236,6 +236,7 @@ function AppearanceSection() {
   const setDensity = useUiStore((s) => s.setDensity);
   const [snippets, setSnippets] = useState<{ name: string; enabled: boolean }[]>([]);
   const [snippetError, setSnippetError] = useState<string | null>(null);
+  const [themeError, setThemeError] = useState<string | null>(null);
   const bumpSnippetsRevision = useUiStore((s) => s.bumpSnippetsRevision);
   const fileInput = useRef<HTMLInputElement>(null);
   const activeTheme = themeFile ?? (theme === 'dark' ? BUNDLED_THEMES[1] : BUNDLED_THEMES[0]);
@@ -265,10 +266,12 @@ function AppearanceSection() {
 
   function importTheme(file: File | undefined): void {
     if (!file) return;
+    setThemeError(null);
     void file.text().then((raw) => {
       setThemeFile(parseThemeFile(raw));
+      setThemeError(null);
     }).catch(() => {
-      window.alert('That theme file is invalid.');
+      setThemeError('That theme file is invalid. Choose a DeNote theme JSON export.');
     });
   }
 
@@ -339,6 +342,7 @@ function AppearanceSection() {
           <button type="button" className="rounded px-2 py-1.5 text-xs" style={{ border: '1px solid var(--border)' }} onClick={() => fileInput.current?.click()}>Import JSON</button>
           <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => { importTheme(event.target.files?.[0]); event.currentTarget.value = ''; }} />
         </div>
+        {themeError && <p role="alert" className="mb-2 text-xs" style={{ color: 'var(--danger)' }}>{themeError}</p>}
         <div className="mb-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
           {themeFile ? `${themeFile.name} is live. Edit a token below to create or update a custom theme.` : 'Pick a bundled theme or import a JSON theme to edit its tokens live.'}
         </div>
@@ -870,10 +874,46 @@ function DataSection() {
   const [token, setToken] = useState('');
   const [tokenPresent, setTokenPresent] = useState(false);
   const [importReview, setImportReview] = useState<ImportPlanItem[]>([]);
+  const [pushConfirmation, setPushConfirmation] = useState<{ url: string; visibility: 'private' | 'public' | 'unknown' } | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
   const autoSyncMinutes = useUiStore((s) => s.autoSyncMinutes);
   const setAutoSyncMinutes = useUiStore((s) => s.setAutoSyncMinutes);
   const activeVaultId = useVaultStore((s) => s.vaultId);
   const activeLocalOnly = useVaultStore((s) => s.registry.find((v) => v.id === activeVaultId)?.localOnly ?? false);
+
+  async function pushToOrigin(): Promise<void> {
+    if (!root) return;
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await gitPushOrigin(root);
+      localStorage.setItem(`denote:git:pushed:${root}`, new Date().toISOString());
+      setPushConfirmation(null);
+      setMessage('Pushed to origin.');
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function beginPush(): Promise<void> {
+    if (!root || !gitStatus?.remoteUrl) return;
+    const url = gitStatus.remoteUrl;
+    if (localStorage.getItem(`denote:git:pushed:${root}`)) {
+      await pushToOrigin();
+      return;
+    }
+    setMessage('Checking remote visibility…');
+    try {
+      const visibility = await githubRepoVisibility(url);
+      setPushError(null);
+      setPushConfirmation({ url, visibility });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const snapshots = useMemo(() => {
     void revision;
@@ -1124,40 +1164,7 @@ function DataSection() {
             className="rounded px-3 py-1.5 text-sm"
             style={{ border: '1px solid var(--border)' }}
             disabled={!root || !gitStatus?.remoteUrl}
-            onClick={() => {
-              if (!root) return;
-              void (async () => {
-                // First-push gate (checkpoint E / pass-11 brief): before a vault's first-ever
-                // push, show the remote's visibility and require explicit confirmation — a
-                // private-notes vault silently pushed to a public repo is unrecoverable.
-                const pushedKey = `denote:git:pushed:${root}`;
-                if (!localStorage.getItem(pushedKey)) {
-                  const url = gitStatus?.remoteUrl ?? '';
-                  setMessage('Checking remote visibility…');
-                  const vis = await githubRepoVisibility(url);
-                  const visText =
-                    vis === 'private'
-                      ? 'a PRIVATE repository'
-                      : vis === 'public'
-                        ? 'a PUBLIC repository — anyone can read it'
-                        : 'a repository of UNKNOWN visibility (could not verify)';
-                  const ok = window.confirm(
-                    `First push of this vault.\n\nRemote: ${url}\nThis is ${visText}.\n\nYour notes will be uploaded. Continue?`,
-                  );
-                  if (!ok) {
-                    setMessage('Push cancelled.');
-                    return;
-                  }
-                }
-                try {
-                  await gitPushOrigin(root);
-                  localStorage.setItem(pushedKey, new Date().toISOString());
-                  setMessage('Pushed to origin.');
-                } catch (err) {
-                  setMessage(err instanceof Error ? err.message : String(err));
-                }
-              })();
-            }}
+            onClick={() => void beginPush()}
           >
             Push
           </button>
@@ -1202,6 +1209,46 @@ function DataSection() {
       )}
 
       {message && <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{message}</p>}
+
+      <Dialog.Root
+        open={pushConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !pushBusy) {
+            setPushConfirmation(null);
+            setPushError(null);
+            setMessage('Push cancelled.');
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-50 w-[440px] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 p-5"
+            style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 8px 30px rgba(0,0,0,0.2)' }}
+          >
+            <Dialog.Title className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>Confirm first push</Dialog.Title>
+            <Dialog.Description className="mt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+              This vault has not been pushed before. The remote is{' '}
+              <strong style={{ color: pushConfirmation?.visibility === 'public' ? 'var(--danger)' : 'var(--fg)' }}>
+                {pushConfirmation?.visibility === 'private' ? 'PRIVATE' : pushConfirmation?.visibility === 'public' ? 'PUBLIC' : 'UNKNOWN'}
+              </strong>.
+              {pushConfirmation?.visibility === 'public' && ' Anyone with access to that repository can read the notes.'}
+            </Dialog.Description>
+            <div className="mt-3 break-all rounded p-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}>
+              {pushConfirmation?.url}
+            </div>
+            {pushError && <div role="alert" className="mt-3 rounded p-2 text-xs" style={{ border: '1px solid var(--danger)', color: 'var(--danger)' }}>{pushError}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <button type="button" disabled={pushBusy} className="rounded px-3 py-1.5 text-xs" style={{ border: '1px solid var(--border)' }}>Cancel</button>
+              </Dialog.Close>
+              <button type="button" disabled={pushBusy} className="rounded px-3 py-1.5 text-xs" style={{ backgroundColor: 'var(--accent)', color: '#fff' }} onClick={() => void pushToOrigin()}>
+                {pushBusy ? 'Uploading…' : 'Upload vault'}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

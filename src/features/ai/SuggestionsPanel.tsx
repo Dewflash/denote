@@ -116,6 +116,8 @@ export function SuggestionsPanel() {
   const enrich = useVaultStore((s) => s.enrichActiveNote);
   const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
   const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
+  const refreshAppleAiStatus = useVaultStore((s) => s.refreshAppleAiStatus);
+  const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -226,10 +228,20 @@ export function SuggestionsPanel() {
             <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
               No suggestions yet. Keep writing, or press “Get suggestions” — they&apos;ll appear here.
             </p>
-            {appleAiHealth.status === 'unavailable' && (
-              <p className="text-xs" style={{ color: 'var(--danger)' }}>
-                On-device AI is unavailable right now. Check Settings → AI &amp; Models; your typed links, tags, and topic groups remain available.
-              </p>
+            {appleAiHealth.status === 'unavailable' && enrichBackend === 'apple' && (
+              <div className="flex flex-col items-start gap-2">
+                <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                  On-device AI is unavailable right now. Your typed links, tags, and topic groups remain available.
+                </p>
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 text-xs"
+                  style={{ border: '1px solid var(--border)' }}
+                  onClick={() => void refreshAppleAiStatus(true)}
+                >
+                  Retry on-device AI
+                </button>
+              </div>
             )}
           </div>
         )}
