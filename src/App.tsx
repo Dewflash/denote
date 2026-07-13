@@ -123,7 +123,7 @@ function CenterPane() {
   if (!buffer) {
     return (
       <div className="flex h-full items-center justify-center" style={{ color: "var(--fg-muted)" }}>
-        <p>Select or create a note to begin.</p>
+        <p>Click a note in the left sidebar, or press ⌘N to create a new one.</p>
       </div>
     );
   }

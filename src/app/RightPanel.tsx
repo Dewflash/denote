@@ -24,13 +24,25 @@ export function RightPanel() {
       className="flex h-full flex-col"
     >
       <Tabs.List className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
-        <Tabs.Trigger value="backlinks" className="denote-tab-trigger flex-1 px-3 py-2 text-sm">
-          Backlinks
+        <Tabs.Trigger
+          value="backlinks"
+          className="denote-tab-trigger flex-1 px-3 py-2 text-sm"
+          title="Notes that link to the note you have open"
+        >
+          Links in
         </Tabs.Trigger>
-        <Tabs.Trigger value="outgoing" className="denote-tab-trigger flex-1 px-3 py-2 text-sm">
-          Outgoing
+        <Tabs.Trigger
+          value="outgoing"
+          className="denote-tab-trigger flex-1 px-3 py-2 text-sm"
+          title="Notes the open note links to"
+        >
+          Links out
         </Tabs.Trigger>
-        <Tabs.Trigger value="suggestions" className="denote-tab-trigger flex-1 px-3 py-2 text-sm">
+        <Tabs.Trigger
+          value="suggestions"
+          className="denote-tab-trigger flex-1 px-3 py-2 text-sm"
+          title="AI suggestions for the open note — nothing is applied unless you accept it"
+        >
           AI{suggestionCount > 0 ? ` (${suggestionCount})` : ''}
         </Tabs.Trigger>
       </Tabs.List>

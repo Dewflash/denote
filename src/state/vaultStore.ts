@@ -192,7 +192,10 @@ interface VaultStoreState {
    *  launch (the sensible default). */
   setTaskRouting: (task: string, backend: string) => void;
 
-  setActiveNote: (relPath: string | null) => Promise<void>;
+  /** Opens a note in the editor. By default this also REVEALS the editor (closes the graph /
+   *  today overlays) so a click on any note affordance is always visibly answered; pass
+   *  `reveal: false` only when the caller manages its own visibility (GraphPage cmd-click). */
+  setActiveNote: (relPath: string | null, opts?: { reveal?: boolean }) => Promise<void>;
   updateBufferContent: (content: string) => void;
   flushAutosave: () => Promise<void>;
 
@@ -204,7 +207,7 @@ interface VaultStoreState {
   /** S4: "clicking a ghost creates `{target}.md` in the current folder" (verbatim casing). Used
    *  by the editor's live preview, the reading view, and the backlinks/outgoing panels — every
    *  ghost-click affordance in the app goes through this one action. */
-  createGhostAndOpen: (target: string) => Promise<void>;
+  createGhostAndOpen: (target: string, opts?: { reveal?: boolean }) => Promise<void>;
 
   resolveConflictKeepMine: () => void;
   resolveConflictTakeDisk: () => void;
@@ -905,7 +908,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
     bumpRevision: () => set((s) => ({ revision: s.revision + 1 })),
 
-    async setActiveNote(relPath) {
+    async setActiveNote(relPath, opts) {
       clearAutosaveTimer();
       const before = get();
       if (before.buffer?.dirty && before.repo) {
@@ -924,6 +927,11 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         conflict: null,
         revision: s.revision + 1,
       }));
+      if (opts?.reveal !== false) {
+        const ui = useUiStore.getState();
+        if (ui.graphViewOpen) ui.setGraphViewOpen(false);
+        if (ui.todayViewOpen) ui.setTodayViewOpen(false);
+      }
     },
 
     updateBufferContent(content) {
@@ -1005,7 +1013,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       }));
     },
 
-    async createGhostAndOpen(target) {
+    async createGhostAndOpen(target, opts) {
       const s = get();
       const dir = s.activeNotePath?.includes('/')
         ? s.activeNotePath.slice(0, s.activeNotePath.lastIndexOf('/'))
@@ -1016,7 +1024,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       } catch {
         /* already exists (race with another creator) — fall through to opening it */
       }
-      await get().setActiveNote(relPath);
+      await get().setActiveNote(relPath, opts);
     },
 
     resolveConflictKeepMine() {

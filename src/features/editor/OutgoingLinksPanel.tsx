@@ -13,6 +13,14 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function PanelHint({ text }: { text: string }) {
+  return (
+    <div className="px-3 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+      {text}
+    </div>
+  );
+}
+
 export function OutgoingLinksPanel() {
   const repo = useVaultStore((s) => s.repo);
   const revision = useVaultStore((s) => s.revision);
@@ -33,10 +41,16 @@ export function OutgoingLinksPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo, activeNotePath, revision]);
 
-  if (!activeNotePath) return <EmptyState text="No note open" />;
-  if (links.length === 0) return <EmptyState text="No outgoing links" />;
+  if (!activeNotePath)
+    return <EmptyState text="Open a note to see where it links to." />;
+  if (links.length === 0)
+    return (
+      <EmptyState text="This note doesn't link anywhere yet. Type [[ while writing to link to another note." />
+    );
 
   return (
+    <>
+    <PanelHint text="Notes this note links to — click one to open it. Faded names don't exist yet; clicking creates them." />
     <div className="flex flex-col gap-1 p-2 text-sm">
       {links.map(({ link, resolution }, i) => {
         const ghost = resolution.kind === 'ghost';
@@ -57,5 +71,6 @@ export function OutgoingLinksPanel() {
         );
       })}
     </div>
+    </>
   );
 }

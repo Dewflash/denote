@@ -36,3 +36,10 @@ sidecar/apple-ai/.swiftpm
 *.njsproj
 *.sln
 *.sw?
+
+# fastembed ONNX model cache (downloaded at first run, ~100MB — never commit)
+src-tauri/.fastembed_cache/
+
+# Playwright artifacts
+test-results/
+playwright-report/

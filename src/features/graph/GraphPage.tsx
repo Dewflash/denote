@@ -154,7 +154,7 @@ export function GraphPage() {
     setSelectedNode(node.id);
     if (node.type === 'ghost' && node.vaultId) {
       await switchVault(node.vaultId);
-      void createGhostAndOpen(node.label ?? '');
+      void createGhostAndOpen(node.label ?? '', { reveal: false });
       if (!opts.metaKey) setGraphViewOpen(false);
       return;
     }
@@ -162,7 +162,7 @@ export function GraphPage() {
       const relPath = noteRelPath(node.id, node.vaultId);
       if (relPath) {
         await switchVault(node.vaultId);
-        void setActiveNote(relPath);
+        void setActiveNote(relPath, { reveal: false });
         if (!opts.metaKey) setGraphViewOpen(false);
       }
     }

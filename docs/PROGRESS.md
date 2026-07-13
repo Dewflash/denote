@@ -257,6 +257,41 @@ tokens only, no new deps):
    label ("Interest Rates", "Yen Intervention", "Japan", "Bank of Japan", "Finance", "Banking",
    "japan") renders at default zoom without zooming in.
 
+## Owner manual-testing findings (post-11, 2026-07-13) — fixed same day
+
+Owner ran the real app; findings and resolutions:
+
+1. **"Clicking a note doesn't open it while the graph is open" — REAL BUG, fixed.**
+   `CenterPane` renders `GraphPage` INSTEAD of the editor while `graphViewOpen`, but the file
+   tree stays visible and clickable — a click updated `activeNotePath` invisibly and the screen
+   didn't change (same flaw for the Today overlay). Fix: `vaultStore.setActiveNote` now REVEALS
+   the editor (closes the graph/today overlays) by default, so every note-opening affordance in
+   the app — tree, backlinks, outgoing, search, quick switcher, recents — is visibly answered.
+   `GraphPage` passes `reveal: false` and keeps managing its own visibility, so pass-04's
+   cmd-click-keeps-graph-open behavior is unchanged. Regression-tested
+   (`tests/state/setActiveNoteReveal.test.ts`, 3 tests, stubs browser globals to drive the REAL
+   store in node).
+2. **"No clue what Backlinks/Outgoing is for; UI must speak plain English" — copy pass, done.**
+   Right-panel tabs renamed **Links in / Links out / AI** with hover tooltips; each panel gained
+   a one-line plain-English header ("Notes that link to this note — click one to open it.") and
+   instructive empty states ("Nothing links to this note yet. Type [[ in another note…").
+   AI panel: added "The AI reads this note and suggests tags, links, and topics. Nothing is
+   changed unless you accept a suggestion."; "Enrich now" → "Get suggestions". Center empty
+   state now says "Click a note in the left sidebar, or press ⌘N to create a new one."
+3. **Graph exit affordance:** LayerControls gained a right-aligned "✕ Close graph" button
+   (⌘G tooltip) + "Click a dot to open that note." hint — previously the only exits were ⌘G or
+   clicking a dot, both undiscoverable.
+4. **Opened-Desktop-as-vault incident (same session):** owner registered `~/Desktop` as a vault
+   while `~/Desktop/Daily Wisdom` was already one — nested roots double-index the same notes and
+   the cross-vault engine burns sidecar calls comparing identical notes. Diagnosed live (not a
+   hang; background churn + the bug in item 1 compounding). Guard work spun off as a separate
+   task: refuse/warn on overlapping vault roots at register/open time. UNSCHEDULED — needs an
+   architect-reviewed decision entry when picked up.
+
+Verification: 443 TS tests (56 files, +1 file), lint, tsc, `pnpm build`-equivalent via e2e dev
+server, `pnpm e2e` (1/1), zero console errors on the dev preview graph page. No S/D-numbered
+behavior touched (S10/S23/D38 paths untouched; pass-04 graph click contract preserved).
+
 ## Owner inputs required
 
 Things only the owner (Kevin) can provide. When a pass reaches a step needing a missing

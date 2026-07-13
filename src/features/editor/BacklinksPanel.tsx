@@ -20,6 +20,17 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function PanelHint({ text }: { text: string }) {
+  return (
+    <div
+      className="px-3 pt-2 text-xs"
+      style={{ color: 'var(--fg-muted)' }}
+    >
+      {text}
+    </div>
+  );
+}
+
 export function BacklinksPanel() {
   const repo = useVaultStore((s) => s.repo);
   const revision = useVaultStore((s) => s.revision);
@@ -46,10 +57,16 @@ export function BacklinksPanel() {
     };
   }, [repo, backlinks]);
 
-  if (!activeNotePath) return <EmptyState text="No note open" />;
-  if (backlinks.length === 0) return <EmptyState text="No backlinks yet" />;
+  if (!activeNotePath)
+    return <EmptyState text="Open a note to see which other notes link to it." />;
+  if (backlinks.length === 0)
+    return (
+      <EmptyState text="No other notes link to this one yet. To create a link, type [[ in another note and pick this note's title." />
+    );
 
   return (
+    <>
+    <PanelHint text="Notes that link to this note — click one to open it." />
     <div className="flex flex-col gap-2 p-2 text-sm">
       {backlinks.map((b, i) => {
         const content = contents[b.fromPath];
@@ -71,5 +88,6 @@ export function BacklinksPanel() {
         );
       })}
     </div>
+    </>
   );
 }

@@ -148,14 +148,18 @@ export function SuggestionsPanel() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="px-2 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
+        The AI reads this note and suggests tags, links, and topics. Nothing is changed unless
+        you accept a suggestion.
+      </div>
       <div className="flex items-center justify-between gap-2 p-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <button
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)' }}
           onClick={() => void enrich()}
-          title="Run enrichment now (bypasses the debounce)"
+          title="Ask the AI to re-read this note right now"
         >
-          Enrich now
+          Get suggestions
         </button>
         {acceptableCount > 0 && (
           <button
@@ -181,7 +185,7 @@ export function SuggestionsPanel() {
         )}
         {suggestions.length === 0 && (
           <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-            No suggestions yet. Edit the note (or run “Enrich now”) and they’ll appear here.
+            No suggestions yet. Keep writing, or press “Get suggestions” — they'll appear here.
           </p>
         )}
         <div className="flex flex-col gap-3">

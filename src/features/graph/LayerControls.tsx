@@ -5,6 +5,7 @@
 // there's more than one open vault to choose among, so single-vault sessions see no new UI.
 
 import { useGraphStore } from '../../state/graphStore';
+import { useUiStore } from '../../state/uiStore';
 import { useVaultStore } from '../../state/vaultStore';
 import type { LayerToggles } from './filter';
 
@@ -106,6 +107,16 @@ export function LayerControls() {
           Exit local view ({localView.hops}-hop)
         </button>
       )}
+
+      <span style={{ marginLeft: 'auto' }}>Click a dot to open that note.</span>
+      <button
+        className="rounded px-2 py-0.5"
+        style={{ border: '1px solid var(--border)' }}
+        onClick={() => useUiStore.getState().setGraphViewOpen(false)}
+        title="Back to your notes (⌘G)"
+      >
+        ✕ Close graph
+      </button>
     </div>
   );
 }
