@@ -150,15 +150,16 @@ export function CommandPalette() {
               </div>
             )}
             {commands.map((c, i) => (
-              <div
+              <button
+                type="button"
                 key={c.id}
-                className="cursor-pointer rounded px-3 py-2 text-sm"
-                style={{ backgroundColor: i === highlighted ? 'var(--bg-panel)' : 'transparent' }}
+                className="block w-full rounded px-3 py-2 text-left text-sm"
+                style={{ backgroundColor: i === highlighted ? 'var(--bg-panel)' : 'transparent', color: 'var(--fg)' }}
                 onMouseEnter={() => setHighlighted(i)}
                 onClick={() => runAndClose(c)}
               >
                 {c.label}
-              </div>
+              </button>
             ))}
           </div>
         </Dialog.Content>

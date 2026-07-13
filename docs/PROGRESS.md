@@ -799,6 +799,15 @@ what is needed and why, and continues with the rest of the pass if independent.
   release build, hash reference suite, and `git diff --check` all green. No graph data, persisted
   layer keys, or note-edge rules changed.
 
+- 2026-07-13 · UI interaction/accessibility follow-up audit · **mouse-only navigation paths
+  removed.** Backlinks, outgoing links, Recent, Today, resurfacing cards, command-palette results,
+  quick-switcher results, rendered wikilinks, and note/folder tree rows now expose native button or
+  keyboard-button semantics; the resurfacing card keeps its dismiss action separate, and a global
+  `:focus-visible` token makes keyboard focus legible across the welcome screen and shell. Drag/drop
+  and context-menu surfaces remain pointer gestures by design. **Verification:** 449 TypeScript
+  tests / 57 files, lint, `tsc --noEmit`, production build, Playwright e2e 6/6, and `git diff
+  --check` green.
+
 - 2026-07-13 · passes 10–11 audit · **implemented missing user-facing contracts rather than leaving
   them as stubs:** graph health now lists/open-or-creates orphan notes and unresolved links; Settings
   now exposes bundled/custom theme JSON, live token + graph palette colors, CSS snippet toggles with

@@ -30,6 +30,11 @@ function WorthRevisiting() {
 
   if (cards.length === 0) return null;
 
+  const openCard = (relPath: string): void => {
+    void useVaultStore.getState().setActiveNote(relPath);
+    setTodayViewOpen(false);
+  };
+
   return (
     <div className="mt-6">
       <h3 className="mb-1 text-sm font-semibold">Worth revisiting</h3>
@@ -41,21 +46,18 @@ function WorthRevisiting() {
           <div
             key={c.relPath}
             className="flex items-center gap-2 rounded px-3 py-2 text-sm"
-            style={{ border: '1px solid var(--border)', cursor: 'pointer' }}
-            onClick={() => {
-              void useVaultStore.getState().setActiveNote(c.relPath);
-              setTodayViewOpen(false);
-            }}
+            style={{ border: '1px solid var(--border)', color: 'var(--fg)' }}
           >
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openCard(c.relPath)}>
+              <span className="block truncate font-medium">
                 {repo?.getParsed(c.relPath)?.title ?? c.relPath}
-              </div>
-              <div className="truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
+              </span>
+              <span className="block truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
                 {c.reason}
-              </div>
-            </div>
+              </span>
+            </button>
             <button
+              type="button"
               title="Don't suggest this note again"
               className="rounded px-1.5"
               style={{ color: 'var(--fg-muted)' }}
@@ -128,18 +130,19 @@ export function TodayView() {
       ) : (
         <div className="flex flex-col gap-1">
           {notes.map((n) => (
-            <div
+            <button
+              type="button"
               key={n.relPath}
-              className="cursor-pointer rounded px-3 py-2 text-sm"
-              style={{ border: '1px solid var(--border)' }}
+              className="w-full rounded px-3 py-2 text-left text-sm"
+              style={{ border: '1px solid var(--border)', color: 'var(--fg)' }}
               onClick={() => {
                 void useVaultStore.getState().setActiveNote(n.relPath);
                 setTodayViewOpen(false);
               }}
             >
-              <div className="font-medium">{n.title}</div>
-              <div style={{ color: 'var(--fg-muted)' }}>{n.relPath}</div>
-            </div>
+              <span className="block font-medium">{n.title}</span>
+              <span className="block" style={{ color: 'var(--fg-muted)' }}>{n.relPath}</span>
+            </button>
           ))}
         </div>
       )}

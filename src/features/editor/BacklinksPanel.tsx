@@ -72,19 +72,20 @@ export function BacklinksPanel() {
         const content = contents[b.fromPath];
         const context = content ? lineContext(content, b.link.offsetStart) : '';
         return (
-          <div
+          <button
+            type="button"
             key={`${b.fromPath}-${b.link.offsetStart}-${i}`}
-            className="rounded p-2"
-            style={{ border: '1px solid var(--border)', cursor: 'pointer' }}
+            className="w-full rounded p-2 text-left"
+            style={{ border: '1px solid var(--border)', color: 'var(--fg)' }}
             onClick={() => void useVaultStore.getState().setActiveNote(b.fromPath)}
           >
-            <div className="truncate font-medium">{repo?.getParsed(b.fromPath)?.title ?? b.fromPath}</div>
+            <span className="block truncate font-medium">{repo?.getParsed(b.fromPath)?.title ?? b.fromPath}</span>
             {context && (
-              <div className="truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
+              <span className="block truncate text-xs" style={{ color: 'var(--fg-muted)' }}>
                 {context}
-              </div>
+              </span>
             )}
-          </div>
+          </button>
         );
       })}
     </div>

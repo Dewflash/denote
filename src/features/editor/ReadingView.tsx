@@ -64,17 +64,17 @@ function renderInlineText(text: string, key: string, ctx: RenderCtx): ReactNode[
       start: tok.start,
       end: tok.end,
       node: (
-        <a
+        <button
+          type="button"
           key={`${key}-link-${tok.start}`}
-          className={ghost ? 'cm-denote-link cm-denote-link-ghost' : 'cm-denote-link'}
-          onClick={(e) => {
-            e.preventDefault();
+          className={`${ghost ? 'cm-denote-link cm-denote-link-ghost' : 'cm-denote-link'} border-0 bg-transparent p-0`}
+          onClick={() => {
             if (resolution.kind === 'note') void useVaultStore.getState().setActiveNote(resolution.relPath);
             else void useVaultStore.getState().createGhostAndOpen(tok.target);
           }}
         >
           {display}
-        </a>
+        </button>
       ),
     });
   }

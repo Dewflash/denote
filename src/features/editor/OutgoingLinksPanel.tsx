@@ -55,10 +55,11 @@ export function OutgoingLinksPanel() {
       {links.map(({ link, resolution }, i) => {
         const ghost = resolution.kind === 'ghost';
         return (
-          <div
+          <button
+            type="button"
             key={`${link.offsetStart}-${i}`}
-            className="rounded px-2 py-1"
-            style={{ cursor: 'pointer' }}
+            className="w-full rounded px-2 py-1 text-left"
+            style={{ color: 'var(--fg)' }}
             onClick={() => {
               if (resolution.kind === 'note') void useVaultStore.getState().setActiveNote(resolution.relPath);
               else void useVaultStore.getState().createGhostAndOpen(link.targetTitle);
@@ -67,7 +68,7 @@ export function OutgoingLinksPanel() {
             <span className={ghost ? 'cm-denote-link cm-denote-link-ghost' : 'cm-denote-link'}>
               {link.alias ?? link.targetTitle}
             </span>
-          </div>
+          </button>
         );
       })}
     </div>

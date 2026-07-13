@@ -51,12 +51,13 @@ export function RecentNotes() {
         Recent
       </div>
       {recent.map((n) => (
-        <div
+        <button
+          type="button"
           key={n.relPath}
-          className="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm"
+          className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-sm"
           style={{
-            cursor: 'pointer',
             backgroundColor: activeNotePath === n.relPath ? 'var(--bg-panel)' : 'transparent',
+            color: 'var(--fg)',
           }}
           onClick={() => void useVaultStore.getState().setActiveNote(n.relPath)}
         >
@@ -64,7 +65,7 @@ export function RecentNotes() {
           <span className="shrink-0 text-xs" style={{ color: 'var(--fg-muted)' }}>
             {relativeTime(n.mtime, now)}
           </span>
-        </div>
+        </button>
       ))}
     </div>
   );

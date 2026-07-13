@@ -65,8 +65,18 @@ function NoteRow({
         backgroundColor: isActive ? 'var(--bg-panel)' : 'transparent',
         cursor: isAsset ? 'default' : 'pointer',
       }}
+      role={isAsset || isRenaming ? undefined : 'button'}
+      tabIndex={isAsset || isRenaming ? undefined : 0}
+      aria-current={isActive ? 'page' : undefined}
       onClick={() => {
         if (!isAsset) void useVaultStore.getState().setActiveNote(node.path);
+      }}
+      onKeyDown={(e) => {
+        if (isAsset || e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          void useVaultStore.getState().setActiveNote(node.path);
+        }
       }}
       onDoubleClick={() => {
         if (!isAsset) onRequestRename(node.path);
@@ -135,6 +145,10 @@ function FolderRow({
           color: dropActive ? '#fff' : 'inherit',
           cursor: 'pointer',
         }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-pressed={isSelected}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes('application/x-denote-note')) return;
           e.preventDefault();
@@ -153,6 +167,14 @@ function FolderRow({
         onClick={() => {
           setExpanded((v) => !v);
           setSelectedFolder(node.path);
+        }}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((v) => !v);
+            setSelectedFolder(node.path);
+          }
         }}
       >
         <span style={{ color: 'var(--fg-muted)' }}>{expanded ? '▾' : '▸'}</span>
