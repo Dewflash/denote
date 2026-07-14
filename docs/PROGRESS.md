@@ -1039,6 +1039,16 @@ what is needed and why, and continues with the rest of the pass if independent.
   `docs/reference/hash_spec_test.mjs`, and `git diff --check` are green. Native screenshot capture
   and owner Tauri/Safari/private-GitHub checks remain external.
 
+## RECOVERY TRACK — supersedes v1 sign-off (2026-07-12)
+
+Owner verdict on the running app: broken where it matters (graph readability, file/folder
+UX, and — decisively — no visible AI linking). Architect diagnosis: the AI chain fails
+invisibly at runtime (sidecar verified alive by direct probe; no status surface exists, so
+model-download/queue/park failures are silent), plus unspecified desktop-UX parity.
+**`docs/RECOVERY.md` R-1…R-4 are now the only path to v1; each closes ONLY on owner
+confirmation in the running app.** The e2e condition from checkpoint E folds into R-3/R-4
+sessions. Test suites remain necessary but are explicitly not sufficient to close R-items.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual
