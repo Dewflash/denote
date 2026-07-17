@@ -19,8 +19,19 @@ import { invoke } from '@tauri-apps/api/core';
 import { Repository, type IndexChangeHook } from './repository';
 import { OpLog } from './opLog';
 import { createSearchIndexBinding } from './vaultSearchSync';
-import { createVaultAiBinding, type AiQueueState, type VaultAiEngine } from './vaultAiEngine';
-import { createVaultEmbeddingBinding, type VaultEmbeddingEngine } from './vaultEmbeddings';
+import {
+  createVaultAiBinding,
+  type AiNoteDiagnostics,
+  type AiQueueSnapshot,
+  type AiQueueState,
+  type VaultAiEngine,
+} from './vaultAiEngine';
+import {
+  createVaultEmbeddingBinding,
+  type EmbeddingStatusSnapshot,
+  type SimilarityCandidateDiagnostic,
+  type VaultEmbeddingEngine,
+} from './vaultEmbeddings';
 import { createVaultOntologyBinding, type VaultOntologyEngine, type OrganizeResult, type OrganizePhase, type CancelToken } from './vaultOntologyEngine';
 import { useGraphStore } from './graphStore';
 import { useUiStore } from './uiStore';
@@ -35,7 +46,7 @@ import {
   DEFAULT_DEEP_MODEL,
   type EnrichResult,
 } from '../services/aiClient';
-import { createTauriEmbeddingsBackend } from '../services/embeddings';
+import { createTauriEmbeddingsBackend, type EmbeddingModelHealth } from '../services/embeddings';
 import { suggestCaptureWithClients } from '../services/captureSuggestions';
 import type { AiAnnotation, SimilarPair } from '../domain';
 import type { AiLinkSuggestion } from '../domain/graphBuilder';
@@ -99,8 +110,24 @@ export interface AiConsentPrompt {
 
 export interface AppleAiHealth {
   status: 'unknown' | 'available' | 'unavailable';
+  spawned?: boolean;
   reason?: string;
   modelVersion?: string;
+}
+
+export interface AiVaultStatus {
+  vaultId: string;
+  name: string;
+  queue: AiQueueSnapshot;
+  embedding: EmbeddingStatusSnapshot;
+}
+
+export interface ActiveNoteAiStatus {
+  relPath: string;
+  title: string;
+  enrichment: AiNoteDiagnostics;
+  embedding: ReturnType<VaultEmbeddingEngine['noteState']>;
+  similarity: SimilarityCandidateDiagnostic[];
 }
 
 interface VaultStoreState {
@@ -129,6 +156,8 @@ interface VaultStoreState {
   aiConsentPrompt: AiConsentPrompt | null;
   /** Live Apple Foundation Models capability, surfaced so queued work is explainable. */
   appleAiHealth: AppleAiHealth;
+  /** Live Rust embedding-model lifecycle, including real Hugging Face download progress. */
+  embeddingModelHealth: EmbeddingModelHealth;
 
   openVaultAt: (root: string) => Promise<void>;
   createVaultAt: (root: string) => Promise<void>;
@@ -148,6 +177,9 @@ interface VaultStoreState {
   getSearchIndex: (vaultId: string) => NoteSearchIndex | undefined;
   /** The active vault's AI engine (pass 6): suggestions + accept/reject + manual enrichment. */
   getActiveAiEngine: () => VaultAiEngine | undefined;
+  aiVaultStatuses: () => AiVaultStatus[];
+  activeNoteAiStatus: () => ActiveNoteAiStatus | null;
+  retryAiVault: (vaultId: string) => void;
   /** Vetted ai-similar pairs (pass 7, S15) across the given open vaults, for the graph. */
   graphSimilarPairs: (vaultIds: string[]) => SimilarPair[];
   /** Live AI link suggestions, shown as dashed graph edges until accepted. */
@@ -545,6 +577,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
           // A note's vectors just changed — (re)compute cross-vault edges (S24), debounced.
           crossVaultEngine.schedule();
         },
+        onProgress: () => set((s) => ({ revision: s.revision + 1 })),
       });
       const aiBinding = createVaultAiBinding({
         router: sharedRouter,
@@ -652,6 +685,10 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     relocateError: null,
     aiConsentPrompt: null,
     appleAiHealth: { status: 'unknown' },
+    embeddingModelHealth: {
+      status: 'not-downloaded',
+      modelId: 'intfloat/multilingual-e5-small',
+    },
     anthropicKeyPresent: false,
 
     openVaultAt: (root) => openAndActivate(root, 'open'),
@@ -803,6 +840,45 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       const id = get().vaultId;
       return id ? aiEngines.get(id) : undefined;
     },
+    aiVaultStatuses: () => [...repos.values()].map((repo) => {
+      const entry = get().registry.find((vault) => vault.id === repo.vaultId);
+      return {
+        vaultId: repo.vaultId,
+        name: entry?.name ?? vaultLabelFromPath(repo.root),
+        queue: aiEngines.get(repo.vaultId)?.queueSnapshot() ?? {
+          counts: { pending: 0, running: 0, parked: 0 },
+          jobs: [],
+        },
+        embedding: embeddingEngines.get(repo.vaultId)?.status() ?? {
+          state: 'not-started' as const,
+          model: 'intfloat/multilingual-e5-small',
+          done: 0,
+          total: 0,
+        },
+      };
+    }),
+    activeNoteAiStatus: () => {
+      const vaultId = get().vaultId;
+      const relPath = get().activeNotePath;
+      const repo = get().repo;
+      if (!vaultId || !relPath || !repo) return null;
+      const note = repo.getParsed(relPath);
+      const ai = aiEngines.get(vaultId);
+      const embeddings = embeddingEngines.get(vaultId);
+      if (!note || !ai || !embeddings) return null;
+      return {
+        relPath,
+        title: note.title,
+        enrichment: ai.noteDiagnostics(relPath),
+        embedding: embeddings.noteState(relPath),
+        similarity: embeddings.similarityDiagnosticsFor(relPath),
+      };
+    },
+    retryAiVault: (vaultId) => {
+      aiEngines.get(vaultId)?.retry();
+      embeddingEngines.get(vaultId)?.retry();
+      set((s) => ({ revision: s.revision + 1 }));
+    },
     graphSimilarPairs: (vaultIds) => [
       ...vaultIds.flatMap((id) => embeddingEngines.get(id)?.similarPairs() ?? []),
       // Cross-vault ai-similar edges (S24) render only when BOTH endpoints are in the selected set.
@@ -848,7 +924,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     async refreshAppleAiStatus(retry = false) {
       const client = sharedRouter.getClient('apple');
       if (!client) {
-        set({ appleAiHealth: { status: 'unavailable', reason: 'Apple backend is not registered.' } });
+        set({ appleAiHealth: { status: 'unavailable', spawned: false, reason: 'Apple backend is not registered.' } });
         return;
       }
       try {
@@ -858,6 +934,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         set({
           appleAiHealth: {
             status: capabilities.available ? 'available' : 'unavailable',
+            spawned: capabilities.spawned,
             reason: capabilities.reason,
             modelVersion: capabilities.modelVersion,
           },
@@ -866,6 +943,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         set({
           appleAiHealth: {
             status: 'unavailable',
+            spawned: false,
             reason: err instanceof Error ? err.message : String(err),
           },
         });
@@ -1127,6 +1205,42 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
   };
 });
+
+let embeddingStatusListenerStarted = false;
+async function startEmbeddingStatusListener(): Promise<void> {
+  if (embeddingStatusListenerStarted) return;
+  embeddingStatusListenerStarted = true;
+  let sawEvent = false;
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    await listen<EmbeddingModelHealth>('denote://embedding-status', (event) => {
+      sawEvent = true;
+      useVaultStore.setState((state) => ({
+        embeddingModelHealth: event.payload,
+        revision: state.revision + 1,
+      }));
+    });
+  } catch {
+    // Plain Vite previews do not have the Tauri event bridge; the initial status remains honest.
+    return;
+  }
+  // One startup probe (no download, no model load) so the panel truthfully shows
+  // not-downloaded vs ready BEFORE any embed call. A live event that raced in wins — it is
+  // strictly newer information.
+  try {
+    const status = await invoke<EmbeddingModelHealth>('embedding_model_status');
+    if (!sawEvent) {
+      useVaultStore.setState((state) => ({
+        embeddingModelHealth: status,
+        revision: state.revision + 1,
+      }));
+    }
+  } catch {
+    // No Tauri runtime / command not present — keep the honest default.
+  }
+}
+
+void startEmbeddingStatusListener();
 
 // Fire-and-forget: populate the registry from disk once the store exists. Never blocks vault
 // open/create (both work from a folder path directly, independent of the registry load).

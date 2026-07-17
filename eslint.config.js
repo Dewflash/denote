@@ -5,7 +5,9 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "src-tauri/target", "sidecar/apple-ai/.build"] },
+  // `.claude/` holds agent-session scratch (including throwaway git worktrees that duplicate the
+  // whole repo); linting it double-reports every file and confuses the typed parser's rootDir.
+  { ignores: ["dist", "src-tauri/target", "sidecar/apple-ai/.build", ".claude"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

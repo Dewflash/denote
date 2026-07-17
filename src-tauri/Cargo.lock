@@ -931,6 +931,7 @@ version = "0.1.0"
 dependencies = [
  "fastembed",
  "git2",
+ "hf-hub",
  "notify",
  "security-framework",
  "serde",

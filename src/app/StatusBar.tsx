@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import { useVaultStore } from '../state/vaultStore';
 import { deriveGraphHealth } from './graphHealth';
+import { AiStatusPanel } from '../features/ai';
 
 function wordCount(text: string): number {
   const trimmed = text.trim();
@@ -18,6 +19,9 @@ export function StatusBar() {
   const buffer = useVaultStore((s) => s.buffer);
   const repo = useVaultStore((s) => s.repo);
   const revision = useVaultStore((s) => s.revision);
+  const embeddingModelHealth = useVaultStore((s) => s.embeddingModelHealth);
+  const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
+  const aiVaultStatuses = useVaultStore((s) => s.aiVaultStatuses);
 
   const words = useMemo(() => (buffer ? wordCount(buffer.content) : 0), [buffer]);
   const activeEntry = registry.find((v) => v.id === vaultId);
@@ -27,8 +31,14 @@ export function StatusBar() {
     return repo ? deriveGraphHealth(repo.index.allNotes(), repo.index.getLinkIndex()) : { orphans: [], unresolvedLinks: [] };
   }, [repo, revision]);
   const [open, setOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
+  const parkedJobs = useMemo(() => {
+    void revision; // parked counts live in the per-vault engines; revision is their change signal
+    return aiVaultStatuses().reduce((total, vault) => total + vault.queue.counts.parked, 0);
+  }, [aiVaultStatuses, revision]);
+  const aiAttention = parkedJobs > 0 || appleUnavailable(appleAiHealth.status) || embeddingModelHealth.status === 'error';
 
   async function openGhost(sourcePath: string, target: string): Promise<void> {
     await setActiveNote(sourcePath);
@@ -131,8 +141,28 @@ export function StatusBar() {
             )}
           </>
         )}
-        {buffer && <span>{words} words</span>}
+        <div className="flex items-center gap-3">
+          <span className="relative">
+            <button
+              type="button"
+              title="Open live AI status"
+              aria-expanded={aiOpen}
+              aria-controls="status-ai-panel"
+              onClick={() => setAiOpen((value) => !value)}
+              className="denote-status-ai rounded px-1"
+              style={{ color: aiAttention ? 'var(--danger)' : 'var(--fg-muted)' }}
+            >
+              ⚡ AI{embeddingModelHealth.status === 'downloading' ? ` ${embeddingModelHealth.percent ?? 0}%` : ''}
+            </button>
+            {aiOpen && <AiStatusPanel onClose={() => setAiOpen(false)} />}
+          </span>
+          {buffer && <span>{words} words</span>}
+        </div>
       </span>
     </div>
   );
+}
+
+function appleUnavailable(status: string): boolean {
+  return status === 'unavailable';
 }

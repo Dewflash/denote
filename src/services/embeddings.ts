@@ -47,6 +47,19 @@ export interface EmbeddingPutEntry {
   vector: number[];
 }
 
+export type EmbeddingModelHealthState = 'not-downloaded' | 'downloading' | 'ready' | 'error';
+
+/** Live Rust → UI model lifecycle event. Percent is real file-download progress when downloading. */
+export interface EmbeddingModelHealth {
+  status: EmbeddingModelHealthState;
+  modelId: string;
+  percent?: number;
+  file?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  detail?: string;
+}
+
 /** The transport surface the similarity engine depends on (Tauri impl below; mock in tests). */
 export interface EmbeddingsBackend {
   embed(texts: string[]): Promise<EmbedResult>;

@@ -31,6 +31,10 @@ notify = "6"
 # binary download); the embedding STORE + topK (embeddings.rs) compile and are unit-tested
 # WITHOUT it, so `cargo test --lib` verifies the S14 format everywhere. Production enables it.
 fastembed = { version = "4", optional = true }
+# Directly used only for its custom download-progress callback. fastembed already owns this
+# Hugging Face transport; the dependency keeps model downloads visible to the Tauri UI instead of
+# leaving progress in an invisible console bar.
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
 
 # security-framework: macOS Keychain storage for the BYO Anthropic API key (D13 — keys in the
 # Keychain, never in files). macOS-only; keychain.rs is cfg-guarded so non-macOS builds still
@@ -43,4 +47,4 @@ security-framework = "3"
 # (`--no-default-features`) in constrained environments to build the store/commands without the
 # ONNX stack (embed_texts then returns a typed "unavailable" error and jobs queue).
 default = ["local-embeddings"]
-local-embeddings = ["dep:fastembed"]
+local-embeddings = ["dep:fastembed", "dep:hf-hub"]

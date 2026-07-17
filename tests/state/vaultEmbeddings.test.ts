@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Repository } from '../../src/state/repository';
-import { VaultEmbeddingEngine } from '../../src/state/vaultEmbeddings';
+import { VaultEmbeddingEngine, type VaultEmbeddingDeps } from '../../src/state/vaultEmbeddings';
 import { SimilarStore } from '../../src/services/similarStore';
 import { AiRouter, DEFAULT_ROUTING, MockAiClient } from '../../src/services/aiClient';
 import type {
@@ -28,6 +28,7 @@ const MODEL = 'intfloat/multilingual-e5-small';
 class MockBackend implements EmbeddingsBackend {
   rows = new Map<string, { contentHash: string; vector: number[] }>();
   embedCalls: string[][] = [];
+  failPut = false;
 
   async embed(texts: string[]): Promise<EmbedResult> {
     this.embedCalls.push(texts);
@@ -38,6 +39,7 @@ class MockBackend implements EmbeddingsBackend {
     return { version: 1, model: rows.length ? MODEL : '', dim: 4, rows, free: [] };
   }
   async put(_root: string, _model: string, _dim: number, entries: EmbeddingPutEntry[]): Promise<void> {
+    if (this.failPut) throw new Error('embedding store unavailable');
     for (const e of entries) this.rows.set(e.relPath, { contentHash: e.contentHash, vector: e.vector });
   }
   async remove(_root: string, relPath: string): Promise<void> {
@@ -101,7 +103,7 @@ afterEach(async () => {
   await cleanup(root);
 });
 
-async function open(llm: AiClient) {
+async function open(llm: AiClient, deps: Partial<VaultEmbeddingDeps> = {}) {
   const holder: { engine?: VaultEmbeddingEngine } = {};
   const repo = await Repository.openVault(backendStorage, root, {
     onIndexChange: (relPath, note) => holder.engine?.noteChanged(relPath, note),
@@ -109,10 +111,23 @@ async function open(llm: AiClient) {
   const backend = new MockBackend();
   const router = new AiRouter([llm], { ...DEFAULT_ROUTING, 'label-similarity': 'mock' });
   const store = new SimilarStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
-  const engine = new VaultEmbeddingEngine(repo, backend, router, store, { disableTimers: true });
+  const engine = new VaultEmbeddingEngine(repo, backend, router, store, { disableTimers: true, ...deps });
   holder.engine = engine;
   await engine.attach();
   return { repo, engine, backend };
+}
+
+/** "Relaunch the app": a FRESH Repository + engine + SimilarStore over the same on-disk vault.
+ *  disableTimers means no similarity pass runs — whatever diagnostics the new engine reports
+ *  must come purely from the persisted store (R-1 restart hydration). */
+async function reopen(llm: AiClient = new MockAiClient()) {
+  const repo = await Repository.openVault(backendStorage, root, {});
+  const backend = new MockBackend();
+  const router = new AiRouter([llm], { ...DEFAULT_ROUTING, 'label-similarity': 'mock' });
+  const store = new SimilarStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
+  const engine = new VaultEmbeddingEngine(repo, backend, router, store, { disableTimers: true });
+  await engine.attach();
+  return { repo, engine };
 }
 
 describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
@@ -131,6 +146,12 @@ describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
     expect([p.aRelPath, p.bRelPath].sort()).toEqual(['a.md', 'b.md']);
     expect(p.reason.length).toBeGreaterThan(15);
     expect(p.aVaultId).toBe(repo.vaultId);
+    expect(engine.similarityDiagnosticsFor('a.md')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ relPath: 'b.md', gate: 'accepted' }),
+        expect.objectContaining({ relPath: 'c.md', gate: 'llm-unrelated' }),
+      ]),
+    );
   });
 
   it('exposes embedding-ranked neighbor summaries for enrichment retrieval', async () => {
@@ -203,6 +224,50 @@ describe('VaultEmbeddingEngine — embeddings + ai-similar (D6a/S15)', () => {
     await engine.syncAll();
     const embedded = backend.embedCalls.flat();
     expect(embedded).toHaveLength(1); // only a.md re-embedded
+  });
+
+  it('R-1: candidate diagnostics survive a restart via the persisted store', async () => {
+    const { repo, engine } = await open(new MockAiClient());
+    await repo.createNote('a.md', '# BOJ Policy\nThe Bank of Japan set interest rates.\n');
+    await repo.createNote('b.md', '# Fed Banking\nThe central bank adjusted monetary policy.\n');
+    await repo.createNote('c.md', '# Miso Soup\nSimmer dashi, add miso and tofu.\n');
+    await engine.syncAll();
+    const before = engine.similarityDiagnosticsFor('a.md');
+    expect(before.length).toBeGreaterThan(0);
+
+    const { engine: relaunched } = await reopen();
+    expect(relaunched.similarityDiagnosticsFor('a.md')).toEqual(before);
+    expect(relaunched.similarityDiagnosticsFor('b.md')).toEqual(engine.similarityDiagnosticsFor('b.md'));
+  });
+
+  it('R-1: the cosine-floor gate is persisted too, and an edit invalidates hydrated diagnostics', async () => {
+    const counting = new CountingLlm();
+    // Floor above the mock backend's 0.7 → every candidate is rejected before the LLM gate.
+    const { repo, engine } = await open(counting, { minCos: () => 0.9 });
+    await repo.createNote('a.md', '# A\nbanking one\n');
+    await repo.createNote('b.md', '# B\nbanking two\n');
+    await engine.syncAll();
+    expect(counting.labelCalls).toBe(0);
+    const floored = [{ relPath: 'b.md', cosine: 0.7, gate: 'cosine-floor' }];
+    expect(engine.similarityDiagnosticsFor('a.md')).toEqual(floored);
+
+    const { repo: repo2, engine: relaunched } = await reopen();
+    expect(relaunched.similarityDiagnosticsFor('a.md')).toEqual(floored);
+
+    // A content edit changes the hash → the persisted list is stale and must NOT be shown.
+    await repo2.saveNote('a.md', '# A\nbanking one, edited\n');
+    expect(relaunched.similarityDiagnosticsFor('a.md')).toEqual([]);
+  });
+
+  it('reports embedding store failures instead of leaving a sync stuck', async () => {
+    const { repo, engine, backend } = await open(new MockAiClient());
+    await repo.createNote('a.md', '# A\nbanking one\n');
+    backend.failPut = true;
+
+    await engine.syncAll();
+
+    expect(engine.status()).toEqual(expect.objectContaining({ state: 'error', error: 'embedding store unavailable' }));
+    expect(engine.noteState('a.md')).toBe('error');
   });
 
   it('drops a deleted note from the embedding store and its edges', async () => {

@@ -14,15 +14,21 @@
 // real model). Embeddings are always local (never network), so there's no D18 gate on embedding;
 // `labelSimilarity` routes through the AiRouter and inherits the D18 boundary.
 
-import { acceptSimilarity, type ParsedNote, type SimilarPair } from '../domain';
+import { acceptSimilarity, reasonPassesVacuityGate, type ParsedNote, type SimilarPair } from '../domain';
 import {
   computeEmbedPlan,
   embedTextForNote,
+  type EmbeddingIndex,
   type EmbeddingsBackend,
 } from '../services/embeddings';
 import type { AiClient, AiRouter, NoteStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
-import { SimilarStore } from '../services/similarStore';
+import {
+  SimilarStore,
+  type SimilarityCandidateDiagnostic,
+  type SimilarityCandidateGate,
+  type SimilarityRejectionGate,
+} from '../services/similarStore';
 import type { Repository } from './repository';
 
 // The expected local embedding model (D32/S14). If the store on disk carries a different model id
@@ -45,6 +51,20 @@ export interface VaultEmbeddingDeps {
 
 export const SYNC_DEBOUNCE_MS = 2000;
 
+export type EmbeddingSyncState = 'not-started' | 'syncing' | 'ready' | 'error';
+
+export interface EmbeddingStatusSnapshot {
+  state: EmbeddingSyncState;
+  model: string;
+  done: number;
+  total: number;
+  error?: string;
+}
+
+// Candidate/gate diagnostics live with the SimilarStore so they survive a restart (R-1). The
+// types are re-exported here because the UI reads them off this engine.
+export type { SimilarityCandidateDiagnostic, SimilarityCandidateGate };
+
 export class VaultEmbeddingEngine {
   private readonly dirty = new Set<string>();
   /** Notes whose vetted similarity pass has not completed yet. This survives a temporarily
@@ -55,6 +75,10 @@ export class VaultEmbeddingEngine {
   private retryAttempt = 0;
   private syncing = false;
   private inflight: Promise<unknown> = Promise.resolve();
+  private syncState: EmbeddingSyncState = 'not-started';
+  private syncProgress = { done: 0, total: 0 };
+  private syncError: string | undefined;
+  private readonly indexedHashes = new Map<string, string>();
 
   constructor(
     private readonly repo: Repository,
@@ -130,6 +154,35 @@ export class VaultEmbeddingEngine {
     }));
   }
 
+  status(): EmbeddingStatusSnapshot {
+    return {
+      state: this.syncState,
+      model: EXPECTED_EMBED_MODEL,
+      done: this.syncProgress.done,
+      total: this.syncProgress.total,
+      ...(this.syncError ? { error: this.syncError } : {}),
+    };
+  }
+
+  noteState(relPath: string): 'not-embedded' | 'embedding' | 'ready' | 'error' {
+    const hash = this.repo.getHash(relPath);
+    if (!hash) return 'not-embedded';
+    if (this.indexedHashes.get(relPath) === hash) return 'ready';
+    if (this.syncState === 'error') return 'error';
+    if (this.syncState === 'syncing' || this.dirty.has(relPath)) return 'embedding';
+    return 'not-embedded';
+  }
+
+  /** The candidate/gate list from this note's last completed similarity pass. Persisted with the
+   *  SimilarStore (R-1), so it survives a restart even though a hash-gated note never re-runs the
+   *  pass; an edited note (hash mismatch) truthfully reports "not checked yet". */
+  similarityDiagnosticsFor(relPath: string): SimilarityCandidateDiagnostic[] {
+    const current = this.store.candidateDiagnosticsFor(relPath);
+    return current && current.contentHash === this.repo.getHash(relPath)
+      ? current.candidates.map((candidate) => ({ ...candidate }))
+      : [];
+  }
+
   /** Return the local embedding-ranked neighbors as bounded prompt stubs for note enrichment.
    * Similarity edges still require the separate label gate; this method only supplies retrieval
    * context to the enrichment model (D12/S16). */
@@ -159,31 +212,39 @@ export class VaultEmbeddingEngine {
   async syncAll(): Promise<void> {
     if (this.syncing) return;
     this.syncing = true;
+    this.syncState = 'syncing';
+    this.syncError = undefined;
+    this.syncProgress = { done: 0, total: 0 };
+    this.deps.onChange?.();
     try {
       const wanted = this.wantedNotes();
       const wantedPaths = new Set(wanted.map((n) => n.relPath));
       for (const relPath of this.pendingSimilarity) {
         if (!wantedPaths.has(relPath)) this.pendingSimilarity.delete(relPath);
       }
-      let index;
+      let index: EmbeddingIndex;
       try {
         index = await this.backend.index(this.repo.root);
-      } catch {
-        this.scheduleRetry();
+      } catch (error) {
+        this.failSync(error);
         return; // backend unavailable (offline + no model yet) — jobs stay pending, retried later
       }
+      this.indexedHashes.clear();
+      for (const row of index.rows) this.indexedHashes.set(row.relPath, row.contentHash);
       const plan = computeEmbedPlan(index, wanted, EXPECTED_EMBED_MODEL);
 
       const changed: string[] = [];
       const toEmbed = plan.toEmbed;
+      this.syncProgress = { done: 0, total: toEmbed.length };
+      this.deps.onProgress?.(0, toEmbed.length);
       for (let i = 0; i < toEmbed.length; i += EMBED_CHUNK) {
         const batch = toEmbed.slice(i, i + EMBED_CHUNK);
         const texts = batch.map((b) => this.textFor(b.relPath));
         let res;
         try {
           res = await this.backend.embed(texts);
-        } catch {
-          this.scheduleRetry();
+        } catch (error) {
+          this.failSync(error);
           return; // model unavailable mid-run — leave the similarity pass pending
         }
         const entries = batch.map((b, j) => ({
@@ -191,13 +252,32 @@ export class VaultEmbeddingEngine {
           contentHash: b.contentHash,
           vector: res.vectors[j] ?? [],
         }));
-        await this.backend.put(this.repo.root, res.model, res.dim, entries);
-        for (const b of batch) changed.push(b.relPath);
-        this.deps.onProgress?.(Math.min(i + EMBED_CHUNK, toEmbed.length), toEmbed.length);
+        try {
+          await this.backend.put(this.repo.root, res.model, res.dim, entries);
+        } catch (error) {
+          this.failSync(error);
+          return;
+        }
+        for (const b of batch) {
+          changed.push(b.relPath);
+          this.indexedHashes.set(b.relPath, b.contentHash);
+        }
+        this.syncProgress = { done: Math.min(i + EMBED_CHUNK, toEmbed.length), total: toEmbed.length };
+        this.deps.onProgress?.(this.syncProgress.done, this.syncProgress.total);
       }
-      for (const rel of plan.toRemove) await this.backend.remove(this.repo.root, rel);
+      for (const rel of plan.toRemove) {
+        try {
+          await this.backend.remove(this.repo.root, rel);
+        } catch (error) {
+          this.failSync(error);
+          return;
+        }
+        this.indexedHashes.delete(rel);
+      }
 
       this.dirty.clear();
+      this.syncState = 'ready';
+      this.deps.onChange?.();
       // Similarity is attempted for changed notes and for any notes left incomplete by a prior
       // sidecar/model outage. The store's fresh/rejected gates prevent duplicate LLM calls.
       let similarityClient: AiClient;
@@ -237,6 +317,13 @@ export class VaultEmbeddingEngine {
     }
   }
 
+  private failSync(error: unknown): void {
+    this.syncState = 'error';
+    this.syncError = error instanceof Error ? error.message : String(error);
+    this.deps.onChange?.();
+    this.scheduleRetry();
+  }
+
   // ── similarity (D6a/S15) ────────────────────────────────────────────────────────
 
   private async computeSimilar(relPath: string, client: AiClient): Promise<{ done: boolean; changed: boolean }> {
@@ -247,19 +334,34 @@ export class VaultEmbeddingEngine {
 
     let neighbors;
     try {
-      neighbors = await this.backend.topK(this.repo.root, relPath, k, minCos);
+      // Ask for the top-k without the floor so the status panel can explain candidates that were
+      // found but rejected before the model gate.
+      neighbors = await this.backend.topK(this.repo.root, relPath, k, 0);
     } catch {
       return { done: false, changed: false };
     }
 
     const a = { vaultId: this.repo.vaultId, relPath };
     let changed = false;
+    const diagnostics: SimilarityCandidateDiagnostic[] = neighbors.map((n) => ({
+      relPath: n.relPath,
+      cosine: n.cos,
+      gate: n.cos < minCos ? 'cosine-floor' : 'pending',
+    }));
     for (const n of neighbors) {
       const bHash = this.repo.getHash(n.relPath);
       if (!bHash) continue;
       const b = { vaultId: this.repo.vaultId, relPath: n.relPath };
-      if (this.store.hasFresh(relPath, aHash, n.relPath, bHash)) continue;
-      if (this.store.isRejectedFresh(a, aHash, b, bHash)) continue;
+      const diagnostic = diagnostics.find((candidate) => candidate.relPath === n.relPath);
+      if (n.cos < minCos) continue;
+      if (this.store.hasFresh(relPath, aHash, n.relPath, bHash)) {
+        if (diagnostic) diagnostic.gate = 'accepted';
+        continue;
+      }
+      if (this.store.isRejectedFresh(a, aHash, b, bHash)) {
+        if (diagnostic) diagnostic.gate = this.store.rejectionGateFresh(a, aHash, b, bHash) ?? 'llm-unrelated';
+        continue;
+      }
 
       let label;
       try {
@@ -270,18 +372,25 @@ export class VaultEmbeddingEngine {
         // every other note's similarity pass. Transport/time-out failures stay pending and are
         // retried after the bounded backoff.
         if (isPermanentSimilarityFailure(error)) {
-          await this.store.recordRejected(a, aHash, b, bHash);
+          await this.store.recordRejected(a, aHash, b, bHash, 'llm-refusal');
+          if (diagnostic) diagnostic.gate = 'llm-refusal';
           continue;
         }
         return { done: false, changed };
       }
       if (acceptSimilarity(label)) {
         await this.store.upsertAccepted(relPath, aHash, n.relPath, bHash, label.reason, label.confidence);
+        if (diagnostic) diagnostic.gate = 'accepted';
         changed = true;
       } else {
-        await this.store.recordRejected(a, aHash, b, bHash);
+        const gate: SimilarityRejectionGate = label.related && !reasonPassesVacuityGate(label.reason)
+          ? 'vacuity'
+          : 'llm-unrelated';
+        await this.store.recordRejected(a, aHash, b, bHash, gate);
+        if (diagnostic) diagnostic.gate = gate;
       }
     }
+    await this.store.setCandidateDiagnostics(relPath, aHash, diagnostics);
     return { done: true, changed };
   }
 

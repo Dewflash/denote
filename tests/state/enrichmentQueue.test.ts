@@ -56,6 +56,18 @@ describe('EnrichmentQueue', () => {
     expect(q.parkedCount()).toBe(2);
   });
 
+  it('keeps the verbatim failure visible and reports all queue counts', () => {
+    const q = new EnrichmentQueue();
+    q.enqueue('pending.md', 'p');
+    q.enqueue('running.md', 'r');
+    q.markRunning('running.md');
+    q.enqueue('parked.md', 'k');
+    q.park('parked.md', 'Model Manager 1008: Apple Foundation Models could not start');
+
+    expect(q.counts()).toEqual({ pending: 1, running: 1, parked: 1 });
+    expect(q.get('parked.md')?.lastError).toBe('Model Manager 1008: Apple Foundation Models could not start');
+  });
+
   it('due() returns only pending jobs whose backoff has elapsed', () => {
     const q = new EnrichmentQueue();
     q.enqueue('a.md', 'h');

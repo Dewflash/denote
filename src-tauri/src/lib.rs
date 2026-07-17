@@ -64,6 +64,7 @@ pub fn run() {
             watcher::watch_vault,
             watcher::unwatch_vault,
             embeddings::embed_texts,
+            embeddings::embedding_model_status,
             embeddings::embeddings_index,
             embeddings::embeddings_put,
             embeddings::embeddings_remove,

@@ -1049,6 +1049,49 @@ model-download/queue/park failures are silent), plus unspecified desktop-UX pari
 confirmation in the running app.** The e2e condition from checkpoint E folds into R-3/R-4
 sessions. Test suites remain necessary but are explicitly not sufficient to close R-items.
 
+- **2026-07-18 — R-1 session: AI status panel (implementation complete; awaiting owner
+  confirmation).** The StatusBar gains a `⚡ AI` item (red when anything needs attention; shows
+  live % while the embedding model downloads) opening `AiStatusPanel`
+  (`src/features/ai/AiStatusPanel.tsx`). The panel shows, live: **Apple sidecar** — spawned
+  yes/no (supervisor fact added to `sidecar_capabilities`), capabilities available/unavailable
+  with the verbatim reason + model version, and a Retry button; **Embedding model** —
+  not-downloaded / downloading with REAL progress / ready / error (verbatim), driven by
+  `denote://embedding-status` events from Rust; **Enrichment queue per open vault** —
+  pending/running/parked counts, embedding sync state, parked jobs listed with their verbatim
+  `lastError` and per-vault Retry; **Per-note "why isn't this note linked?"** — enrichment
+  state (never-run / queued / running / parked+error / done: N suggestions, M below threshold,
+  hash-gate flag), embedding state, and every similarity candidate with its cosine and the gate
+  that decided it (accepted / cosine floor / vacuity / LLM said unrelated / LLM refused).
+  Audit gaps closed this session: (1) per-note candidate diagnostics are now PERSISTED in
+  `.denote/ai/similar.json` (`noteCandidates`, keyed by content hash) and hydrated on relaunch,
+  so a restarted app gives the same truthful candidate/gate list instead of "not checked yet"
+  — derived data per D3/D5, rebuildable by re-running the pass, and cleaned on note
+  delete/rename; (2) model download progress is one overall 0→100 across all five files
+  (files-completed + current-file byte fraction) instead of resetting per file, and `ready` is
+  emitted only on transition, not per embed batch; (3) a new `embedding_model_status` command
+  checks the hf-hub cache without downloading, probed once at listener startup, so
+  not-downloaded vs ready is truthful before any embed call; (4) Vitest coverage added for
+  `noteDiagnostics`/`queueSnapshot`, the store aggregators
+  `aiVaultStatuses`/`activeNoteAiStatus`/`retryAiVault` (new
+  `tests/state/vaultStoreAiStatus.test.ts`, full vault open over a mocked Tauri `invoke`
+  boundary), and persist→relaunch diagnostics hydration; (5) `GateLabel` JSX-as-string and
+  StatusBar's non-reactive `getState()` reads fixed. **Deviations:** `similar.json` extended
+  with the `noteCandidates` section (S15 lists pairs + failed-pair memory; this adds derived
+  diagnostics only, version stays 1, old files load unchanged); `hf-hub` added as an explicit
+  optional dependency (already in the tree via fastembed; used only for its download-progress
+  callback — Cargo.toml comment records this); `.claude/` added to ESLint ignores (agent-session
+  worktrees under it were double-linted). **Verification:** 488 TS tests / 61 files,
+  `pnpm lint`, `tsc --noEmit`, `pnpm build`, `cargo check` (default and
+  `--no-default-features`), `cargo test --lib` (19), and `hash_spec_test.mjs` all green; Vite
+  dev boot in a plain browser renders without console errors (panel itself needs an open vault
+  → Tauri). **R-1 closes only on owner confirmation:** run `pnpm tauri dev`, open your real
+  vault, click `⚡ AI` in the status bar. You should see the sidecar's spawn/capability truth,
+  the embedding model's real state (and a single continuous progress bar on first download),
+  your vault's queue with any parked job's verbatim error + working Retry, and — with a note
+  open — a truthful answer for why that note has or lacks AI links, including each similarity
+  candidate and the exact gate that rejected it. This must still be true immediately after
+  quitting and relaunching the app.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

@@ -7,3 +7,4 @@ export { AiProvisionalBar } from './AiProvisionalBar';
 export { AiConsentModal } from './AiConsentModal';
 export { OrganizeVaultModal } from './OrganizeVaultModal';
 export { DeepOrganizeModal } from './DeepOrganizeModal';
+export { AiStatusPanel } from './AiStatusPanel';

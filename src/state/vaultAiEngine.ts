@@ -36,13 +36,36 @@ import type { EnrichResult, NoteStub, TopicStub } from '../services/aiClient';
 import { DenoteError } from '../services/errors';
 import type { Op } from './opLog';
 import type { Repository } from './repository';
-import { EnrichmentQueue, QUEUE_PATH, type TakeoverConsent } from './enrichmentQueue';
+import {
+  EnrichmentQueue,
+  QUEUE_PATH,
+  type EnrichJob,
+  type EnrichmentQueueCounts,
+  type TakeoverConsent,
+} from './enrichmentQueue';
 import type { AiLinkSuggestion } from '../domain/graphBuilder';
 
 export const ENRICH_DEBOUNCE_MS = 2000;
 /** S28: bulk provisional takeover past this many notes prompts for consent once per vault. */
 export const CONSENT_THRESHOLD = 20;
 export type AiQueueState = 'idle' | 'queued' | 'parked';
+
+export interface AiQueueSnapshot {
+  counts: EnrichmentQueueCounts;
+  jobs: Array<Pick<EnrichJob, 'relPath' | 'contentHash' | 'state' | 'attempts' | 'nextAttemptAt' | 'lastError'>>;
+}
+
+export type AiNoteEnrichmentState = 'never-run' | 'queued' | 'running' | 'parked' | 'done';
+
+export interface AiNoteDiagnostics {
+  relPath: string;
+  enrichmentState: AiNoteEnrichmentState;
+  /** True when a completed hash record is why no new model call is needed. */
+  hashGated: boolean;
+  suggestionCount: number;
+  belowThresholdCount: number;
+  error?: string;
+}
 
 type BackendGate = {
   key: string;
@@ -154,6 +177,13 @@ export class VaultAiEngine {
     return this.queue.parkedCount();
   }
 
+  queueSnapshot(): AiQueueSnapshot {
+    return {
+      counts: this.queue.counts(),
+      jobs: this.queue.all().map((job) => ({ ...job })),
+    };
+  }
+
   queueStateFor(relPath: string): AiQueueState {
     const state = this.queue.get(relPath)?.state;
     return state === 'parked' ? 'parked' : state ? 'queued' : 'idle';
@@ -164,6 +194,32 @@ export class VaultAiEngine {
   hasProcessed(relPath: string): boolean {
     const hash = this.repo.getHash(relPath);
     return hash ? this.store.hasProcessedForHash(relPath, hash) : false;
+  }
+
+  noteDiagnostics(relPath: string): AiNoteDiagnostics {
+    const hash = this.repo.getHash(relPath);
+    const job = this.queue.get(relPath);
+    const currentJob = hash && job?.contentHash === hash ? job : undefined;
+    const processed = !!hash && this.store.hasProcessedForHash(relPath, hash);
+    const suggestions = hash ? this.store.liveFor(relPath, hash) : [];
+    const threshold = this.deps.threshold?.() ?? DEFAULT_TAKEOVER_THRESHOLD;
+    const enrichmentState: AiNoteEnrichmentState = currentJob?.state === 'parked'
+      ? 'parked'
+      : currentJob?.state === 'running'
+        ? 'running'
+        : currentJob?.state === 'pending'
+          ? 'queued'
+          : processed
+            ? 'done'
+            : 'never-run';
+    return {
+      relPath,
+      enrichmentState,
+      hashGated: processed,
+      suggestionCount: suggestions.length,
+      belowThresholdCount: suggestions.filter((a) => a.confidence < threshold).length,
+      ...(currentJob?.lastError ? { error: currentJob.lastError } : {}),
+    };
   }
   getConsent(): TakeoverConsent {
     return this.queue.getConsent();
@@ -531,10 +587,10 @@ export class VaultAiEngine {
       if (due.length === 0) return;
 
       const gate = await this.preflightBackend();
-      if (gate !== 'available') {
+      if (gate.status !== 'available') {
         // Preserve work across a backend or privacy-policy change. The vault may become eligible
         // again later, and retry() will re-check the route before waking these jobs.
-        this.queue.parkPending();
+        this.queue.parkPending(gate.reason ?? 'The selected AI backend is unavailable.');
         await this.persistQueue();
         this.deps.onChange?.();
         return;
@@ -549,13 +605,18 @@ export class VaultAiEngine {
           if (this.backendUnavailableReason(error)) {
             // The backend can fail after preflight. Stop immediately and park the rest of the
             // batch; an explicit Retry is the only path that wakes it again.
-            this.queue.park(job.relPath);
-            this.queue.parkPending();
+            const reason = this.backendUnavailableReason(error) ?? 'The selected AI backend is unavailable.';
+            this.queue.park(job.relPath, reason);
+            this.queue.parkPending(reason);
             await this.persistQueue();
             this.deps.onChange?.();
             break;
           }
-          this.queue.fail(job.relPath, this.now());
+          this.queue.fail(
+            job.relPath,
+            this.now(),
+            error instanceof Error ? error.message : String(error),
+          );
         }
         await this.persistQueue();
       }
@@ -601,19 +662,21 @@ export class VaultAiEngine {
     return this.backendGate;
   }
 
-  private async preflightBackend(): Promise<PumpGate> {
+  private async preflightBackend(): Promise<{ status: PumpGate; reason?: string }> {
     const localOnly = this.deps.localOnly?.() ?? false;
     let client;
     try {
       client = this.router.route('enrich', { localOnly });
     } catch (error) {
       if (error instanceof DenoteError && error.kind === 'local-only-blocked') {
-        return 'local-only-blocked';
+        return { status: 'local-only-blocked', reason: error.message };
       }
-      return 'unavailable';
+      return { status: 'unavailable', reason: error instanceof Error ? error.message : String(error) };
     }
     const capabilities = await this.checkCapabilities(client, localOnly);
-    return capabilities.available ? 'available' : 'unavailable';
+    return capabilities.available
+      ? { status: 'available' }
+      : { status: 'unavailable', reason: capabilities.reason };
   }
 
   private backendUnavailableReason(error: unknown): string | null {

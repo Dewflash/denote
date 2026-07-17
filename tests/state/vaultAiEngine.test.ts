@@ -148,6 +148,66 @@ describe('VaultAiEngine — enrichment + takeover', () => {
     expect(engine['queue'].get('Current.md')).toMatchObject({ state: 'pending' });
   });
 
+  it('R-1: noteDiagnostics walks queued → done with truthful suggestion counts', async () => {
+    await backend.writeNote(root, 'Yen.md', '# Yen\nThe BOJ discussed interest rates and the yen.\n');
+    await backend.writeNote(root, 'Rates.md', '# Rates\nInterest rates and bond yields.\n');
+    const { engine } = await open();
+
+    // Seeded on open, not yet run.
+    expect(engine.noteDiagnostics('Yen.md')).toMatchObject({
+      relPath: 'Yen.md',
+      enrichmentState: 'queued',
+      hashGated: false,
+      suggestionCount: 0,
+      belowThresholdCount: 0,
+    });
+
+    await engine.enrichNow('Yen.md');
+
+    const done = engine.noteDiagnostics('Yen.md');
+    expect(done.enrichmentState).toBe('done');
+    expect(done.hashGated).toBe(true);
+    expect(done.suggestionCount).toBeGreaterThan(0);
+    expect(done.suggestionCount).toBe(engine.suggestionsFor('Yen.md').length);
+    expect(done.belowThresholdCount).toBe(
+      engine.suggestionsFor('Yen.md').filter((a) => a.confidence < 0.75).length,
+    );
+    expect(done.error).toBeUndefined();
+
+    // A note never seen by the pipeline reports never-run, not a fake success.
+    expect(engine.noteDiagnostics('Missing.md').enrichmentState).toBe('never-run');
+  });
+
+  it('R-1: queueSnapshot and noteDiagnostics expose the verbatim parked error', async () => {
+    const unavailable = new CountingClient(new MockAiClient(), 'apple');
+    unavailable.available = false;
+    const router = new AiRouter([unavailable], { ...DEFAULT_ROUTING, enrich: 'apple' });
+    await backend.writeNote(root, 'One.md', '# One\nBanking policy.\n');
+    const { engine } = await open({ router });
+
+    await engine['runPump']();
+
+    const snapshot = engine.queueSnapshot();
+    expect(snapshot.counts).toEqual({ pending: 0, running: 0, parked: 1 });
+    expect(snapshot.jobs).toHaveLength(1);
+    expect(snapshot.jobs[0]).toMatchObject({
+      relPath: 'One.md',
+      state: 'parked',
+      lastError: 'test backend unavailable',
+    });
+
+    const parked = engine.noteDiagnostics('One.md');
+    expect(parked.enrichmentState).toBe('parked');
+    expect(parked.error).toBe('test backend unavailable');
+
+    // Retry wakes the job and clears the stale error.
+    unavailable.available = true;
+    engine.retry();
+    expect(engine.queueSnapshot().counts).toEqual({ pending: 1, running: 0, parked: 0 });
+    expect(engine.noteDiagnostics('One.md')).toMatchObject({ enrichmentState: 'queued' });
+    expect(engine.noteDiagnostics('One.md').error).toBeUndefined();
+  });
+
   it('parks the whole batch after one unavailable capability check and resumes on retry', async () => {
     const unavailable = new CountingClient(new MockAiClient(), 'apple');
     unavailable.available = false;

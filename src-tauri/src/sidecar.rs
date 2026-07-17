@@ -266,9 +266,18 @@ pub fn sidecar_capabilities(
         sup.retry();
     }
     match sup.call("capabilities", Value::Null) {
-        Ok(v) => Ok(v),
+        Ok(mut v) => {
+            if let Value::Object(ref mut object) = v {
+                // The Swift protocol reports model capabilities, while the supervisor owns the
+                // process lifecycle. Add that fact to the same live status response so the UI can
+                // distinguish "spawned but unavailable" from "never spawned".
+                object.insert("spawned".to_string(), Value::Bool(true));
+            }
+            Ok(v)
+        }
         Err(reason) => Ok(serde_json::json!({
             "available": false,
+            "spawned": sup.proc.is_some(),
             "reason": reason,
             "maxInputTokens": 0,
             "supportsGuidedJson": false,

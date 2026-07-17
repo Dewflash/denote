@@ -15,6 +15,8 @@ export type AiTask = 'summarize' | 'enrich' | 'label-similarity' | 'deep-organiz
 
 export interface AiCapabilities {
   available: boolean;
+  /** Supervisor-owned process fact; present for the Apple sidecar response. */
+  spawned?: boolean;
   reason?: string;
   maxInputTokens: number;
   supportsGuidedJson: boolean;

@@ -12,6 +12,8 @@ export interface EnrichJob {
   attempts: number;
   /** Epoch ms; a pending job is due when `now >= nextAttemptAt`. */
   nextAttemptAt: number;
+  /** The exact last failure returned by the backend or pipeline. */
+  lastError?: string;
 }
 
 /** Retry backoff after failure: 5s, 30s, 2m — then parked (S12). `attempt` is 1-based. */
@@ -29,6 +31,12 @@ interface QueueFile {
   version: 1;
   jobs: EnrichJob[];
   takeoverConsent: TakeoverConsent;
+}
+
+export interface EnrichmentQueueCounts {
+  pending: number;
+  running: number;
+  parked: number;
 }
 
 /** In-memory queue: at most one job per relPath (S12); a newer contentHash replaces an older
@@ -51,17 +59,20 @@ export class EnrichmentQueue {
   }
 
   /** Park one job until an explicit backend retry wakes it. */
-  park(relPath: string): void {
+  park(relPath: string, error?: string): void {
     const job = this.jobs.get(relPath);
-    if (job) job.state = 'parked';
+    if (!job) return;
+    job.state = 'parked';
+    if (error) job.lastError = error;
   }
 
   /** Park all pending work when a capability probe says the backend is unavailable. */
-  parkPending(): number {
+  parkPending(error?: string): number {
     let parked = 0;
     for (const job of this.jobs.values()) {
       if (job.state !== 'pending') continue;
       job.state = 'parked';
+      if (error) job.lastError = error;
       parked += 1;
     }
     return parked;
@@ -73,6 +84,12 @@ export class EnrichmentQueue {
 
   parkedCount(): number {
     return this.all().filter((j) => j.state === 'parked').length;
+  }
+
+  counts(): EnrichmentQueueCounts {
+    const counts: EnrichmentQueueCounts = { pending: 0, running: 0, parked: 0 };
+    for (const job of this.jobs.values()) counts[job.state] += 1;
+    return counts;
   }
 
   /** Pending jobs due at `now`, oldest-scheduled first. Excludes running/parked. */
@@ -88,10 +105,11 @@ export class EnrichmentQueue {
   }
 
   /** Apply a failure: schedule a backoff retry, or park once retries are exhausted (S12). */
-  fail(relPath: string, now: number): EnrichJob | undefined {
+  fail(relPath: string, now: number, error?: string): EnrichJob | undefined {
     const j = this.jobs.get(relPath);
     if (!j) return undefined;
     j.attempts += 1;
+    if (error) j.lastError = error;
     const delay = backoffDelay(j.attempts);
     if (delay === null) {
       j.state = 'parked';
@@ -117,6 +135,7 @@ export class EnrichmentQueue {
       job.state = 'pending';
       job.attempts = 0;
       job.nextAttemptAt = now;
+      delete job.lastError;
       resumed += 1;
     }
     return resumed;
@@ -148,6 +167,7 @@ export class EnrichmentQueue {
         state: j.state === 'parked' ? 'parked' : 'pending', // running → pending on restart
         attempts: typeof j.attempts === 'number' ? j.attempts : 0,
         nextAttemptAt: typeof j.nextAttemptAt === 'number' ? j.nextAttemptAt : 0,
+        ...(typeof j.lastError === 'string' ? { lastError: j.lastError } : {}),
       });
     }
   }

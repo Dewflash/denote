@@ -34,17 +34,44 @@ export interface RejectedPairRecord {
   key: string;
   aHash: string;
   bHash: string;
+  /** Which S15 gate rejected the candidate. Older stores omit this and are treated as unrelated. */
+  gate?: 'vacuity' | 'llm-unrelated' | 'llm-refusal';
+}
+
+export type SimilarityRejectionGate = NonNullable<RejectedPairRecord['gate']>;
+
+/** Every S15 gate outcome for a retrieved candidate, including the pre-LLM cosine floor and the
+ *  in-flight `pending` state. `accepted` means the pair became a real ai-similar edge. */
+export type SimilarityCandidateGate = 'accepted' | SimilarityRejectionGate | 'cosine-floor' | 'pending';
+
+export interface SimilarityCandidateDiagnostic {
+  relPath: string;
+  cosine: number;
+  gate: SimilarityCandidateGate;
+}
+
+/** The full candidate/gate list of ONE note's last completed similarity pass, keyed by the
+ *  content hash it ran at. Persisted (R-1) so the status panel can answer "why isn't this note
+ *  linked?" truthfully after a restart, when the pipeline is hash-gated and does not re-run.
+ *  Derived data (D3/D5): rebuildable by re-running the similarity pass, never a source of truth. */
+export interface NoteCandidateDiagnostics {
+  relPath: string;
+  contentHash: string;
+  candidates: SimilarityCandidateDiagnostic[];
 }
 
 interface SimilarFile {
   version: 1;
   pairs: SimilarPairRecord[];
   rejectedPairs: RejectedPairRecord[];
+  /** Optional so pre-R-1 stores load unchanged (they simply have no diagnostics yet). */
+  noteCandidates?: NoteCandidateDiagnostics[];
 }
 
 export class SimilarStore {
   private pairs: SimilarPairRecord[] = [];
   private rejected: RejectedPairRecord[] = [];
+  private noteCandidates: NoteCandidateDiagnostics[] = [];
 
   constructor(private readonly io: InternalStoreIO) {}
 
@@ -55,9 +82,11 @@ export class SimilarStore {
       const f = result.data as unknown as SimilarFile;
       this.pairs = f.pairs ?? [];
       this.rejected = f.rejectedPairs ?? [];
+      this.noteCandidates = f.noteCandidates ?? [];
     } catch {
       this.pairs = [];
       this.rejected = [];
+      this.noteCandidates = [];
     }
   }
 
@@ -87,6 +116,13 @@ export class SimilarStore {
     return this.rejected.some((r) => r.key === key && r.aHash === h1 && r.bHash === h2);
   }
 
+  rejectionGateFresh(a: PairEndpoint, aHash: string, b: PairEndpoint, bHash: string): SimilarityRejectionGate | undefined {
+    const key = pairKey(a, b);
+    const [h1, h2] = [aHash, bHash].sort();
+    const record = this.rejected.find((r) => r.key === key && r.aHash === h1 && r.bHash === h2);
+    return record?.gate ?? (record ? 'llm-unrelated' : undefined);
+  }
+
   /** Record (or refresh) an accepted pair, keyed by owner+other (one edge per pair, S15 dedup). */
   async upsertAccepted(
     aRel: string,
@@ -107,20 +143,74 @@ export class SimilarStore {
     await this.persist();
   }
 
-  async recordRejected(a: PairEndpoint, aHash: string, b: PairEndpoint, bHash: string): Promise<void> {
+  async recordRejected(
+    a: PairEndpoint,
+    aHash: string,
+    b: PairEndpoint,
+    bHash: string,
+    gate: SimilarityRejectionGate = 'llm-unrelated',
+  ): Promise<void> {
     const key = pairKey(a, b);
     const [h1, h2] = [aHash, bHash].sort();
-    if (!this.rejected.some((r) => r.key === key && r.aHash === h1 && r.bHash === h2)) {
-      this.rejected.push({ key, aHash: h1, bHash: h2 });
-      await this.persist();
+    const existing = this.rejected.find((r) => r.key === key && r.aHash === h1 && r.bHash === h2);
+    if (existing) {
+      if (existing.gate !== gate) {
+        existing.gate = gate;
+        await this.persist();
+      }
+      return;
     }
+    this.rejected.push({ key, aHash: h1, bHash: h2, gate });
+    await this.persist();
+  }
+
+  /** The persisted candidate/gate list from `relPath`'s last completed similarity pass. Callers
+   *  must compare `contentHash` against the note's live hash before trusting the candidates. */
+  candidateDiagnosticsFor(relPath: string): NoteCandidateDiagnostics | undefined {
+    return this.noteCandidates.find((record) => record.relPath === relPath);
+  }
+
+  /** Record the full candidate/gate outcome of a completed similarity pass (one record per note,
+   *  keyed by the hash it ran at). Skips the disk write when nothing changed. */
+  async setCandidateDiagnostics(
+    relPath: string,
+    contentHash: string,
+    candidates: SimilarityCandidateDiagnostic[],
+  ): Promise<void> {
+    const record: NoteCandidateDiagnostics = {
+      relPath,
+      contentHash,
+      candidates: candidates.map((candidate) => ({ ...candidate })),
+    };
+    const existing = this.candidateDiagnosticsFor(relPath);
+    if (existing && JSON.stringify(existing) === JSON.stringify(record)) return;
+    this.noteCandidates = this.noteCandidates.filter((r) => r.relPath !== relPath);
+    this.noteCandidates.push(record);
+    this.noteCandidates.sort((a, b) => a.relPath.localeCompare(b.relPath));
+    await this.persist();
   }
 
   /** Drop every pair touching `relPath` (note deleted). */
   async removeForPath(relPath: string): Promise<void> {
     const before = this.pairs.length;
     this.pairs = this.pairs.filter((p) => p.owner !== relPath && p.other !== relPath);
-    if (this.pairs.length !== before) await this.persist();
+    let diagnosticsTouched = false;
+    const kept: NoteCandidateDiagnostics[] = [];
+    for (const record of this.noteCandidates) {
+      if (record.relPath === relPath) {
+        diagnosticsTouched = true;
+        continue;
+      }
+      const candidates = record.candidates.filter((candidate) => candidate.relPath !== relPath);
+      if (candidates.length !== record.candidates.length) {
+        diagnosticsTouched = true;
+        kept.push({ ...record, candidates });
+      } else {
+        kept.push(record);
+      }
+    }
+    this.noteCandidates = kept;
+    if (this.pairs.length !== before || diagnosticsTouched) await this.persist();
   }
 
   /** Re-key a moved/renamed note (D4a). */
@@ -143,6 +233,19 @@ export class SimilarStore {
         [p.ownerHash, p.otherHash] = [p.otherHash, p.ownerHash];
       }
     }
+    for (const record of this.noteCandidates) {
+      if (record.relPath === oldRel) {
+        record.relPath = newRel;
+        touched = true;
+      }
+      for (const candidate of record.candidates) {
+        if (candidate.relPath === oldRel) {
+          candidate.relPath = newRel;
+          touched = true;
+        }
+      }
+    }
+    this.noteCandidates.sort((a, b) => a.relPath.localeCompare(b.relPath));
     if (touched) {
       this.sort();
       await this.persist();
@@ -159,7 +262,12 @@ export class SimilarStore {
   }
 
   private async persist(): Promise<void> {
-    const file: SimilarFile = { version: 1, pairs: this.pairs, rejectedPairs: this.rejected };
+    const file: SimilarFile = {
+      version: 1,
+      pairs: this.pairs,
+      rejectedPairs: this.rejected,
+      noteCandidates: this.noteCandidates,
+    };
     await this.io.write(SIMILAR_PATH, JSON.stringify(file, null, 2) + '\n');
   }
 }

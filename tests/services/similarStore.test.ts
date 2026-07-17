@@ -42,8 +42,78 @@ describe('SimilarStore (S15)', () => {
     const b = { vaultId: 'v', relPath: 'b.md' };
     await store.recordRejected(a, 'ha', b, 'hb');
     expect(store.isRejectedFresh(a, 'ha', b, 'hb')).toBe(true);
+    expect(store.rejectionGateFresh(a, 'ha', b, 'hb')).toBe('llm-unrelated');
     expect(store.isRejectedFresh(b, 'hb', a, 'ha')).toBe(true); // symmetric
     expect(store.isRejectedFresh(a, 'ha2', b, 'hb')).toBe(false); // edited → re-askable
+  });
+
+  it('persists the gate that rejected a candidate', async () => {
+    const io = memIo();
+    const store = new SimilarStore(io);
+    await store.load();
+    const a = { vaultId: 'v', relPath: 'a.md' };
+    const b = { vaultId: 'v', relPath: 'b.md' };
+    await store.recordRejected(a, 'ha', b, 'hb', 'vacuity');
+
+    const reloaded = new SimilarStore(io);
+    await reloaded.load();
+    expect(reloaded.rejectionGateFresh(a, 'ha', b, 'hb')).toBe('vacuity');
+  });
+
+  it('R-1: persists per-note candidate diagnostics and reloads them', async () => {
+    const io = memIo();
+    const store = new SimilarStore(io);
+    await store.load();
+    await store.setCandidateDiagnostics('a.md', 'ha', [
+      { relPath: 'b.md', cosine: 0.71, gate: 'accepted' },
+      { relPath: 'c.md', cosine: 0.44, gate: 'cosine-floor' },
+    ]);
+
+    const reloaded = new SimilarStore(io);
+    await reloaded.load();
+    expect(reloaded.candidateDiagnosticsFor('a.md')).toEqual({
+      relPath: 'a.md',
+      contentHash: 'ha',
+      candidates: [
+        { relPath: 'b.md', cosine: 0.71, gate: 'accepted' },
+        { relPath: 'c.md', cosine: 0.44, gate: 'cosine-floor' },
+      ],
+    });
+    // A newer pass at a new hash replaces the record (one record per note).
+    await reloaded.setCandidateDiagnostics('a.md', 'ha2', []);
+    expect(reloaded.candidateDiagnosticsFor('a.md')).toEqual({ relPath: 'a.md', contentHash: 'ha2', candidates: [] });
+  });
+
+  it('R-1: unchanged candidate diagnostics do not rewrite the file', async () => {
+    const io = memIo();
+    const store = new SimilarStore(io);
+    await store.load();
+    const candidates = [{ relPath: 'b.md', cosine: 0.71, gate: 'accepted' as const }];
+    await store.setCandidateDiagnostics('a.md', 'ha', candidates);
+    io.files.delete('.denote/ai/similar.json');
+    await store.setCandidateDiagnostics('a.md', 'ha', candidates);
+    expect(io.files.has('.denote/ai/similar.json')).toBe(false); // no redundant write
+  });
+
+  it('R-1: delete and rename keep candidate diagnostics consistent', async () => {
+    const store = new SimilarStore(memIo());
+    await store.load();
+    await store.setCandidateDiagnostics('a.md', 'ha', [
+      { relPath: 'b.md', cosine: 0.7, gate: 'accepted' },
+      { relPath: 'gone.md', cosine: 0.65, gate: 'llm-unrelated' },
+    ]);
+    await store.setCandidateDiagnostics('gone.md', 'hg', [{ relPath: 'a.md', cosine: 0.65, gate: 'llm-unrelated' }]);
+
+    await store.removeForPath('gone.md');
+    expect(store.candidateDiagnosticsFor('gone.md')).toBeUndefined();
+    expect(store.candidateDiagnosticsFor('a.md')?.candidates).toEqual([
+      { relPath: 'b.md', cosine: 0.7, gate: 'accepted' },
+    ]);
+
+    await store.remapPath('b.md', 'renamed.md');
+    expect(store.candidateDiagnosticsFor('a.md')?.candidates).toEqual([
+      { relPath: 'renamed.md', cosine: 0.7, gate: 'accepted' },
+    ]);
   });
 
   it('drops pairs touching a deleted note', async () => {

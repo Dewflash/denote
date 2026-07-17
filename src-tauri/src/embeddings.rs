@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 use crate::containment::contained_path;
 use crate::fs_commands::VaultRoots;
@@ -29,6 +30,48 @@ const MAGIC: &[u8; 4] = b"DENV";
 const VERSION: u32 = 1;
 /// Compact (rewrite dropping dead rows) once dead rows exceed this fraction of the total (S14).
 const COMPACT_FRACTION: f64 = 0.25;
+const EMBEDDING_STATUS_EVENT: &str = "denote://embedding-status";
+const EMBEDDING_MODEL_ID: &str = "intfloat/multilingual-e5-small";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EmbeddingStatusEvent {
+    status: &'static str,
+    model_id: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    downloaded_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+fn emit_embedding_status(
+    app: &tauri::AppHandle,
+    status: &'static str,
+    percent: Option<u8>,
+    file: Option<String>,
+    downloaded_bytes: Option<usize>,
+    total_bytes: Option<usize>,
+    detail: Option<String>,
+) {
+    let _ = app.emit(
+        EMBEDDING_STATUS_EVENT,
+        EmbeddingStatusEvent {
+            status,
+            model_id: EMBEDDING_MODEL_ID,
+            percent,
+            file,
+            downloaded_bytes,
+            total_bytes,
+            detail,
+        },
+    );
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -352,6 +395,9 @@ pub struct EmbeddingsState {
     /// The fastembed model, initialized on first `embed_texts`. `Option` so app boot never pays
     /// the model-load cost and an unavailable model degrades gracefully.
     embedder: Mutex<Option<Embedder>>,
+    /// The last lifecycle status emitted to the UI, so `ready` fires only on transition instead
+    /// of once per `embed_texts` batch (R-1: the event stream stays meaningful).
+    last_emitted: Mutex<Option<&'static str>>,
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -571,18 +617,100 @@ pub fn embeddings_vectors(
 pub fn embed_texts(
     texts: Vec<String>,
     state: tauri::State<'_, EmbeddingsState>,
+    app: tauri::AppHandle,
 ) -> Result<EmbedResult, String> {
     let mut guard = state.embedder.lock().unwrap();
     if guard.is_none() {
-        *guard = Some(Embedder::try_new()?);
+        // No unconditional "downloading" emit here: `Embedder::try_new` streams real download
+        // progress only when files are actually missing, so a cached model never flashes 0%.
+        match Embedder::try_new(&app) {
+            Ok(embedder) => *guard = Some(embedder),
+            Err(error) => {
+                *state.last_emitted.lock().unwrap() = Some("error");
+                emit_embedding_status(
+                    &app,
+                    "error",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(error.clone()),
+                );
+                return Err(error);
+            }
+        }
     }
     let embedder = guard.as_mut().unwrap();
-    let vectors = embedder.embed(&texts)?;
+    let vectors = match embedder.embed(&texts) {
+        Ok(vectors) => vectors,
+        Err(error) => {
+            *state.last_emitted.lock().unwrap() = Some("error");
+            emit_embedding_status(
+                &app,
+                "error",
+                None,
+                None,
+                None,
+                None,
+                Some(error.clone()),
+            );
+            return Err(error);
+        }
+    };
+    // `ready` only on transition (first success, or recovery after an error) — not per batch.
+    {
+        let mut last = state.last_emitted.lock().unwrap();
+        if *last != Some("ready") {
+            *last = Some("ready");
+            emit_embedding_status(&app, "ready", Some(100), None, None, None, None);
+        }
+    }
     Ok(EmbedResult {
         model: embedder.model_id().to_string(),
         dim: embedder.dim() as u32,
         vectors,
     })
+}
+
+/// Snapshot of the embedding model lifecycle WITHOUT triggering a download or model load (R-1):
+/// `ready` when the model is loaded or every file is already in the hf-hub cache, else
+/// `not-downloaded` (or `error` when local embeddings are not compiled in). The frontend calls
+/// this once at startup so the panel is truthful before the first `embed_texts`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingModelStatus {
+    pub status: &'static str,
+    pub model_id: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[tauri::command]
+pub fn embedding_model_status(state: tauri::State<'_, EmbeddingsState>) -> EmbeddingModelStatus {
+    if state.embedder.lock().unwrap().is_some() {
+        return EmbeddingModelStatus {
+            status: "ready",
+            model_id: EMBEDDING_MODEL_ID,
+            detail: None,
+        };
+    }
+    match Embedder::model_files_cached() {
+        Ok(true) => EmbeddingModelStatus {
+            status: "ready",
+            model_id: EMBEDDING_MODEL_ID,
+            detail: None,
+        },
+        Ok(false) => EmbeddingModelStatus {
+            status: "not-downloaded",
+            model_id: EMBEDDING_MODEL_ID,
+            detail: None,
+        },
+        Err(detail) => EmbeddingModelStatus {
+            status: "error",
+            model_id: EMBEDDING_MODEL_ID,
+            detail: Some(detail),
+        },
+    }
 }
 
 #[derive(Serialize)]
@@ -600,6 +728,135 @@ pub use embedder_impl::Embedder;
 #[cfg(feature = "local-embeddings")]
 mod embedder_impl {
     use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+    use hf_hub::{api::{sync::ApiBuilder, Progress}, Cache};
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use tauri::Emitter;
+
+    use super::{EmbeddingStatusEvent, EMBEDDING_MODEL_ID, EMBEDDING_STATUS_EVENT};
+
+    const MODEL_FILES: &[&str] = &[
+        "onnx/model.onnx",
+        "tokenizer.json",
+        "config.json",
+        "special_tokens_map.json",
+        "tokenizer_config.json",
+    ];
+
+    fn model_cache_dir() -> PathBuf {
+        std::env::var("HF_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(fastembed::get_cache_dir()))
+    }
+
+    /// Shared progress across the WHOLE multi-file download: `percent` is a single overall
+    /// 0→100 (files completed + the current file's byte fraction, over the files to fetch),
+    /// so the UI bar never resets to 0 between the five model files (R-1).
+    struct OverallDownload {
+        app: tauri::AppHandle,
+        files_total: usize,
+        files_done: usize,
+        file: Option<String>,
+        downloaded: usize,
+        total: usize,
+    }
+
+    impl OverallDownload {
+        fn emit(&self) {
+            let file_fraction = if self.total == 0 {
+                0.0
+            } else {
+                (self.downloaded as f64 / self.total as f64).min(1.0)
+            };
+            let percent = if self.files_total == 0 {
+                100.0
+            } else {
+                (self.files_done as f64 + file_fraction) / self.files_total as f64 * 100.0
+            };
+            let _ = self.app.emit(
+                EMBEDDING_STATUS_EVENT,
+                EmbeddingStatusEvent {
+                    status: "downloading",
+                    model_id: EMBEDDING_MODEL_ID,
+                    percent: Some(percent.floor().min(100.0) as u8),
+                    file: self.file.clone(),
+                    downloaded_bytes: Some(self.downloaded),
+                    total_bytes: Some(self.total),
+                    detail: None,
+                },
+            );
+        }
+    }
+
+    /// One hf-hub `Progress` handle per file, all feeding the same `OverallDownload`.
+    struct FileProgress {
+        shared: Arc<Mutex<OverallDownload>>,
+    }
+
+    impl Progress for FileProgress {
+        fn init(&mut self, size: usize, filename: &str) {
+            let mut shared = self.shared.lock().unwrap();
+            shared.file = Some(filename.to_string());
+            shared.downloaded = 0;
+            shared.total = size;
+            shared.emit();
+        }
+
+        fn update(&mut self, size: usize) {
+            let mut shared = self.shared.lock().unwrap();
+            shared.downloaded = shared.downloaded.saturating_add(size);
+            if shared.total > 0 {
+                shared.downloaded = shared.downloaded.min(shared.total);
+            }
+            shared.emit();
+        }
+
+        fn finish(&mut self) {
+            let mut shared = self.shared.lock().unwrap();
+            shared.downloaded = shared.total;
+            shared.files_done += 1;
+            shared.emit();
+            shared.file = None;
+            shared.downloaded = 0;
+            shared.total = 0;
+        }
+    }
+
+    fn prepare_model(app: &tauri::AppHandle) -> Result<(), String> {
+        let cache_dir = model_cache_dir();
+        let endpoint = std::env::var("HF_ENDPOINT")
+            .unwrap_or_else(|_| "https://huggingface.co".to_string());
+        let api = ApiBuilder::new()
+            .with_cache_dir(cache_dir.clone())
+            .with_endpoint(endpoint)
+            .with_progress(false)
+            .build()
+            .map_err(|e| format!("embedding model unavailable: {e}"))?;
+        let cache = Cache::new(cache_dir);
+        let cached_repo = cache.model(EMBEDDING_MODEL_ID.to_string());
+        let repo = api.model(EMBEDDING_MODEL_ID.to_string());
+        let missing: Vec<&str> = MODEL_FILES
+            .iter()
+            .copied()
+            .filter(|file| cached_repo.get(file).is_none())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let shared = Arc::new(Mutex::new(OverallDownload {
+            app: app.clone(),
+            files_total: missing.len(),
+            files_done: 0,
+            file: None,
+            downloaded: 0,
+            total: 0,
+        }));
+        for file in missing {
+            repo.download_with_progress(file, FileProgress { shared: shared.clone() })
+                .map_err(|e| format!("embedding model unavailable: {e}"))?;
+        }
+        Ok(())
+    }
 
     /// The exact model id recorded in the store (S14/D32). `intfloat/multilingual-e5-small`,
     /// 384-dim, chosen for non-English content; fastembed's `MultilingualE5Small`.
@@ -611,9 +868,17 @@ mod embedder_impl {
     }
 
     impl Embedder {
-        pub fn try_new() -> Result<Self, String> {
+        /// Whether every model file is already in the hf-hub cache — a pure filesystem check,
+        /// no network and no model load (R-1 `not-downloaded` detection).
+        pub fn model_files_cached() -> Result<bool, String> {
+            let repo = Cache::new(model_cache_dir()).model(EMBEDDING_MODEL_ID.to_string());
+            Ok(MODEL_FILES.iter().all(|file| repo.get(file).is_some()))
+        }
+
+        pub fn try_new(app: &tauri::AppHandle) -> Result<Self, String> {
+            prepare_model(app)?;
             let model = TextEmbedding::try_new(
-                InitOptions::new(EmbeddingModel::MultilingualE5Small).with_show_download_progress(true),
+                InitOptions::new(EmbeddingModel::MultilingualE5Small).with_show_download_progress(false),
             )
             .map_err(|e| format!("embedding model unavailable: {e}"))?;
             Ok(Self { model })
@@ -663,7 +928,13 @@ mod embedder_impl {
     pub struct Embedder;
 
     impl Embedder {
-        pub fn try_new() -> Result<Self, String> {
+        /// Without the ONNX stack the model can never become available; report that verbatim
+        /// instead of a misleading `not-downloaded`.
+        pub fn model_files_cached() -> Result<bool, String> {
+            Err("local embeddings not compiled in (build with --features local-embeddings)".into())
+        }
+
+        pub fn try_new(_app: &tauri::AppHandle) -> Result<Self, String> {
             Err("local embeddings not compiled in (build with --features local-embeddings)".into())
         }
         pub fn model_id(&self) -> &str {
