@@ -152,6 +152,10 @@ interface UiState {
   organizeVaultOpen: boolean;
   /** Deep-organize (cloud) modal — pass 9 (D13). */
   deepOrganizeOpen: boolean;
+  /** The R-1 live AI status panel (anchored to the StatusBar ⚡ item). Promoted here from
+   *  StatusBar-local state so other surfaces — the graph's zero-edge/sparse hints (R-4) — can
+   *  open it as the "is the AI dead?" diagnostic. */
+  aiStatusOpen: boolean;
   searchOpen: boolean;
   quickSwitcherOpen: boolean;
   /** The folder cmd-N / paste-capture files a new note into when nothing more specific is
@@ -188,6 +192,7 @@ interface UiState {
   setSettingsOpen: (open: boolean) => void;
   setOrganizeVaultOpen: (open: boolean) => void;
   setDeepOrganizeOpen: (open: boolean) => void;
+  setAiStatusOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   toggleSearch: () => void;
   setQuickSwitcherOpen: (open: boolean) => void;
@@ -234,6 +239,7 @@ export const useUiStore = create<UiState>((set, get) => {
     settingsOpen: false,
     organizeVaultOpen: false,
     deepOrganizeOpen: false,
+    aiStatusOpen: false,
     searchOpen: false,
     quickSwitcherOpen: false,
     selectedFolder: null,
@@ -374,6 +380,9 @@ export const useUiStore = create<UiState>((set, get) => {
     },
     setDeepOrganizeOpen(open) {
       set({ deepOrganizeOpen: open });
+    },
+    setAiStatusOpen(open) {
+      set({ aiStatusOpen: open });
     },
     setSearchOpen(open) {
       set({ searchOpen: open });

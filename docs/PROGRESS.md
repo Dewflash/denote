@@ -1092,6 +1092,49 @@ sessions. Test suites remain necessary but are explicitly not sufficient to clos
   candidate and the exact gate that rejected it. This must still be true immediately after
   quitting and relaunching the app.
 
+- **2026-07-19 — R-4 session: graph readability (implementation complete; awaiting owner
+  confirmation).** Three changes, all presentation-layer (no fabricated edges — D6/UX-AMENDMENTS
+  global constraint holds; nothing derived is persisted — D3/D5):
+  **(1) Titles at default zoom.** The label gate is now node-count based
+  (`src/features/graph/readability.ts` → `labelScaleGate`): maps of ≤300 nodes have every title
+  as a label candidate at ANY zoom — including the fit-to-graph default, where mid-sized maps
+  settle well below the old 1.2 scale gate that hid all titles — with the existing per-frame
+  collision layout still culling labels that physically don't fit (crowding control that adapts
+  to real density instead of a zoom guess). Maps >300 nodes keep the original 2.2 deep-zoom
+  hairball guard, and hovered/selected labels still render always. Fit-to-graph camera and
+  resize refit untouched.
+  **(2) Zero-edge maps explain themselves, with a path to the R-1 panel.** The AI status panel's
+  open-state moved from StatusBar-local `useState` to `uiStore.aiStatusOpen`/`setAiStatusOpen`
+  (StatusBar behavior identical), so the graph can open it. The empty-hint decision is now the
+  pure `emptyHintKind` (readability.ts) distinguishing: layers-off (old copy kept) / filtered
+  (old copy kept) / NEW `no-connections` — shown when the UNFILTERED graph has zero edges, with
+  copy "This vault has no connections yet…" plus BOTH an `Organize vault…` button and a
+  `Check AI status` button that opens the R-1 panel. The sparse "dots without lines" hint gains
+  the same `Check AI status` button (and is suppressed only while the strictly-more-informative
+  no-connections banner is up).
+  **(3) Isolated notes read as "not yet connected".** GraphPage derives the orphan set (notes
+  with zero visible edges — pure helper `connectedNoteIds`) and threads it to the renderer as
+  `dimmedNodeIds` (new optional GraphViewProps member, D25-additive); orphan note dots paint at
+  0.45 alpha — clearly visible, fully hoverable (pointer-area unchanged) — returning to full
+  opacity on hover/selection; their labels stay full-opacity. The existing `Organize vault…`
+  cluster affordance in the toolbar is unchanged and reachable from the sparse-hint path.
+  **Deviations:** none structural. The brief suggested measuring zoomToFit's settled scale; the
+  node-count gate (its explicitly endorsed alternative) makes the measurement moot. The sparse
+  hint is suppressed under the new no-connections banner to avoid two stacked banners with
+  duplicate buttons (both existing hint cases and all existing copy are unchanged — e2e green).
+  Persisted layer-toggle keys and graphStore fields untouched. **Verification:** 500 TS tests /
+  62 files (new `tests/features/graph/readability.test.ts` covers the gate, orphan derivation,
+  and hint-kind decision), `pnpm lint`, `tsc --noEmit`, `pnpm build`, and `pnpm e2e` (6/6, incl.
+  the graph-hint specs) all green; no Rust touched. Browser preview (`?graphMock=1`): all 8
+  node titles visible at default fit zoom, sparse hint shows with working `Check AI status` +
+  dismiss, orphan dot dims (`data-dimmed-count="1"`), layers-off → old copy + all 4 notes dim,
+  no console errors. **What Tauri-only:** the StatusBar (⚡ AI anchor) only mounts with an open
+  vault, and the no-connections banner needs a real link-less vault — both need `pnpm tauri dev`.
+  **R-4 closes only on owner confirmation:** open the combined graph on a real vault — within
+  ten seconds you should see note titles at the default zoom (≤~300 notes), topic-colored
+  clusters with dimmed unlinked dots at the edges, and — if the map has no lines — a banner
+  saying truthfully why, with `Organize vault…` and `Check AI status` one click away.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

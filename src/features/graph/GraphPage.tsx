@@ -10,12 +10,14 @@ import { buildGraph, dominantTopic, strongMemberships, type Graph, type Membersh
 import { paletteColor } from './layout';
 import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
+import { useUiStore } from '../../state/uiStore';
 import { ForceGraphRenderer } from './ForceGraphRenderer';
 import { LayerControls } from './LayerControls';
 import { NodeInspector } from './NodeInspector';
 import { useGraphStyleTokens } from './useGraphStyleTokens';
 import { filterGraph } from './filter';
 import { localNeighborhood } from './neighborhood';
+import { connectedNoteIds as deriveConnectedNoteIds, emptyHintKind } from './readability';
 import { reconcileNodePositions, type PositionedNode } from './liveGraph';
 import { buildMockGraphFixture } from './mockFixture';
 import { noteRelPath } from './hulls';
@@ -135,14 +137,14 @@ export function GraphPage() {
     [scopedGraph.nodes],
   );
   const [sparseHintDismissed, setSparseHintDismissed] = useState(false);
-  const connectedNoteIds = useMemo(() => {
-    const ids = new Set<string>();
+  // Connected vs. isolated is derived fresh per render from the VISIBLE edge set (never
+  // persisted — D3/D5) and drives both the sparse hint and the R-4 orphan dimming below.
+  const { connectedNoteIds, orphanNoteIds } = useMemo(() => {
     const noteIds = new Set(visibleNotes.map((note) => String(note.id)));
-    for (const edge of visibleGraph.edges) {
-      if (noteIds.has(String(edge.from))) ids.add(String(edge.from));
-      if (noteIds.has(String(edge.to))) ids.add(String(edge.to));
-    }
-    return ids;
+    const connected = deriveConnectedNoteIds(visibleGraph.edges, noteIds);
+    const orphans = new Set<string>();
+    for (const id of noteIds) if (!connected.has(id)) orphans.add(id);
+    return { connectedNoteIds: connected, orphanNoteIds: orphans };
   }, [visibleGraph.edges, visibleNotes]);
   const orphanNoteCount = visibleNotes.length - connectedNoteIds.size;
   // A single orphan is worth explaining in a small map; requiring a majority meant the common
@@ -151,16 +153,22 @@ export function GraphPage() {
     visibleNotes.length <= 8 || orphanNoteCount > visibleNotes.length / 2
   );
 
-  // Empty-state guidance (post-06 fix #2): silent dots with no edges confused the owner (all
-  // layers off, or imported notes with few wikilinks). Surface a one-line hint instead.
+  // Empty-state guidance (post-06 fix #2, extended for R-4): silent dots with no edges confused
+  // the owner. Distinguish the three truthful reasons (readability.ts): layers toggled off,
+  // filters hiding real edges, or a vault that genuinely has no connections yet — the last one
+  // links to the R-1 AI status panel, the only surface that can say whether the AI is dead.
   const allLayersOff = !layers.wikilinks && !layers.tags && !layers.topics && !layers.aiSimilar;
+  const hintKind = emptyHintKind({
+    nodeCount: scopedGraph.nodes.length,
+    rawEdgeCount: scopedGraph.edges.length,
+    visibleEdgeCount: visibleGraph.edges.length,
+    allLayersOff,
+  });
   const emptyHint =
-    scopedGraph.nodes.length === 0
-      ? null // nothing to show at all (no vault selected / empty vault) — not a filter problem
-      : visibleGraph.edges.length === 0
-        ? allLayersOff
-          ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.'
-          : 'No connections match the current filters — try “Reset view” above.'
+    hintKind === 'layers-off'
+      ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.'
+      : hintKind === 'filtered'
+        ? 'No connections match the current filters — try “Reset view” above.'
         : null;
 
   // Persists across renders so a note edit (revision bump → fresh buildGraph()) doesn't reset
@@ -256,11 +264,50 @@ export function GraphPage() {
               {emptyHint}
             </div>
           )}
-          {sparseHint && (
+          {hintKind === 'no-connections' && (
+            <div
+              className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs"
+              style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}
+            >
+              <span className="min-w-0 flex-1">
+                This vault has no connections yet — no [[links]] typed, no shared tags, and the AI hasn&apos;t produced links or topics.
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1"
+                style={{ border: '1px solid var(--border)' }}
+                onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
+                title="Group your notes into topics with the configured AI backend"
+              >
+                Organize vault…
+              </button>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1"
+                style={{ border: '1px solid var(--border)' }}
+                onClick={() => useUiStore.getState().setAiStatusOpen(true)}
+                title="Open the live AI status panel — is the AI running, queued, or stuck?"
+              >
+                Check AI status
+              </button>
+            </div>
+          )}
+          {/* Suppressed while the no-connections banner is up: that banner already explains the
+              isolated dots and carries the same Organize/AI-status affordances. */}
+          {sparseHint && hintKind !== 'no-connections' && (
             <div className="flex shrink-0 items-start gap-2 px-3 py-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}>
               <span>
                 Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the configured AI backend group them into topics.
               </span>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1"
+                style={{ border: '1px solid var(--border)' }}
+                onClick={() => useUiStore.getState().setAiStatusOpen(true)}
+                title="Open the live AI status panel — is the AI running, queued, or stuck?"
+              >
+                Check AI status
+              </button>
               <button type="button" aria-label="Dismiss graph hint" title="Dismiss until the next app launch" className="shrink-0 text-base leading-none" style={{ color: 'var(--fg-muted)' }} onClick={() => setSparseHintDismissed(true)}>
                 ×
               </button>
@@ -275,6 +322,7 @@ export function GraphPage() {
               vaultColors={vaultColors}
               nodeColors={nodeColors}
               nodeRings={nodeRings}
+              dimmedNodeIds={orphanNoteIds}
               selectedId={selectedNodeId}
               onNodeClick={(node, opts) => {
                 if (typeof window !== 'undefined' && window.innerWidth <= 720) setNotesIndexOpen(false);

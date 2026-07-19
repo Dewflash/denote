@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { useVaultStore } from '../state/vaultStore';
+import { useUiStore } from '../state/uiStore';
 import { deriveGraphHealth } from './graphHealth';
 import { AiStatusPanel } from '../features/ai';
 
@@ -31,7 +32,10 @@ export function StatusBar() {
     return repo ? deriveGraphHealth(repo.index.allNotes(), repo.index.getLinkIndex()) : { orphans: [], unresolvedLinks: [] };
   }, [repo, revision]);
   const [open, setOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
+  // Promoted to uiStore (R-4): the graph's zero-edge/sparse hints open this same panel via
+  // "Check AI status", so its open-state can no longer live as StatusBar-local useState.
+  const aiOpen = useUiStore((s) => s.aiStatusOpen);
+  const setAiOpen = useUiStore((s) => s.setAiStatusOpen);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const createGhostAndOpen = useVaultStore((s) => s.createGhostAndOpen);
   const parkedJobs = useMemo(() => {
@@ -148,7 +152,7 @@ export function StatusBar() {
               title="Open live AI status"
               aria-expanded={aiOpen}
               aria-controls="status-ai-panel"
-              onClick={() => setAiOpen((value) => !value)}
+              onClick={() => setAiOpen(!aiOpen)}
               className="denote-status-ai rounded px-1"
               style={{ color: aiAttention ? 'var(--danger)' : 'var(--fg-muted)' }}
             >

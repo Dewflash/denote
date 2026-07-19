@@ -44,6 +44,11 @@ export interface GraphViewProps {
   /** note nodeId → the colors of its ≥2 strong topic memberships, drawn as ring segments around
    *  the node (pass-8 mixed-membership visual). */
   nodeRings?: Record<string, string[]>;
+  /** note nodeIds with zero VISIBLE edges (RECOVERY R-4): the renderer paints these dots at
+   *  reduced opacity so isolated notes read as "not yet connected" instead of noise. Purely
+   *  presentational — derived per render from the already-filtered edge set, never persisted,
+   *  and it must never influence structure (D6). Hovered/selected nodes render full-opacity. */
+  dimmedNodeIds?: ReadonlySet<string>;
   selectedId?: string | null;
   /** Plain click selects a node for inspection. Cmd-click opens a note (or creates a ghost) while
    *  keeping the graph open. Tag/topic clicks only select. */

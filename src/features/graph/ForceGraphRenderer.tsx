@@ -14,6 +14,7 @@ import type { GraphViewProps } from './types';
 import type { PositionedNode } from './liveGraph';
 import { paletteColor } from './layout';
 import { withAlpha } from './colorUtils';
+import { labelScaleGate } from './readability';
 import { buildFolderHulls, hullOutline, noteRelPath, type FolderNote } from './hulls';
 
 const NOTE_BASE_R = 6;
@@ -123,7 +124,7 @@ function useContainerSize(): [React.RefObject<HTMLDivElement | null>, { width: n
 // `positioned` (liveGraph.ts) before handing it here — the raw pre-position node list is a
 // GraphView-CONTRACT concept (D25), not something this concrete renderer needs a second copy of.
 export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { positioned: PositionedNode[] }) {
-  const { positioned, edges, groupings, styleTokens, vaultColors, nodeColors, nodeRings, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
+  const { positioned, edges, groupings, styleTokens, vaultColors, nodeColors, nodeRings, dimmedNodeIds, selectedId, onNodeClick, onBackgroundClick, onNodeDragEnd } = props;
   const [containerRef, size] = useContainerSize();
   const fgRef = useRef<ForceGraphMethods<PositionedNode, GraphEdge> | undefined>(undefined);
   const fittedGraphKeyRef = useRef<string | null>(null);
@@ -151,10 +152,12 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
     return d;
   }, [edges]);
 
-  // Keep the original large-graph hairball guard, but soften its cliff and make the selected or
-  // hovered node self-identifying even when the map is zoomed far out.
+  // R-4: titles must be readable at the default fit-to-graph zoom for maps up to ~300 nodes —
+  // the gate is node-count based (readability.ts), with the collision layout below deciding
+  // which labels physically fit. Larger maps keep the original deep-zoom hairball guard, and
+  // the selected or hovered node is always self-identifying at any zoom and any graph size.
   const noteCount = positioned.filter((node) => node.type === 'note').length;
-  const labelScaleGate = positioned.length < 100 ? 0.3 : positioned.length < 300 ? 1.2 : 2.2;
+  const labelGate = labelScaleGate(positioned.length);
   const graphKey = useMemo(
     () => `${positioned.map((node) => node.id).join('\u0000')}\u0001${edges.map((edge) => edge.id).join('\u0000')}`,
     [positioned, edges],
@@ -242,6 +245,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
       data-testid="graph-canvas"
       data-node-count={positioned.length}
       data-note-count={noteCount}
+      data-dimmed-count={dimmedNodeIds?.size ?? 0}
       className="h-full w-full"
       style={{ backgroundColor: styleTokens.bg }}
     >
@@ -287,7 +291,7 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           const labelPaddingY = LABEL_PADDING_Y_PX / globalScale;
           const labelGap = 8 / globalScale;
           const labelCandidates = positioned
-            .filter((node) => node.label && (node.id === selectedId || node.id === hoveredId || globalScale > labelScaleGate))
+            .filter((node) => node.label && (node.id === selectedId || node.id === hoveredId || globalScale > labelGate))
             .map((node) => ({
               node,
               priority: (node.id === selectedId || node.id === hoveredId ? 100 : 0) + (node.type === 'note' ? 20 : 0),
@@ -411,6 +415,11 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
           switch (node.type) {
             case 'note': {
               const r = NOTE_BASE_R + Math.sqrt(degree.get(String(node.id)) ?? 0) * NOTE_DEGREE_SCALE;
+              // R-4 unlinked-note treatment: isolated dots paint dimmed — still clearly visible
+              // and fully hoverable (the pointer-area paint below is untouched) — so connected
+              // structure reads first. Hover/selection restores full opacity for inspection.
+              const dimmed = dimmedNodeIds?.has(String(node.id)) && !selected && node.id !== hoveredId;
+              if (dimmed) ctx.globalAlpha = 0.45;
               // Mixed-membership ring segments (pass-8): a ring of arc segments in each strong
               // topic's color, drawn just outside the node, before the fill.
               const rings = nodeRings?.[String(node.id)];
@@ -434,6 +443,9 @@ export function ForceGraphRenderer(props: Omit<GraphViewProps, 'nodes'> & { posi
                 ctx.strokeStyle = styleTokens.accent;
                 ctx.stroke();
               }
+              // Dim the dot only — the label (painted below, same save/restore frame) stays at
+              // full opacity so an isolated note is still identifiable at a glance.
+              if (dimmed) ctx.globalAlpha = 1;
               break;
             }
             case 'ghost': {
