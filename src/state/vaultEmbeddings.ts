@@ -47,6 +47,8 @@ export interface VaultEmbeddingDeps {
   /** Progress during a bulk embed (first open): (done, total). */
   onProgress?: (done: number, total: number) => void;
   disableTimers?: boolean;
+  /** Product performance: only run embedding work when a feature explicitly needs it. */
+  backgroundSync?: boolean;
 }
 
 export const SYNC_DEBOUNCE_MS = 2000;
@@ -79,6 +81,7 @@ export class VaultEmbeddingEngine {
   private syncProgress = { done: 0, total: 0 };
   private syncError: string | undefined;
   private readonly indexedHashes = new Map<string, string>();
+  private readonly backgroundSync: boolean;
 
   constructor(
     private readonly repo: Repository,
@@ -86,7 +89,9 @@ export class VaultEmbeddingEngine {
     private readonly router: AiRouter,
     private readonly store: SimilarStore,
     private readonly deps: VaultEmbeddingDeps = {},
-  ) {}
+  ) {
+    this.backgroundSync = deps.backgroundSync ?? true;
+  }
 
   async attach(): Promise<void> {
     await this.store.load();
@@ -102,7 +107,7 @@ export class VaultEmbeddingEngine {
     });
     for (const note of this.wantedNotes()) this.pendingSimilarity.add(note.relPath);
     // First-open bulk embed runs in the background; the UI stays responsive.
-    if (!this.deps.disableTimers) this.track(this.syncAll());
+    if (!this.deps.disableTimers && this.backgroundSync) this.track(this.syncAll());
   }
 
   dispose(): void {
@@ -114,6 +119,7 @@ export class VaultEmbeddingEngine {
 
   /** Retry all unresolved similarity labels after a backend retry or model becomes available. */
   retry(): void {
+    if (!this.backgroundSync) return;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     this.retryAttempt = 0;
@@ -124,6 +130,7 @@ export class VaultEmbeddingEngine {
   noteChanged(relPath: string, note: ParsedNote | null): void {
     if (note === null) return; // delete hook handles removal
     if (this.shouldSkip(relPath, note)) return;
+    if (!this.backgroundSync) return;
     this.dirty.add(relPath);
     this.pendingSimilarity.add(relPath);
     this.scheduleSync();

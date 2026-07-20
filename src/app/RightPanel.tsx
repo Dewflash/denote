@@ -2,24 +2,17 @@
 
 import * as Tabs from '@radix-ui/react-tabs';
 import { useUiStore, type RightPanelTab } from '../state/uiStore';
-import { useVaultStore } from '../state/vaultStore';
 import { BacklinksPanel } from '../features/editor/BacklinksPanel';
 import { OutgoingLinksPanel } from '../features/editor/OutgoingLinksPanel';
-import { SuggestionsPanel } from '../features/ai';
 
-export function RightPanel() {
+export function RightPanel({ onCollapse }: { onCollapse: () => void }) {
   const tab = useUiStore((s) => s.rightPanelTab);
   const setTab = useUiStore((s) => s.setRightPanelTab);
-  const activeNotePath = useVaultStore((s) => s.activeNotePath);
-  const revision = useVaultStore((s) => s.revision);
-  const suggestionCount = activeNotePath
-    ? useVaultStore.getState().aiSuggestionsFor(activeNotePath).filter((a) => a.status === 'suggested').length
-    : 0;
-  void revision; // re-derive the badge count when the live index/annotations change
+  const coreTab = tab === 'suggestions' ? 'backlinks' : tab;
 
   return (
     <Tabs.Root
-      value={tab}
+      value={coreTab}
       onValueChange={(v) => setTab(v as RightPanelTab)}
       className="flex h-full flex-col"
     >
@@ -38,22 +31,21 @@ export function RightPanel() {
         >
           Links out
         </Tabs.Trigger>
-        <Tabs.Trigger
-          value="suggestions"
-          className="denote-tab-trigger flex-1 px-3 py-2 text-sm"
-          title="AI suggestions for the open note; high-confidence structure may appear in ai: metadata until you accept it"
-        >
-          AI{suggestionCount > 0 ? ` (${suggestionCount})` : ''}
-        </Tabs.Trigger>
       </Tabs.List>
+      <button
+        type="button"
+        className="denote-inspector-close"
+        aria-label="Hide links panel"
+        title="Hide links panel"
+        onClick={onCollapse}
+      >
+        ×
+      </button>
       <Tabs.Content value="backlinks" className="flex-1 overflow-auto">
         <BacklinksPanel />
       </Tabs.Content>
       <Tabs.Content value="outgoing" className="flex-1 overflow-auto">
         <OutgoingLinksPanel />
-      </Tabs.Content>
-      <Tabs.Content value="suggestions" className="flex-1 overflow-hidden">
-        <SuggestionsPanel />
       </Tabs.Content>
     </Tabs.Root>
   );

@@ -31,12 +31,16 @@ body {
   display: none;
 }
 
+.denote-shell-explorer-collapsed.denote-shell-inspector-collapsed {
+  grid-template-columns: 56px 0 minmax(0, 1fr) 0;
+}
+
 .e2e-smoke-shell {
   grid-template-columns: 220px minmax(0, 1fr) 280px;
 }
 
 .denote-shell-graph {
-  grid-template-columns: 56px 0 minmax(0, 1fr) 0;
+  grid-template-columns: 56px 260px minmax(0, 1fr) 0;
 }
 
 .denote-shell-rail,
@@ -62,9 +66,28 @@ body {
   grid-column: 4;
 }
 
-.denote-shell-graph .denote-shell-explorer,
 .denote-shell-graph .denote-shell-inspector {
   display: none;
+}
+
+.denote-inspector-close {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+}
+
+.denote-inspector-close:hover {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.denote-shell-inspector > * {
+  position: relative;
 }
 
 .denote-shell-graph .denote-mobile-toolbar {
@@ -210,9 +233,7 @@ body {
     grid-template-columns: 48px minmax(0, 1fr);
   }
 
-  .denote-shell-graph {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
+  .denote-shell-graph { grid-template-columns: 48px minmax(0, 1fr); }
 
   .denote-shell-rail {
     grid-column: 1;
@@ -252,7 +273,6 @@ body {
     display: block;
   }
 
-  .denote-shell-graph .denote-shell-explorer,
   .denote-shell-graph .denote-shell-inspector {
     display: none;
   }

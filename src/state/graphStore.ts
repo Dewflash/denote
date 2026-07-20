@@ -20,8 +20,9 @@ function loadLayers(): LayerToggles {
     return {
       wikilinks: p.wikilinks ?? DEFAULT_LAYERS.wikilinks,
       tags: p.tags ?? DEFAULT_LAYERS.tags,
-      topics: p.topics ?? DEFAULT_LAYERS.topics,
-      aiSimilar: p.aiSimilar ?? DEFAULT_LAYERS.aiSimilar,
+      // AI graph layers are opt-in and stay hidden until the AI surface is engaged.
+      topics: DEFAULT_LAYERS.topics,
+      aiSimilar: DEFAULT_LAYERS.aiSimilar,
     };
   } catch {
     return DEFAULT_LAYERS;

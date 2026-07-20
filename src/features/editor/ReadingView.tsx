@@ -3,7 +3,7 @@
 // wikilinks/tags are approximated the same way as live preview (wikilinkScan.ts) since remark
 // has no notion of them. Read-only: this view never writes anything.
 
-import { Fragment, useMemo, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -31,6 +31,28 @@ interface RenderCtx {
   root: string;
   notes: { relPath: string; title: string }[];
   assets: string[];
+  findQuery: string;
+}
+
+function highlightText(text: string, query: string, key: string): ReactNode {
+  const needle = query.trim();
+  if (!needle) return text;
+  const lower = text.toLocaleLowerCase();
+  const target = needle.toLocaleLowerCase();
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let match = lower.indexOf(target, cursor);
+  let index = 0;
+  while (match >= 0) {
+    if (match > cursor) parts.push(text.slice(cursor, match));
+    parts.push(<mark key={`${key}-find-${index}`} className="denote-find-match">{text.slice(match, match + needle.length)}</mark>);
+    cursor = match + needle.length;
+    match = lower.indexOf(target, cursor);
+    index += 1;
+  }
+  if (cursor === 0) return text;
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <Fragment key={`${key}-find-text`}>{parts}</Fragment>;
 }
 
 function renderInlineText(text: string, key: string, ctx: RenderCtx): ReactNode[] {
@@ -91,11 +113,11 @@ function renderInlineText(text: string, key: string, ctx: RenderCtx): ReactNode[
   let cursor = 0;
   for (const p of pieces) {
     if (p.start < cursor) continue; // drop an accidental overlap rather than throw
-    if (p.start > cursor) out.push(text.slice(cursor, p.start));
+    if (p.start > cursor) out.push(highlightText(text.slice(cursor, p.start), ctx.findQuery, `${key}-${cursor}`));
     out.push(p.node);
     cursor = p.end;
   }
-  if (cursor < text.length) out.push(text.slice(cursor));
+  if (cursor < text.length) out.push(highlightText(text.slice(cursor), ctx.findQuery, `${key}-${cursor}`));
   return out;
 }
 
@@ -165,7 +187,15 @@ export function ReadingView() {
   const buffer = useVaultStore((s) => s.buffer);
   const repo = useVaultStore((s) => s.repo);
   const root = useVaultStore((s) => s.root);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+
+  useEffect(() => {
+    const onFindInNote = (): void => setFindOpen(true);
+    window.addEventListener('denote:find-in-note', onFindInNote);
+    return () => window.removeEventListener('denote:find-in-note', onFindInNote);
+  }, []);
 
   const ctx: RenderCtx | null = useMemo(() => {
     if (!repo || !root) return null;
@@ -177,10 +207,11 @@ export function ReadingView() {
         title: repo.getParsed(relPath)?.title ?? relPath,
       })),
       assets: [...repo.index.assets.keys()],
+      findQuery,
     };
     // revision is the deliberate re-derive signal for the live index.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, root, revision]);
+  }, [repo, root, indexRevision, findQuery]);
 
   const tree = useMemo(() => {
     if (!buffer) return null;
@@ -194,15 +225,37 @@ export function ReadingView() {
   if (!buffer || !ctx || !tree) return null;
   return (
     <div className="relative h-full">
+      {findOpen && (
+        <div className="denote-reading-find absolute left-3 right-3 top-3 z-10 flex items-center gap-2 rounded p-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="shrink-0" style={{ color: 'var(--fg-muted)' }}>Find</span>
+            <input
+              autoFocus
+              value={findQuery}
+              onChange={(event) => setFindQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setFindOpen(false);
+              }}
+              aria-label="Find in note"
+              className="min-w-0 flex-1 rounded px-2 py-1"
+              style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--fg)' }}
+            />
+          </label>
+          <span style={{ color: 'var(--fg-muted)' }}>
+            {findQuery.trim() ? `${(buffer.content.toLocaleLowerCase().split(findQuery.trim().toLocaleLowerCase()).length - 1)} matches` : ''}
+          </span>
+          <button type="button" aria-label="Close find in note" onClick={() => setFindOpen(false)} style={{ color: 'var(--fg-muted)' }}>×</button>
+        </div>
+      )}
       <button
         title="Back to editing (⌘E)"
         className="absolute right-3 top-3 z-10 rounded px-2 py-1 text-xs"
-        style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
+        style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)', ...(findOpen ? { top: 58 } : {}) }}
         onClick={() => useUiStore.getState().toggleViewMode()}
       >
         Edit
       </button>
-      <div className="denote-reading-view h-full overflow-auto" style={{ padding: '16px 20px', maxWidth: 860 }}>
+      <div className="denote-reading-view h-full overflow-auto" style={{ padding: '16px 20px', width: '100%', maxWidth: 'var(--editor-line-width)', marginInline: 'auto', boxSizing: 'border-box' }}>
         {renderNode(tree, ctx, 'root')}
       </div>
     </div>

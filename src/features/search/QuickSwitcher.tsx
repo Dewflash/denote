@@ -22,7 +22,7 @@ export function QuickSwitcher() {
   const openVaultIds = useVaultStore((s) => s.openVaultIds);
   const registry = useVaultStore((s) => s.registry);
   const getOpenRepo = useVaultStore((s) => s.getOpenRepo);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
   const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const [query, setQuery] = useState('');
@@ -57,7 +57,7 @@ export function QuickSwitcher() {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openVaultIds, registry, getOpenRepo, revision]);
+  }, [openVaultIds, registry, getOpenRepo, indexRevision]);
 
   const results = useMemo(() => {
     if (query.trim() === '') return candidates.slice(0, 50);

@@ -39,7 +39,9 @@ test('graph view keeps isolated notes discoverable', async ({ page }) => {
   await expect(page).toHaveTitle('DeNote');
 
   await expect(page.locator('canvas')).toBeVisible();
-  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-node-count', '8');
+  // Core graph defaults hide the AI topic/similarity layers; four notes + one ghost + one
+  // connected tag remain visible in the neutral Obsidian-style map.
+  await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-node-count', '6');
   await expect(page.getByTestId('graph-canvas')).toHaveAttribute('data-note-count', '4');
   const noteIndex = page.getByTestId('graph-notes-index');
   await expect(noteIndex).toBeHidden();
@@ -73,19 +75,15 @@ test('graph view keeps isolated notes discoverable', async ({ page }) => {
 test('graph explains sparse structure and gives isolated notes an editor path', async ({ page }) => {
   await page.goto('/?graphMock=1');
 
-  await expect(page.getByText('Links you typed', { exact: true })).toBeVisible();
-  await expect(page.getByText('Shared tags', { exact: true })).toBeVisible();
-  await expect(page.getByText('AI topic groups', { exact: true })).toBeVisible();
-  await expect(page.getByText('AI links & similarity', { exact: true })).toBeVisible();
-  await expect(page.getByText('Hide AI guesses below 0% sure', { exact: true })).toBeVisible();
-  await expect(page.getByText('Outline folders', { exact: true })).toBeVisible();
-  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the configured AI backend group them into topics.';
+  await expect(page.getByText('Links', { exact: true })).toBeVisible();
+  await expect(page.getByText('Tags', { exact: true })).toBeVisible();
+  const sparseCopy = 'Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them.';
   await expect(page.getByText(sparseCopy, { exact: true })).toBeVisible();
 
-  for (const label of ['Links you typed', 'Shared tags', 'AI topic groups', 'AI links & similarity']) {
+  for (const label of ['Links', 'Tags']) {
     await page.getByLabel(label, { exact: true }).click();
   }
-  const emptyLayerCopy = 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.';
+  const emptyLayerCopy = 'No graph layers active — enable Links or Tags above.';
   await expect(page.getByText(emptyLayerCopy, { exact: true })).toBeVisible();
   const emptyHintBox = await page.getByText(emptyLayerCopy, { exact: true }).boundingBox();
   const canvasBox = await page.getByTestId('graph-canvas').boundingBox();

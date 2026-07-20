@@ -33,7 +33,7 @@ function PanelHint({ text }: { text: string }) {
 
 export function BacklinksPanel() {
   const repo = useVaultStore((s) => s.repo);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
   const [contents, setContents] = useState<Record<string, string>>({});
 
@@ -41,7 +41,7 @@ export function BacklinksPanel() {
     if (!repo || !activeNotePath) return [];
     return repo.getBacklinks(activeNotePath);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, activeNotePath, revision]);
+  }, [repo, activeNotePath, indexRevision]);
 
   useEffect(() => {
     if (!repo || backlinks.length === 0) return;

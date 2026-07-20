@@ -1,6 +1,4 @@
-// src/features/explorer — file tree, recent notes, Today view.
+// src/features/explorer — the file tree and its core controls.
 export * from './tree';
 export { FileTree } from './FileTree';
-export { RecentNotes } from './RecentNotes';
 export { ExplorerPanel } from './ExplorerPanel';
-export { TodayView } from './TodayView';

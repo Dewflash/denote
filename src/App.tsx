@@ -7,13 +7,13 @@ import { RightPanel } from "./app/RightPanel";
 import { StatusBar } from "./app/StatusBar";
 import { ErrorBoundary } from "./app/ErrorBoundary";
 import { CommandPalette } from "./app/CommandPalette";
-import { ExplorerPanel, TodayView } from "./features/explorer";
+import { ExplorerPanel } from "./features/explorer";
 import { Editor, ReadingView } from "./features/editor";
 import { GraphPage } from "./features/graph";
 import { SettingsModal } from "./features/settings";
 import { SearchPanel, QuickSwitcher } from "./features/search";
 import { ImportReviewModal } from "./features/import";
-import { AiProvisionalBar, AiConsentModal, OrganizeVaultModal, DeepOrganizeModal } from "./features/ai";
+import { OrganizeVaultModal, DeepOrganizeModal } from "./features/ai";
 import { createUntitledNote, CaptureModal, globalCaptureFromClipboard } from "./features/capture";
 import { appKeymap, installGlobalKeymap, restoreSavedKeymap } from "./app/keymap";
 import { pickFolder } from "./services/dialogs";
@@ -117,15 +117,12 @@ function Welcome() {
 }
 
 function CenterPane() {
-  const todayViewOpen = useUiStore((s) => s.todayViewOpen);
   const graphViewOpen = useUiStore((s) => s.graphViewOpen);
   const viewMode = useUiStore((s) => s.viewMode);
   const buffer = useVaultStore((s) => s.buffer);
   const repo = useVaultStore((s) => s.repo);
 
   if (graphViewOpen) return <GraphPage />;
-  if (todayViewOpen) return <TodayView />;
-
   if (!buffer && repo && repo.listNotePaths().length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6" style={{ color: 'var(--fg)' }}>
@@ -159,7 +156,6 @@ function CenterPane() {
   }
   return (
     <div className="flex h-full flex-col">
-      <AiProvisionalBar />
       <div style={{ flex: 1, minHeight: 0 }}>
         {viewMode === "reading" ? <ReadingView /> : <Editor />}
       </div>
@@ -209,7 +205,7 @@ function ShellPanelToggles({
 function Shell() {
   const graphViewOpen = useUiStore((s) => s.graphViewOpen);
   const [desktopExplorerOpen, setDesktopExplorerOpen] = useState(true);
-  const [desktopInspectorOpen, setDesktopInspectorOpen] = useState(true);
+  const [desktopInspectorOpen, setDesktopInspectorOpen] = useState(false);
   const [mobileExplorerOpen, setMobileExplorerOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
@@ -223,7 +219,6 @@ function Shell() {
 
   useEffect(() => {
     appKeymap.setHandler("new-note", () => {
-      useUiStore.getState().setTodayViewOpen(false);
       void createUntitledNote(useUiStore.getState().selectedFolder);
     });
     appKeymap.setHandler("command-palette", () => {
@@ -231,7 +226,6 @@ function Shell() {
       ui.setCommandPaletteOpen(!ui.commandPaletteOpen);
     });
     appKeymap.setHandler("reading-view", () => useUiStore.getState().toggleViewMode());
-    appKeymap.setHandler("today-view", () => useUiStore.getState().toggleTodayView());
     appKeymap.setHandler("graph-view", () => {
       // The toolbar/shortcut opens the full map. Local graph is an explicit editor action and
       // must not leak into the next normal graph visit after the map is closed.
@@ -243,7 +237,8 @@ function Shell() {
       ui.setSettingsOpen(!ui.settingsOpen);
     });
     appKeymap.setHandler("search", () => useUiStore.getState().toggleSearch());
-    appKeymap.setHandler("search-alias", () => useUiStore.getState().toggleSearch());
+    appKeymap.setHandler("find-in-note", () => window.dispatchEvent(new Event('denote:find-in-note')));
+    appKeymap.setHandler("replace-in-note", () => window.dispatchEvent(new Event('denote:find-in-note')));
     appKeymap.setHandler("quick-switcher", () => useUiStore.getState().toggleQuickSwitcher());
     appKeymap.setHandler("global-capture", () => void globalCaptureFromClipboard());
     appKeymap.setHandler("undo", () => void useVaultStore.getState().opLog.undo());
@@ -325,7 +320,7 @@ function Shell() {
           backgroundColor: "var(--bg-panel)",
         }}
       >
-        <ErrorBoundary surface="Inspector"><RightPanel /></ErrorBoundary>
+        <ErrorBoundary surface="Inspector"><RightPanel onCollapse={() => setDesktopInspectorOpen(false)} /></ErrorBoundary>
       </aside>
       <div className="denote-shell-status" style={{ gridColumn: "1 / -1", gridRow: "2 / 3" }}>
         <ErrorBoundary surface="Status bar"><StatusBar /></ErrorBoundary>
@@ -333,7 +328,6 @@ function Shell() {
       <CommandPalette />
       <SearchPanel />
       <QuickSwitcher />
-      <AiConsentModal />
       <OrganizeVaultModal />
       <DeepOrganizeModal />
       <CaptureModal />

@@ -126,41 +126,40 @@ describe('vaultStore — R-1 AI status aggregators', () => {
     await store.getState().openVaultAt(root);
     const vaultId = store.getState().vaultId!;
 
-    // Background work: the pump parks the seeded job against the unavailable sidecar; the
-    // embedding engine syncs through the mocked Rust backend. Both run on real timers → poll.
+    // AI is deliberately on-demand: opening a vault must not start a model pass or queue work.
+    // Embeddings still sync through the mocked Rust backend so the graph can become ready.
     await vi.waitFor(() => {
       const [status] = store.getState().aiVaultStatuses();
       expect(status).toBeTruthy();
-      expect(status.queue.counts.parked).toBeGreaterThan(0);
-      expect(status.embedding.state).toBe('ready');
+      expect(status.queue.counts.parked).toBe(0);
+      expect(status.queue.counts.pending).toBe(0);
+      expect(status.embedding.state).toBe('not-started');
     }, { timeout: 8000 });
 
     const [status] = store.getState().aiVaultStatuses();
     expect(status.vaultId).toBe(vaultId);
     expect(status.embedding.model).toBe(MODEL);
-    expect(
-      status.queue.jobs.some(
-        (job) => job.relPath === 'a.md' && job.state === 'parked' && job.lastError === SIDECAR_REASON,
-      ),
-    ).toBe(true);
+    expect(status.queue.jobs).toEqual([]);
 
+    // The diagnostic surface is itself an explicit AI engagement. It is the only thing that
+    // should construct the per-vault AI/embedding stores after a normal vault open.
+    await store.getState().retryAiVault(vaultId);
     await store.getState().setActiveNote('a.md');
     const note = store.getState().activeNoteAiStatus();
-    expect(note).toMatchObject({ relPath: 'a.md', title: 'Alpha', embedding: 'ready' });
+    expect(note).toMatchObject({ relPath: 'a.md', title: 'Alpha', embedding: 'not-embedded' });
     expect(note!.enrichment).toMatchObject({
-      enrichmentState: 'parked',
-      error: SIDECAR_REASON, // the verbatim backend reason, end to end
+      enrichmentState: 'never-run',
     });
     // Similarity labelling never ran (sidecar down) → no fabricated candidate list.
     expect(note!.similarity).toEqual([]);
 
-    // retryAiVault wakes the parked queue synchronously and bumps the UI revision.
+    // retryAiVault remains harmless when no background job exists and still bumps the UI revision.
     const revisionBefore = store.getState().revision;
-    store.getState().retryAiVault(vaultId);
+    await store.getState().retryAiVault(vaultId);
     expect(store.getState().revision).toBeGreaterThan(revisionBefore);
     const [after] = store.getState().aiVaultStatuses();
     expect(after.queue.counts.parked).toBe(0);
-    expect(after.queue.counts.pending).toBeGreaterThan(0);
-    expect(store.getState().activeNoteAiStatus()!.enrichment.enrichmentState).toBe('queued');
+    expect(after.queue.counts.pending).toBe(0);
+    expect(store.getState().activeNoteAiStatus()!.enrichment.enrichmentState).toBe('never-run');
   }, 20000);
 });

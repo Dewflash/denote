@@ -1,12 +1,10 @@
 // src/features/ai/SuggestionsPanel.tsx — the AI suggestions surface (right sidebar, third tab).
 // Groups the active note's live annotations by kind; each row shows the reason, a confidence
-// bar, and a model badge (provenance, D6). Actions: Accept (writes real markdown via the
-// repository), Reject (→ rejection memory, D10), and Accept-all-above-threshold. Applied
-// provisional entries are shown distinctly (softer, "AI provisional" — S10) and are informational.
+// bar, and a model badge (provenance, D6). AI is read-only until the user explicitly accepts a
+// row; background enrichment never writes tags, links, topics, or metadata into a note.
 
 import { useMemo, useState } from 'react';
 import { useVaultStore } from '../../state/vaultStore';
-import { useUiStore } from '../../state/uiStore';
 import type { AiAnnotation } from '../../domain';
 
 const KIND_LABEL: Record<AiAnnotation['kind'], string> = {
@@ -106,9 +104,9 @@ function SuggestionRow({ ann }: { ann: AiAnnotation }) {
         <span
           className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
           style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--fg-muted)' }}
-          title={provisional ? 'Applied provisionally into the ai: block (S10)' : `Suggested by ${ann.model}`}
+          title={provisional ? 'Previously generated suggestion; still read-only until you accept it' : `Suggested by ${ann.model}`}
         >
-          {provisional ? 'AI provisional' : modelLabel(ann.model)}
+          {provisional ? 'AI suggestion' : modelLabel(ann.model)}
         </span>
         <div className="flex gap-1.5">
           <button
@@ -138,9 +136,7 @@ function SuggestionRow({ ann }: { ann: AiAnnotation }) {
 export function SuggestionsPanel() {
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
   const revision = useVaultStore((s) => s.revision);
-  const threshold = useUiStore((s) => s.aiTakeoverThreshold);
   const enrich = useVaultStore((s) => s.enrichActiveNote);
-  const acceptAbove = useVaultStore((s) => s.acceptSuggestionsAbove);
   const appleAiHealth = useVaultStore((s) => s.appleAiHealth);
   const queueState = useVaultStore((s) => (activeNotePath ? s.aiQueueStateFor(activeNotePath) : 'idle'));
   const aiProcessed = useVaultStore((s) => (activeNotePath ? s.aiHasProcessed(activeNotePath) : false));
@@ -148,7 +144,6 @@ export function SuggestionsPanel() {
   const enrichBackend = useVaultStore((s) => s.routingBackendFor('enrich'));
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [acceptingAll, setAcceptingAll] = useState(false);
 
   const suggestions = useMemo(
     () => (activeNotePath ? useVaultStore.getState().aiSuggestionsFor(activeNotePath) : []),
@@ -183,10 +178,6 @@ export function SuggestionsPanel() {
     );
   }
 
-  const acceptableCount = suggestions.filter(
-    (a) => a.status === 'suggested' && a.confidence >= threshold,
-  ).length;
-
   const requestSuggestions = async (): Promise<void> => {
     if (running) return;
     setRunning(true);
@@ -200,27 +191,13 @@ export function SuggestionsPanel() {
     }
   };
 
-  const acceptAll = async (): Promise<void> => {
-    if (acceptingAll) return;
-    setAcceptingAll(true);
-    setError(null);
-    try {
-      await acceptAbove(activeNotePath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAcceptingAll(false);
-    }
-  };
-
   return (
     <div className="flex h-full flex-col">
       <div className="px-2 pt-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-        The configured AI backend can suggest tags, links, and topics. High-confidence structure
-        may appear provisionally in the reserved <code>ai:</code> metadata; your note body changes
-        only when you accept a suggestion.
+        AI suggestions are read-only. Nothing is written to this note unless you explicitly click
+        Accept on a suggestion.
       </div>
-      <div className="flex items-center justify-between gap-2 p-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-2 p-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <button
           className="rounded px-2 py-1 text-xs"
           style={{ border: '1px solid var(--border)' }}
@@ -231,18 +208,6 @@ export function SuggestionsPanel() {
         >
           {running ? 'Getting suggestions…' : 'Get suggestions'}
         </button>
-        {acceptableCount > 0 && (
-          <button
-            className="rounded px-2 py-1 text-xs"
-            style={{ border: '1px solid var(--border)' }}
-            disabled={acceptingAll}
-            aria-busy={acceptingAll}
-            onClick={() => void acceptAll()}
-            title={`Accept the ${acceptableCount} suggestion(s) at or above ${Math.round(threshold * 100)}% confidence`}
-          >
-            {acceptingAll ? 'Accepting…' : `Accept all ≥ ${Math.round(threshold * 100)}%`}
-          </button>
-        )}
       </div>
       <div className="flex-1 overflow-auto p-2">
         {error && (

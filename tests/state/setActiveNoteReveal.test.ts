@@ -1,7 +1,7 @@
 // tests/state/setActiveNoteReveal.test.ts — owner-reported UX bug (2026-07-13): with the graph
 // view open, clicking a note in the file tree updated activeNote invisibly (CenterPane still
 // rendered GraphPage), so the click appeared dead. Fix: setActiveNote REVEALS the editor
-// (closes the graph/today overlays) by default; GraphPage's cmd-click passes `reveal: false`
+// (closes the graph overlay) by default; GraphPage's cmd-click passes `reveal: false`
 // because it manages graph visibility itself (pass-04 behavior: cmd-click keeps the graph open).
 //
 // vaultStore's module graph pulls in uiStore/graphStore, which read localStorage + document at
@@ -43,17 +43,15 @@ function fakeRepo(notes: Record<string, string>) {
 }
 
 describe('setActiveNote reveals the editor (owner UX finding, 2026-07-13)', () => {
-  it('closes the graph and today overlays when a note is opened', async () => {
+  it('closes the graph overlay when a note is opened', async () => {
     vaultStore.useVaultStore.setState({ repo: fakeRepo({ 'a.md': '# A' }), buffer: null });
     const ui = uiStore.useUiStore.getState();
     ui.setGraphViewOpen(true);
-    ui.setTodayViewOpen(true);
 
     await vaultStore.useVaultStore.getState().setActiveNote('a.md');
 
     expect(vaultStore.useVaultStore.getState().activeNotePath).toBe('a.md');
     expect(uiStore.useUiStore.getState().graphViewOpen).toBe(false);
-    expect(uiStore.useUiStore.getState().todayViewOpen).toBe(false);
   });
 
   it('reveal: false leaves the graph open (GraphPage cmd-click contract)', async () => {

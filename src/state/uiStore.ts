@@ -144,7 +144,6 @@ interface UiState {
   similarityTopK: number;
   similarityMinCos: number;
   viewMode: ViewMode;
-  todayViewOpen: boolean;
   graphViewOpen: boolean;
   rightPanelTab: RightPanelTab;
   commandPaletteOpen: boolean;
@@ -183,8 +182,6 @@ interface UiState {
   setSimilarityMinCos: (v: number) => void;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
-  setTodayViewOpen: (open: boolean) => void;
-  toggleTodayView: () => void;
   setGraphViewOpen: (open: boolean) => void;
   toggleGraphView: () => void;
   setRightPanelTab: (tab: RightPanelTab) => void;
@@ -232,7 +229,6 @@ export const useUiStore = create<UiState>((set, get) => {
     similarityTopK: loadTopK(),
     similarityMinCos: loadMinCos(),
     viewMode: 'editor',
-    todayViewOpen: false,
     graphViewOpen: false,
     rightPanelTab: 'backlinks',
     commandPaletteOpen: false,
@@ -353,12 +349,6 @@ export const useUiStore = create<UiState>((set, get) => {
     },
     toggleViewMode() {
       set((s) => ({ viewMode: s.viewMode === 'editor' ? 'reading' : 'editor' }));
-    },
-    setTodayViewOpen(open) {
-      set({ todayViewOpen: open });
-    },
-    toggleTodayView() {
-      set((s) => ({ todayViewOpen: !s.todayViewOpen }));
     },
     setGraphViewOpen(open) {
       set({ graphViewOpen: open });

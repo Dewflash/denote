@@ -138,6 +138,8 @@ interface VaultStoreState {
   /** Bumped on every write or externally-observed change (any open vault); the one dependency
    *  UI reads for "the live index may have changed, re-derive your view." */
   revision: number;
+  /** Bumped only when note/index structure changes; avoids redoing editor context for AI status. */
+  indexRevision: number;
   activeNotePath: string | null;
   buffer: OpenBuffer | null;
   conflict: ConflictState | null;
@@ -179,7 +181,7 @@ interface VaultStoreState {
   getActiveAiEngine: () => VaultAiEngine | undefined;
   aiVaultStatuses: () => AiVaultStatus[];
   activeNoteAiStatus: () => ActiveNoteAiStatus | null;
-  retryAiVault: (vaultId: string) => void;
+  retryAiVault: (vaultId: string) => Promise<void>;
   /** Vetted ai-similar pairs (pass 7, S15) across the given open vaults, for the graph. */
   graphSimilarPairs: (vaultIds: string[]) => SimilarPair[];
   /** Live AI link suggestions, shown as dashed graph edges until accepted. */
@@ -271,6 +273,8 @@ const searchIndexes = new Map<string, NoteSearchIndex>();
 const aiEngines = new Map<string, VaultAiEngine>();
 const embeddingEngines = new Map<string, VaultEmbeddingEngine>();
 const ontologyEngines = new Map<string, VaultOntologyEngine>();
+type AiInitializer = () => Promise<void>;
+const aiInitializers = new Map<string, AiInitializer>();
 const watcherTeardowns = new Map<string, () => void>();
 const checkpointTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const checkpointPaths = new Map<string, Set<string>>();
@@ -341,6 +345,10 @@ const crossVaultEngine: CrossVaultEngine = new CrossVaultEngine({
     })),
   onChange: () => useVaultStore.setState((s) => ({ revision: s.revision + 1 })),
 });
+
+async function ensureAiEngaged(vaultId: string): Promise<void> {
+  await aiInitializers.get(vaultId)?.();
+}
 
 function clearAutosaveTimer(): void {
   if (autosaveTimer) {
@@ -555,56 +563,20 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       // vaultId) exists; both close over this mutable ref instead of a bare `let` reassignment
       // (which some eslint/prefer-const configurations don't recognize across a closure).
       const selfRef: { vaultId?: string } = {};
-      // Ontology engine (pass 8): topics + semantic clustering + `_topics` + folder profiles.
-      // Created BEFORE the AI binding so the AI engine can feed enrichment topics into it.
-      const ontologyBinding = createVaultOntologyBinding({
-        backend: embeddingsBackend,
-        router: sharedRouter,
-        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
-        onChange: () => set((s) => ({ revision: s.revision + 1 })),
-        reenrich: (relPath) => aiEngines.get(selfRef.vaultId ?? '')?.enrichNow(relPath) ?? Promise.resolve(),
-      });
-      // Embeddings + ai-similar edges (pass 7). Local-only embedding; labelSimilarity inherits the
-      // D18 boundary via the shared router. It also supplies ranked prompt candidates to enrichment.
-      const embeddingBinding = createVaultEmbeddingBinding({
-        backend: embeddingsBackend,
-        router: sharedRouter,
-        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
-        k: () => useUiStore.getState().similarityTopK,
-        minCos: () => useUiStore.getState().similarityMinCos,
-        onChange: () => {
-          set((s) => ({ revision: s.revision + 1 }));
-          // A note's vectors just changed — (re)compute cross-vault edges (S24), debounced.
-          crossVaultEngine.schedule();
-        },
-        onProgress: () => set((s) => ({ revision: s.revision + 1 })),
-      });
-      const aiBinding = createVaultAiBinding({
-        router: sharedRouter,
-        localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
-        threshold: () => useUiStore.getState().aiTakeoverThreshold,
-        existingTopics: () => ontologyBinding.getEngine()?.topicStubs() ?? [],
-        candidateNotes: (relPath) => embeddingBinding.getEngine()?.candidateNotesFor(relPath) ?? [],
-        onEnrichResult: (relPath, hash, result) =>
-          ontologyBinding.getEngine()?.onEnrichResult(relPath, hash, result) ?? Promise.resolve(),
-        // S23: only defer writes to the note that is OPEN and DIRTY in the ACTIVE editor.
-        isDirty: (relPath) => {
-          const s = get();
-          return s.vaultId === selfRef.vaultId && s.buffer?.relPath === relPath && !!s.buffer?.dirty;
-        },
-        pushOp: (op) => get().opLog.push(op),
-        onChange: () => set((s) => ({ revision: s.revision + 1 })),
-        onConsentNeeded: (count) => {
-          if (selfRef.vaultId) set({ aiConsentPrompt: { vaultId: selfRef.vaultId, count } });
-        },
-      });
+      // AI bindings are deliberately created only after explicit AI engagement. The core
+      // repository still receives search/index hooks immediately, but no AI watcher hooks,
+      // model stores, queues, or embedding caches are touched while opening/editing notes.
+      let aiBinding: ReturnType<typeof createVaultAiBinding> | undefined;
+      let embeddingBinding: ReturnType<typeof createVaultEmbeddingBinding> | undefined;
+      let ontologyBinding: ReturnType<typeof createVaultOntologyBinding> | undefined;
+      let aiEngagement: Promise<void> | null = null;
       const onIndexChange: IndexChangeHook = (relPath, note) => {
         searchBinding.onIndexChange(relPath, note);
-        aiBinding.onIndexChange(relPath, note);
-        embeddingBinding.onIndexChange(relPath, note);
-        ontologyBinding.onIndexChange(relPath, note);
+        aiBinding?.onIndexChange(relPath, note);
+        embeddingBinding?.onIndexChange(relPath, note);
+        ontologyBinding?.onIndexChange(relPath, note);
         scheduleHistoryCheckpoint(selfRef.vaultId ?? repo.vaultId, relPath);
-        set((s) => ({ revision: s.revision + 1 }));
+        set((s) => ({ revision: s.revision + 1, indexRevision: s.indexRevision + 1 }));
       };
       const onPipeline = (relPath: string): void => {
         set((s) => ({ revision: s.revision + 1 }));
@@ -617,9 +589,65 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
           : await Repository.openVault(tauriStorage, root, { onPipeline, onIndexChange });
       selfRef.vaultId = repo.vaultId;
       await searchBinding.attach(repo);
-      const aiEngine = await aiBinding.attach(repo);
-      const embeddingEngine = await embeddingBinding.attach(repo);
-      const ontologyEngine = await ontologyBinding.attach(repo);
+
+      const engageAi = async (): Promise<void> => {
+        if (aiEngines.has(repo.vaultId)) return;
+        if (aiEngagement) return aiEngagement;
+        aiEngagement = (async () => {
+          ontologyBinding = createVaultOntologyBinding({
+            backend: embeddingsBackend,
+            router: sharedRouter,
+            localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+            onChange: () => set((s) => ({ revision: s.revision + 1 })),
+            reenrich: (relPath) => aiEngines.get(selfRef.vaultId ?? '')?.enrichNow(relPath) ?? Promise.resolve(),
+          });
+          embeddingBinding = createVaultEmbeddingBinding({
+            backend: embeddingsBackend,
+            router: sharedRouter,
+            localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+            k: () => useUiStore.getState().similarityTopK,
+            minCos: () => useUiStore.getState().similarityMinCos,
+            onChange: () => {
+              set((s) => ({ revision: s.revision + 1 }));
+              crossVaultEngine.schedule();
+            },
+            onProgress: () => set((s) => ({ revision: s.revision + 1 })),
+            backgroundSync: false,
+          });
+          aiBinding = createVaultAiBinding({
+            router: sharedRouter,
+            localOnly: () => get().registry.find((v) => v.id === selfRef.vaultId)?.localOnly ?? false,
+            threshold: () => useUiStore.getState().aiTakeoverThreshold,
+            existingTopics: () => ontologyBinding?.getEngine()?.topicStubs() ?? [],
+            candidateNotes: (relPath) => embeddingBinding?.getEngine()?.candidateNotesFor(relPath) ?? [],
+            onEnrichResult: (relPath, hash, result) =>
+              ontologyBinding?.getEngine()?.onEnrichResult(relPath, hash, result) ?? Promise.resolve(),
+            isDirty: (relPath) => {
+              const s = get();
+              return s.vaultId === selfRef.vaultId && s.buffer?.relPath === relPath && !!s.buffer?.dirty;
+            },
+            pushOp: (op) => get().opLog.push(op),
+            onChange: () => set((s) => ({ revision: s.revision + 1 })),
+            onConsentNeeded: (count) => {
+              if (selfRef.vaultId) set({ aiConsentPrompt: { vaultId: selfRef.vaultId, count } });
+            },
+            allowAutomaticWrites: false,
+            backgroundEnrichment: false,
+          });
+          const embeddingEngine = await embeddingBinding.attach(repo);
+          const ontologyEngine = await ontologyBinding.attach(repo);
+          const aiEngine = await aiBinding.attach(repo);
+          embeddingEngines.set(repo.vaultId, embeddingEngine);
+          ontologyEngines.set(repo.vaultId, ontologyEngine);
+          aiEngines.set(repo.vaultId, aiEngine);
+          aiEngine.start();
+        })().catch((error) => {
+          aiEngagement = null;
+          throw error;
+        });
+        return aiEngagement;
+      };
+      aiInitializers.set(repo.vaultId, engageAi);
 
       await invoke('watch_vault', { root });
       const teardown = await startWatcherBridge(root, (evt) => {
@@ -628,14 +656,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
 
       repos.set(repo.vaultId, repo);
       searchIndexes.set(repo.vaultId, index);
-      aiEngines.set(repo.vaultId, aiEngine);
-      embeddingEngines.set(repo.vaultId, embeddingEngine);
-      ontologyEngines.set(repo.vaultId, ontologyEngine);
       watcherTeardowns.set(repo.vaultId, teardown);
       useGraphStore.getState().addOpenVault(repo.vaultId);
-      // Start AI only after ontology retrieval and the engine registry are ready; existing notes
-      // are seeded during attach and the first background pass can fold topics immediately.
-      aiEngine.start();
 
       const existingEntry = get().registry.find((v) => v.id === repo.vaultId);
       const entry: VaultRegistryEntry = {
@@ -661,6 +683,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         buffer: null,
         conflict: null,
         revision: get().revision + 1,
+        indexRevision: get().indexRevision + 1,
       });
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : String(err) });
@@ -673,6 +696,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     vaultId: null,
     repo: null,
     revision: 0,
+    indexRevision: 0,
     activeNotePath: null,
     buffer: null,
     conflict: null,
@@ -713,6 +737,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
           relocateError: null,
           error: null,
           revision: get().revision + 1,
+          indexRevision: get().indexRevision + 1,
         });
         return;
       }
@@ -743,6 +768,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       watcherTeardowns.get(vaultId)?.();
       watcherTeardowns.delete(vaultId);
       await invoke('unwatch_vault', { root: repo.root }).catch(() => {});
+      aiInitializers.delete(vaultId);
       aiEngines.get(vaultId)?.dispose();
       aiEngines.delete(vaultId);
       embeddingEngines.get(vaultId)?.dispose();
@@ -874,7 +900,8 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         similarity: embeddings.similarityDiagnosticsFor(relPath),
       };
     },
-    retryAiVault: (vaultId) => {
+    async retryAiVault(vaultId) {
+      await ensureAiEngaged(vaultId);
       aiEngines.get(vaultId)?.retry();
       embeddingEngines.get(vaultId)?.retry();
       set((s) => ({ revision: s.revision + 1 }));
@@ -895,6 +922,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
         .map((id) => ({ vaultId: id, topics: ontologyEngines.get(id)?.domainTopics() ?? [] }))
         .filter((v) => v.topics.length > 0),
     async organizeActiveVault(opts) {
+      if (get().vaultId) await ensureAiEngaged(get().vaultId!);
       return get().getActiveOntologyEngine()?.organizeVault(opts);
     },
 
@@ -922,6 +950,9 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       }
     },
     async refreshAppleAiStatus(retry = false) {
+      // AI status is an explicit AI-surface concern. Keep the embedding probe lazy as well;
+      // the normal notes shell never calls this path.
+      void startEmbeddingStatusListener();
       const client = sharedRouter.getClient('apple');
       if (!client) {
         set({ appleAiHealth: { status: 'unavailable', spawned: false, reason: 'Apple backend is not registered.' } });
@@ -973,6 +1004,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
     async analyzeTopic(vaultId, topicId, topicName) {
       await ensureAppStores();
+      await ensureAiEngaged(vaultId);
       const ontology = ontologyEngines.get(vaultId);
       if (!ontology) throw new Error('vault not open');
       const insights = new DeepInsights({ transport: anthropicTransport, ledger: spendLedger, model: DEFAULT_DEEP_MODEL });
@@ -1004,8 +1036,10 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
     },
     async enrichActiveNote(opts) {
       const s = get();
-      const engine = s.getActiveAiEngine();
-      if (!engine || !s.activeNotePath) return;
+      if (!s.vaultId || !s.activeNotePath) return;
+      await ensureAiEngaged(s.vaultId);
+      const engine = get().getActiveAiEngine();
+      if (!engine) return;
       // Flush any unsaved edits first so enrichment sees the note the user actually wrote.
       if (s.buffer?.dirty) await s.flushAutosave();
       try {
@@ -1077,7 +1111,6 @@ export const useVaultStore = create<VaultStoreState>((set, get) => {
       if (opts?.reveal !== false) {
         const ui = useUiStore.getState();
         if (ui.graphViewOpen) ui.setGraphViewOpen(false);
-        if (ui.todayViewOpen) ui.setTodayViewOpen(false);
       }
     },
 
@@ -1240,7 +1273,8 @@ async function startEmbeddingStatusListener(): Promise<void> {
   }
 }
 
-void startEmbeddingStatusListener();
+// AI/model capability probes are intentionally lazy (PARITY P0-7). The normal vault shell must
+// not spawn the sidecar or touch the model cache before the explicit AI surface is opened.
 
 // Fire-and-forget: populate the registry from disk once the store exists. Never blocks vault
 // open/create (both work from a folder path directly, independent of the registry load).
@@ -1252,17 +1286,6 @@ void (async () => {
   } catch {
     /* no Tauri runtime (e.g. a plain-browser dev preview) — registry stays empty */
   }
-  // Cloud tier (pass 9): reflect key presence + resume any batch left non-terminal by a prior
-  // session (S27 durability). Both swallow the "no Tauri runtime" rejection in a dev preview.
-  void useVaultStore.getState().refreshAnthropicKeyPresence();
-  void useVaultStore.getState().refreshAppleAiStatus();
-  void (async () => {
-    try {
-      await ensureAppStores();
-      await buildDeepOrganizeJob().resume();
-      useVaultStore.setState((s) => ({ revision: s.revision + 1 }));
-    } catch {
-      /* no runtime / no pending batches */
-    }
-  })();
+  // AI status, cloud-key presence, and resumable cloud work are all checked from their
+  // explicitly opened settings/AI surfaces, never while the core notes shell boots.
 })();

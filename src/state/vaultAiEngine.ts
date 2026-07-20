@@ -98,6 +98,10 @@ export interface VaultAiEngineDeps {
   candidateNotes?: (relPath: string) => Promise<NoteStub[]> | NoteStub[];
   /** Test hook: disable the internal debounce timer so enqueue() is a no-op timer-wise. */
   disableTimers?: boolean;
+  /** Product safety: AI enrichment is display-only unless a user explicitly accepts a row. */
+  allowAutomaticWrites?: boolean;
+  /** Product performance: the app only runs AI when the user asks from the AI panel. */
+  backgroundEnrichment?: boolean;
 }
 
 const ENRICHABLE_SKIP_DIRS = ['_topics/', '.denote/'];
@@ -116,6 +120,8 @@ export class VaultAiEngine {
   // Chain of background work started from onIndexChange (demotion, delete cleanup). `settle()`
   // awaits it — used by tests for determinism; harmless in production.
   private inflight: Promise<unknown> = Promise.resolve();
+  private readonly allowAutomaticWrites: boolean;
+  private readonly backgroundEnrichment: boolean;
 
   constructor(
     private readonly repo: Repository,
@@ -124,6 +130,8 @@ export class VaultAiEngine {
     private readonly deps: VaultAiEngineDeps = {},
   ) {
     this.now = deps.now ?? Date.now;
+    this.allowAutomaticWrites = deps.allowAutomaticWrites ?? false;
+    this.backgroundEnrichment = deps.backgroundEnrichment ?? true;
   }
 
   // ── lifecycle ────────────────────────────────────────────────────────────────
@@ -143,7 +151,15 @@ export class VaultAiEngine {
       this.cancelDebounce(rel);
       return this.store.removeForPath(rel);
     });
-    if (this.seedMissingNotes()) await this.persistQueue();
+    if (this.backgroundEnrichment && this.seedMissingNotes()) {
+      await this.persistQueue();
+    } else if (!this.backgroundEnrichment) {
+      // The app is on-demand AI: discard queue entries left by older releases so they cannot
+      // produce stale "pending"/"parked" status or wake a background pump later.
+      this.queue.clear();
+      this.queue.setConsent('none');
+      await this.persistQueue();
+    }
   }
 
   /** Start background work after the other per-vault engines have attached. This ordering keeps
@@ -152,7 +168,7 @@ export class VaultAiEngine {
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.schedulePump();
+    if (this.backgroundEnrichment) this.schedulePump();
   }
 
   /** Tear down timers (vault close / test cleanup). */
@@ -228,10 +244,10 @@ export class VaultAiEngine {
   /** Retry parked work after the user has restored the on-device backend. */
   retry(): void {
     this.backendGate = null;
-    this.seedMissingNotes();
+    if (this.backgroundEnrichment) this.seedMissingNotes();
     this.queue.resumeParked(this.now());
     void this.persistQueue();
-    if (this.started) this.schedulePump();
+    if (this.started && this.backgroundEnrichment) this.schedulePump();
   }
 
   /** Live AI link suggestions are graph edges before the user accepts them. They are deliberately
@@ -267,10 +283,10 @@ export class VaultAiEngine {
       return;
     }
     // S10 demotion: a note carrying an ai: block that now has user structure loses it at once.
-    if (note.aiFrontmatter && !isBare(note)) {
+    if (this.allowAutomaticWrites && note.aiFrontmatter && !isBare(note)) {
       this.track(this.demote(relPath));
     }
-    this.scheduleEnqueue(relPath);
+    if (this.backgroundEnrichment) this.scheduleEnqueue(relPath);
   }
 
   private track(p: Promise<unknown>): void {
@@ -372,6 +388,12 @@ export class VaultAiEngine {
   // ── S28 consent ─────────────────────────────────────────────────────────────────
 
   async setTakeoverConsent(choice: TakeoverConsent): Promise<void> {
+    if (!this.allowAutomaticWrites) {
+      this.queue.setConsent('none');
+      await this.persistQueue();
+      this.deps.onChange?.();
+      return;
+    }
     this.queue.setConsent(choice);
     await this.persistQueue();
     this.deps.onChange?.();
@@ -464,9 +486,10 @@ export class VaultAiEngine {
     result: EnrichResult,
     linksOnly?: boolean,
   ): Promise<void> {
-    // Fold topics into the persistent ontology (canonicalization + membership, D14). Best-effort:
-    // a failure here must not park the enrichment job or lose the panel suggestions below.
-    if (!linksOnly) {
+    // Keep the normal AI surface read-only: suggestions live in `.denote/ai` and are invisible
+    // to the note body. Topic materialization can create `_topics/*.md`, so it is also held until
+    // an explicitly write-enabled AI workflow asks for it; ordinary enrichment must stay silent.
+    if (!linksOnly && this.allowAutomaticWrites) {
       try {
         await this.deps.onEnrichResult?.(relPath, hash, result);
       } catch {
@@ -489,12 +512,13 @@ export class VaultAiEngine {
     await this.store.markProcessed(relPath, hash, modelId, mode, new Date(this.now()).toISOString());
     this.deps.onChange?.();
 
-    await this.applyTakeover(relPath);
+    if (this.allowAutomaticWrites) await this.applyTakeover(relPath);
   }
 
   /** S10 takeover: apply provisional structure to a BARE note whose suggestions clear the
    *  threshold. Idempotent; deferred if the buffer is dirty (S23); gated by consent (S28). */
   private async applyTakeover(relPath: string): Promise<void> {
+    if (!this.allowAutomaticWrites) return;
     const note = this.repo.getParsed(relPath);
     const hash = this.repo.getHash(relPath);
     if (!note || !hash) return;

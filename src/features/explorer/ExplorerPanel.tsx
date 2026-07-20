@@ -8,7 +8,6 @@
 // thing and can never drift apart. Tokens only, no new deps.
 
 import { useState, type ReactNode } from 'react';
-import { RecentNotes } from './RecentNotes';
 import { FileTree } from './FileTree';
 import { captureFromClipboard, isPasteCaptureTarget } from '../capture';
 import { appKeymap, formatCombo } from '../../app/keymap';
@@ -21,7 +20,7 @@ function comboFor(id: string): string {
   return binding ? formatCombo(binding.combo) : '';
 }
 
-function ToolbarButton({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+function ToolbarButton({ id, label, children, emphasized = false }: { id: string; label: string; children: ReactNode; emphasized?: boolean }) {
   const combo = comboFor(id);
   return (
     <button
@@ -29,8 +28,8 @@ function ToolbarButton({ id, label, children }: { id: string; label: string; chi
       title={combo ? `${label} (${combo})` : label}
       aria-label={label}
       onClick={() => appKeymap.invoke(id)}
-      className="flex items-center justify-center rounded"
-      style={{ width: 26, height: 26, color: 'var(--fg-muted)', border: '1px solid transparent' }}
+      className={`flex items-center justify-center gap-1 rounded${emphasized ? ' denote-graph-launch' : ''}`}
+      style={{ width: emphasized ? 58 : 26, height: emphasized ? 28 : 26, color: emphasized ? 'var(--fg)' : 'var(--fg-muted)', border: emphasized ? '1px solid var(--border)' : '1px solid transparent' }}
       onMouseEnter={(e) => {
         e.currentTarget.style.backgroundColor = 'var(--bg)';
         e.currentTarget.style.borderColor = 'var(--border)';
@@ -62,6 +61,7 @@ export function ExplorerPanel() {
   const createFolder = useVaultStore((s) => s.createFolder);
   const openImportReview = useUiStore((s) => s.openImportReview);
   const selectedFolder = useUiStore((s) => s.selectedFolder);
+  const graphViewOpen = useUiStore((s) => s.graphViewOpen);
   const [dropActive, setDropActive] = useState(false);
   const [dropMessage, setDropMessage] = useState<string | null>(null);
   const [folderDraftOpen, setFolderDraftOpen] = useState(false);
@@ -151,19 +151,14 @@ export function ExplorerPanel() {
             <path d="m21 21-4.3-4.3" />
           </svg>
         </ToolbarButton>
-        <ToolbarButton id="graph-view" label="Graph view">
+        <ToolbarButton id="graph-view" label={graphViewOpen ? 'Show notes' : 'Open graph'} emphasized>
           <svg {...ICON_PROPS}>
             <circle cx="5" cy="18" r="2.5" />
             <circle cx="19" cy="16" r="2.5" />
             <circle cx="13" cy="6" r="2.5" />
             <path d="m7 16.5 4-8M15 8l2.5 6" />
           </svg>
-        </ToolbarButton>
-        <ToolbarButton id="today-view" label="Today — notes created or edited today">
-          <svg {...ICON_PROPS}>
-            <rect x="3" y="4" width="18" height="17" rx="2" />
-            <path d="M3 9h18M8 2v4M16 2v4" />
-          </svg>
+          <span className="text-xs font-medium">{graphViewOpen ? 'Notes' : 'Graph'}</span>
         </ToolbarButton>
         <ToolbarButton id="quick-switcher" label="Jump to a note by title">
           <svg {...ICON_PROPS}>
@@ -198,7 +193,6 @@ export function ExplorerPanel() {
         )}
         {dropActive && <div className="rounded p-2 text-xs" style={{ border: '1px dashed var(--accent)', color: 'var(--accent)' }}>Drop notes to import</div>}
         {dropMessage && <button type="button" className="text-left text-xs" style={{ color: 'var(--fg-muted)' }} onClick={() => setDropMessage(null)}>{dropMessage}</button>}
-        <RecentNotes />
         <FileTree extraFolders={createdFolders} onFolderCreated={(path) => setCreatedFolders((current) => current.includes(path) ? current : [...current, path])} />
       </div>
     </div>

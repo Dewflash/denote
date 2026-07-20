@@ -1143,6 +1143,31 @@ sessions. Test suites remain necessary but are explicitly not sufficient to clos
   ad-hoc/unsigned local build, not notarized for distribution; Developer ID signing and
   notarization remain release-owner inputs. R-1/R-2/R-3/R-4 owner acceptance is unchanged.
 
+- **2026-07-20 — owner UX follow-up: note-first workspace and read-only AI.** The production
+  shell now opens with the file explorer and editor only; the Links in / Links out / AI inspector
+  is closed until the user opens it. Graph mode keeps the note explorer available, and its vault
+  input falls back to every open vault so a normal graph open includes all notes. The graph action
+  is an explicit labeled button in the explorer. AI enrichment is on-demand and display-only in
+  the app: it never writes tags, links, topics, or `ai:` metadata during background work; a note
+  changes only after an explicit user action such as accepting a suggestion. The embedding model
+  cache now resolves to writable application support instead of the packaged app's read-only
+  working directory. Verification: 501 TS tests / 62 files, lint, TypeScript, Rust check, and 19
+  Rust unit tests green. Owner manual acceptance of the packaged DMG remains required.
+
+- **2026-07-20 — PARITY P0 de-conflation applied.** Core behavior now follows the binding
+  `docs/PARITY.md` contract: the default graph renders only neutral note dots, parser wikilinks,
+  embeds, and tags; AI topic/similarity layers, hulls, confidence controls, status counts, and
+  Organize affordances are absent from the core graph. The right panel is only Links in / Links
+  out and starts collapsed; TodayView/RecentNotes are deleted from the explorer and the old
+  `cmd-T` binding is gone. `cmd-F` opens CodeMirror's in-note find/highlight panel, `cmd-shift-F`
+  remains global search, and Reading view has its own highlighted find bar. Core editor paste is
+  untouched by capture logic. Vault open now constructs no AI engines, queues, sidecar/model
+  probes, embedding cache, or resumable cloud work; explicit AI/status actions initialize that
+  machinery, and ordinary enrichment is read-only with no generated topic notes. Verification:
+  501 TS tests / 62 files, lint, typecheck, production build, 6/6 Playwright smoke tests, Rust
+  check, 19 Rust unit tests, and `pnpm package` with a valid DMG checksum all green. Remaining parity work is intentionally later-phase:
+  tabs, ribbon/graph-as-tab, full settings taxonomy, and the P7 single ✨ AI engagement surface.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual

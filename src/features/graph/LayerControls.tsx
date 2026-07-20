@@ -1,6 +1,5 @@
-// src/features/graph/LayerControls.tsx — layer toggles (wikilinks/tags/topics/ai-similar),
-// AI-edge confidence slider, and the structural-hulls toggle (D7: default OFF). All persisted
-// via graphStore (localStorage), per the pass-4 brief. Pass-05 adds the vault checkbox selector
+// src/features/graph/LayerControls.tsx — core graph layer toggles (wikilinks/tags),
+// Core graph layers and the vault selector. AI graph controls live behind the separate AI surface.
 // ("Graph vault selector: checkbox set of open vaults → combined graph", D17) — shown only once
 // there's more than one open vault to choose among, so single-vault sessions see no new UI.
 
@@ -10,26 +9,20 @@ import { useVaultStore } from '../../state/vaultStore';
 import type { LayerToggles } from './filter';
 
 const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
-  { key: 'wikilinks', label: 'Links you typed' },
-  { key: 'tags', label: 'Shared tags' },
-  { key: 'topics', label: 'AI topic groups' },
-  { key: 'aiSimilar', label: 'AI links & similarity' },
+  { key: 'wikilinks', label: 'Links' },
+  { key: 'tags', label: 'Tags' },
 ];
 
 const LAYER_TOOLTIPS: Record<keyof LayerToggles, string> = {
   wikilinks: '[[links]] written inside notes',
   tags: 'Notes that use the same #tag connect through it',
-  topics: 'Topics found by Organize vault',
-  aiSimilar: 'Dashed edges are AI-suggested links or similarity pairs; inspect the reason before accepting',
+  topics: 'AI topics are available from the separate AI surface',
+  aiSimilar: 'AI links are available from the separate AI surface',
 };
 
 export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesIndexOpen: boolean; onToggleNotesIndex: () => void }) {
   const layers = useGraphStore((s) => s.layers);
   const toggleLayer = useGraphStore((s) => s.toggleLayer);
-  const minConfidence = useGraphStore((s) => s.minConfidence);
-  const setMinConfidence = useGraphStore((s) => s.setMinConfidence);
-  const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
-  const toggleHulls = useGraphStore((s) => s.toggleHulls);
   const resetView = useGraphStore((s) => s.resetView);
   const localView = useGraphStore((s) => s.localView);
   const exitLocalView = useGraphStore((s) => s.exitLocalView);
@@ -79,28 +72,11 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
         </div>
       )}
 
-      <label className="graph-confidence flex items-center gap-1.5">
-        Hide AI guesses below {Math.round(minConfidence * 100)}% sure
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={minConfidence}
-          onChange={(e) => setMinConfidence(Number(e.target.value))}
-        />
-      </label>
-
-      <label className="graph-hulls-toggle flex items-center gap-1.5" title="Draw a shaded outline around each folder's notes">
-        <input type="checkbox" checked={hullsEnabled} onChange={toggleHulls} />
-        Outline folders
-      </label>
-
       <button
         className="graph-toolbar-button rounded px-2 py-0.5"
         style={{ border: '1px solid var(--border)' }}
         onClick={resetView}
-        title="Turn all connection types back on"
+        title="Turn the core graph layers back on"
       >
         Reset view
       </button>
@@ -124,15 +100,6 @@ export function LayerControls({ notesIndexOpen, onToggleNotesIndex }: { notesInd
           Show all notes
         </button>
       )}
-
-      <button
-        className="graph-toolbar-button rounded px-2 py-0.5"
-        style={{ border: '1px solid var(--border)' }}
-        onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
-        title="Group your notes into topics with the configured AI backend"
-      >
-        Organize vault…
-      </button>
 
       <span className="graph-click-hint" style={{ marginLeft: 'auto' }}>Select a dot to inspect it.</span>
       <button

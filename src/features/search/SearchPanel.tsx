@@ -41,7 +41,7 @@ export function SearchPanel() {
   const openVaultIds = useVaultStore((s) => s.openVaultIds);
   const registry = useVaultStore((s) => s.registry);
   const getSearchIndex = useVaultStore((s) => s.getSearchIndex);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
   const switchVault = useVaultStore((s) => s.switchVault);
   const setActiveNote = useVaultStore((s) => s.setActiveNote);
   const [query, setQuery] = useState('');
@@ -73,7 +73,7 @@ export function SearchPanel() {
     }
     return out.sort((a, b) => b.score - a.score).slice(0, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openVaultIds, registry, getSearchIndex, parsed, revision]);
+  }, [openVaultIds, registry, getSearchIndex, parsed, indexRevision]);
 
   async function openHit(hit: HitWithVault): Promise<void> {
     await switchVault(hit.vaultId);

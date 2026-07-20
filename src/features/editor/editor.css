@@ -45,6 +45,28 @@
   padding: 0 4px;
 }
 
+.cm-search {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  padding: 6px;
+}
+.cm-search input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+}
+.cm-search button {
+  color: var(--fg);
+}
+.denote-find-match {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
 .denote-reading-view h1, .denote-reading-view h2, .denote-reading-view h3 { margin-top: 1em; }
 .denote-reading-view pre {
   background-color: var(--bg-panel);

@@ -35,9 +35,11 @@ const graph: Graph = {
   ],
 };
 
+const ALL_LAYERS = { wikilinks: true, tags: true, topics: true, aiSimilar: true } as const;
+
 describe('filterGraph', () => {
   it('with all layers on and confidence 0, keeps everything', () => {
-    const out = filterGraph(graph, DEFAULT_LAYERS, 0);
+    const out = filterGraph(graph, ALL_LAYERS, 0);
     expect(out.nodes).toHaveLength(4);
     expect(out.edges).toHaveLength(4);
   });
@@ -57,13 +59,13 @@ describe('filterGraph', () => {
   });
 
   it('turning off aiSimilar drops only ai-similar edges', () => {
-    const out = filterGraph(graph, { ...DEFAULT_LAYERS, aiSimilar: false }, 0);
+    const out = filterGraph(graph, { ...ALL_LAYERS, aiSimilar: false }, 0);
     expect(out.edges.some((e) => e.type === 'ai-similar')).toBe(false);
     expect(out.edges.some((e) => e.type === 'note-topic')).toBe(true);
   });
 
   it('confidence slider drops low-confidence AI edges but never non-AI edges', () => {
-    const out = filterGraph(graph, DEFAULT_LAYERS, 0.7);
+    const out = filterGraph(graph, ALL_LAYERS, 0.7);
     expect(out.edges.some((e) => e.id === 'ai-similar:A<->B')).toBe(false); // 0.5 < 0.7
     expect(out.edges.some((e) => e.id === 'note-topic:A->topic')).toBe(true); // 0.9 >= 0.7
     expect(out.edges.some((e) => e.type === 'wikilink')).toBe(true); // not AI, unaffected

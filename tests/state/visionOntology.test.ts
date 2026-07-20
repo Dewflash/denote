@@ -159,6 +159,7 @@ async function buildVault() {
   const annStore = new AnnotationStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
   const ai = new VaultAiEngine(repo, router, annStore, {
     disableTimers: true,
+    allowAutomaticWrites: true,
     existingTopics: () => onto.topicStubs(),
     onEnrichResult: (rel, hash, result) => onto.onEnrichResult(rel, hash, result),
   });
@@ -274,6 +275,7 @@ describe('architect probe — variant topic names collapse via the real pipeline
     const annStore = new AnnotationStore({ read: (p) => repo.readInternal(p), write: (p, c) => repo.writeInternal(p, c) });
     const ai = new VaultAiEngine(repo, router, annStore, {
       disableTimers: true,
+      allowAutomaticWrites: true,
       existingTopics: () => onto.topicStubs(),
       onEnrichResult: (rel, hash, result) => onto.onEnrichResult(rel, hash, result),
     });

@@ -686,7 +686,10 @@ pub struct EmbeddingModelStatus {
 }
 
 #[tauri::command]
-pub fn embedding_model_status(state: tauri::State<'_, EmbeddingsState>) -> EmbeddingModelStatus {
+pub fn embedding_model_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EmbeddingsState>,
+) -> EmbeddingModelStatus {
     if state.embedder.lock().unwrap().is_some() {
         return EmbeddingModelStatus {
             status: "ready",
@@ -694,7 +697,7 @@ pub fn embedding_model_status(state: tauri::State<'_, EmbeddingsState>) -> Embed
             detail: None,
         };
     }
-    match Embedder::model_files_cached() {
+    match Embedder::model_files_cached(&app) {
         Ok(true) => EmbeddingModelStatus {
             status: "ready",
             model_id: EMBEDDING_MODEL_ID,
@@ -731,7 +734,7 @@ mod embedder_impl {
     use hf_hub::{api::{sync::ApiBuilder, Progress}, Cache};
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
     use super::{EmbeddingStatusEvent, EMBEDDING_MODEL_ID, EMBEDDING_STATUS_EVENT};
 
@@ -743,10 +746,17 @@ mod embedder_impl {
         "tokenizer_config.json",
     ];
 
-    fn model_cache_dir() -> PathBuf {
-        std::env::var("HF_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(fastembed::get_cache_dir()))
+    fn model_cache_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+        if let Ok(path) = std::env::var("HF_HOME") {
+            return Ok(PathBuf::from(path));
+        }
+        if let Ok(path) = std::env::var("FASTEMBED_CACHE_DIR") {
+            return Ok(PathBuf::from(path));
+        }
+        app.path()
+            .app_data_dir()
+            .map(|dir| dir.join("embedding-model-cache"))
+            .map_err(|e| format!("embedding model unavailable: cannot resolve writable app data: {e}"))
     }
 
     /// Shared progress across the WHOLE multi-file download: `percent` is a single overall
@@ -823,7 +833,7 @@ mod embedder_impl {
     }
 
     fn prepare_model(app: &tauri::AppHandle) -> Result<(), String> {
-        let cache_dir = model_cache_dir();
+        let cache_dir = model_cache_dir(app)?;
         let endpoint = std::env::var("HF_ENDPOINT")
             .unwrap_or_else(|_| "https://huggingface.co".to_string());
         let api = ApiBuilder::new()
@@ -870,15 +880,18 @@ mod embedder_impl {
     impl Embedder {
         /// Whether every model file is already in the hf-hub cache — a pure filesystem check,
         /// no network and no model load (R-1 `not-downloaded` detection).
-        pub fn model_files_cached() -> Result<bool, String> {
-            let repo = Cache::new(model_cache_dir()).model(EMBEDDING_MODEL_ID.to_string());
+        pub fn model_files_cached(app: &tauri::AppHandle) -> Result<bool, String> {
+            let repo = Cache::new(model_cache_dir(app)?).model(EMBEDDING_MODEL_ID.to_string());
             Ok(MODEL_FILES.iter().all(|file| repo.get(file).is_some()))
         }
 
         pub fn try_new(app: &tauri::AppHandle) -> Result<Self, String> {
+            let cache_dir = model_cache_dir(app)?;
             prepare_model(app)?;
             let model = TextEmbedding::try_new(
-                InitOptions::new(EmbeddingModel::MultilingualE5Small).with_show_download_progress(false),
+                InitOptions::new(EmbeddingModel::MultilingualE5Small)
+                    .with_cache_dir(cache_dir)
+                    .with_show_download_progress(false),
             )
             .map_err(|e| format!("embedding model unavailable: {e}"))?;
             Ok(Self { model })
@@ -930,7 +943,7 @@ mod embedder_impl {
     impl Embedder {
         /// Without the ONNX stack the model can never become available; report that verbatim
         /// instead of a misleading `not-downloaded`.
-        pub fn model_files_cached() -> Result<bool, String> {
+        pub fn model_files_cached(_app: &tauri::AppHandle) -> Result<bool, String> {
             Err("local embeddings not compiled in (build with --features local-embeddings)".into())
         }
 

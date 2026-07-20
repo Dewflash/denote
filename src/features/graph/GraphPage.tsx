@@ -6,11 +6,9 @@
 // from the live per-vault engines; the mock fixture remains a dev-only visual harness.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildGraph, dominantTopic, strongMemberships, type Graph, type Membership } from '../../domain';
-import { paletteColor } from './layout';
+import { buildGraph, type Graph } from '../../domain';
 import { useVaultStore } from '../../state/vaultStore';
 import { useGraphStore } from '../../state/graphStore';
-import { useUiStore } from '../../state/uiStore';
 import { ForceGraphRenderer } from './ForceGraphRenderer';
 import { LayerControls } from './LayerControls';
 import { NodeInspector } from './NodeInspector';
@@ -31,6 +29,7 @@ function useDevMockGraph(): boolean {
 export function GraphPage() {
   const revision = useVaultStore((s) => s.revision);
   const openVaultIds = useVaultStore((s) => s.openVaultIds);
+  const activeVaultId = useVaultStore((s) => s.vaultId);
   const registry = useVaultStore((s) => s.registry);
   const getOpenRepo = useVaultStore((s) => s.getOpenRepo);
   const switchVault = useVaultStore((s) => s.switchVault);
@@ -42,12 +41,17 @@ export function GraphPage() {
 
   const layers = useGraphStore((s) => s.layers);
   const minConfidence = useGraphStore((s) => s.minConfidence);
-  const hullsEnabled = useGraphStore((s) => s.hullsEnabled);
   const localView = useGraphStore((s) => s.localView);
   const exitLocalView = useGraphStore((s) => s.exitLocalView);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const selectedGraphVaultIds = useGraphStore((s) => s.selectedGraphVaultIds);
+  const graphVaultIds = useMemo(
+    () => selectedGraphVaultIds.length > 0
+      ? selectedGraphVaultIds
+      : (openVaultIds.length > 0 ? openVaultIds : activeVaultId ? [activeVaultId] : []),
+    [selectedGraphVaultIds, openVaultIds, activeVaultId],
+  );
 
   const styleTokens = useGraphStyleTokens();
   const useMock = useDevMockGraph();
@@ -59,8 +63,10 @@ export function GraphPage() {
 
   const fullGraph: Graph = useMemo(() => {
     if (useMock) return buildMockGraphFixture();
-    const topicsByVault = new Map(graphTopics(selectedGraphVaultIds).map((v) => [v.vaultId, v.topics]));
-    const vaults = selectedGraphVaultIds
+    const topicsByVault = layers.topics
+      ? new Map(graphTopics(graphVaultIds).map((v) => [v.vaultId, v.topics]))
+      : new Map();
+    const vaults = graphVaultIds
       .map((id) => getOpenRepo(id))
       .filter((r): r is NonNullable<typeof r> => r != null)
       .map((r) => ({
@@ -74,39 +80,16 @@ export function GraphPage() {
     if (vaults.length === 0) return { nodes: [], edges: [] };
     // ai-similar pairs (pass 7, S15) come from the embedding engines; topics (pass 8) drive the
     // semantic-cluster hubs + note-topic edges.
-    const similarPairs = graphSimilarPairs(selectedGraphVaultIds);
-    const aiLinks = graphAiLinks(selectedGraphVaultIds);
+    const similarPairs = layers.aiSimilar ? graphSimilarPairs(graphVaultIds) : [];
+    const aiLinks = layers.aiSimilar ? graphAiLinks(graphVaultIds) : [];
     return buildGraph({ vaults, similarPairs, aiLinks });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGraphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, graphAiLinks, graphTopics, revision, useMock]);
+  }, [graphVaultIds, openVaultIds, getOpenRepo, graphSimilarPairs, graphAiLinks, graphTopics, layers, revision, useMock]);
 
-  // Semantic clustering (D7 default view): color each note by its dominant topic (matching the
-  // topic hub node's own palette color), plus ring segments for ≥2 strong memberships.
-  const { nodeColors, nodeRings } = useMemo(() => {
-    const colors: Record<string, string> = {};
-    const rings: Record<string, string[]> = {};
-    const palette = styleTokens.hullPalette;
-    const colorFor = (topicId: string) => paletteColor(`topic:${topicId}`, palette);
-    for (const { vaultId, topics } of graphTopics(selectedGraphVaultIds)) {
-      const byNote = new Map<string, Membership[]>();
-      for (const t of topics) {
-        for (const m of t.members) {
-          const nodeId = `${vaultId}/${m.notePath}`;
-          const list = byNote.get(nodeId) ?? [];
-          list.push({ topicId: t.id, name: t.name, weight: m.weight });
-          byNote.set(nodeId, list);
-        }
-      }
-      for (const [nodeId, ms] of byNote) {
-        const dom = dominantTopic(ms);
-        if (dom) colors[nodeId] = colorFor(dom.topicId);
-        const strong = strongMemberships(ms);
-        if (strong.length >= 2) rings[nodeId] = strong.map((s) => colorFor(s.topicId));
-      }
-    }
-    return { nodeColors: colors, nodeRings: rings };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGraphVaultIds, graphTopics, styleTokens, revision]);
+  // Core graph appearance stays neutral. Topic coloring and AI rings return only inside the
+  // explicit AI graph surface (PARITY P0-1/P7-3).
+  const nodeColors: Record<string, string> = {};
+  const nodeRings: Record<string, string[]> = {};
 
   const scopedGraph: Graph = useMemo(() => {
     if (localView.enabled && localView.centerId) {
@@ -155,8 +138,7 @@ export function GraphPage() {
 
   // Empty-state guidance (post-06 fix #2, extended for R-4): silent dots with no edges confused
   // the owner. Distinguish the three truthful reasons (readability.ts): layers toggled off,
-  // filters hiding real edges, or a vault that genuinely has no connections yet — the last one
-  // links to the R-1 AI status panel, the only surface that can say whether the AI is dead.
+  // filters hiding real edges, or a vault that genuinely has no connections yet.
   const allLayersOff = !layers.wikilinks && !layers.tags && !layers.topics && !layers.aiSimilar;
   const hintKind = emptyHintKind({
     nodeCount: scopedGraph.nodes.length,
@@ -166,7 +148,7 @@ export function GraphPage() {
   });
   const emptyHint =
     hintKind === 'layers-off'
-      ? 'No edge layers active — enable Links you typed / Shared tags / AI topic groups / AI links & similarity above.'
+      ? 'No graph layers active — enable Links or Tags above.'
       : hintKind === 'filtered'
         ? 'No connections match the current filters — try “Reset view” above.'
         : null;
@@ -270,44 +252,17 @@ export function GraphPage() {
               style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}
             >
               <span className="min-w-0 flex-1">
-                This vault has no connections yet — no [[links]] typed, no shared tags, and the AI hasn&apos;t produced links or topics.
+                This vault has no connections yet — type [[links]] in a note or add shared tags.
               </span>
-              <button
-                type="button"
-                className="shrink-0 rounded px-2 py-1"
-                style={{ border: '1px solid var(--border)' }}
-                onClick={() => useUiStore.getState().setOrganizeVaultOpen(true)}
-                title="Group your notes into topics with the configured AI backend"
-              >
-                Organize vault…
-              </button>
-              <button
-                type="button"
-                className="shrink-0 rounded px-2 py-1"
-                style={{ border: '1px solid var(--border)' }}
-                onClick={() => useUiStore.getState().setAiStatusOpen(true)}
-                title="Open the live AI status panel — is the AI running, queued, or stuck?"
-              >
-                Check AI status
-              </button>
             </div>
           )}
           {/* Suppressed while the no-connections banner is up: that banner already explains the
-              isolated dots and carries the same Organize/AI-status affordances. */}
+              isolated dots. */}
           {sparseHint && hintKind !== 'no-connections' && (
             <div className="flex shrink-0 items-start gap-2 px-3 py-2 text-xs" style={{ backgroundColor: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', color: 'var(--fg)' }}>
               <span>
-                Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them — or click “Organize vault…” above to let the configured AI backend group them into topics.
+                Dots without lines are notes nothing links to yet. Connect notes by typing [[ inside them.
               </span>
-              <button
-                type="button"
-                className="shrink-0 rounded px-2 py-1"
-                style={{ border: '1px solid var(--border)' }}
-                onClick={() => useUiStore.getState().setAiStatusOpen(true)}
-                title="Open the live AI status panel — is the AI running, queued, or stuck?"
-              >
-                Check AI status
-              </button>
               <button type="button" aria-label="Dismiss graph hint" title="Dismiss until the next app launch" className="shrink-0 text-base leading-none" style={{ color: 'var(--fg-muted)' }} onClick={() => setSparseHintDismissed(true)}>
                 ×
               </button>
@@ -317,7 +272,7 @@ export function GraphPage() {
             <ForceGraphRenderer
               edges={visibleGraph.edges}
               positioned={positioned}
-              groupings={{ hullsEnabled }}
+              groupings={{ hullsEnabled: false }}
               styleTokens={styleTokens}
               vaultColors={vaultColors}
               nodeColors={nodeColors}

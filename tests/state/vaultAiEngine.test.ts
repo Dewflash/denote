@@ -30,7 +30,7 @@ interface Harness {
   clock: ReturnType<typeof makeClock>;
 }
 
-async function open(opts: { router?: AiRouter; localOnly?: boolean; candidateNotes?: VaultAiEngineDeps['candidateNotes'] } = {}): Promise<Harness> {
+async function open(opts: { router?: AiRouter; localOnly?: boolean; candidateNotes?: VaultAiEngineDeps['candidateNotes']; allowAutomaticWrites?: boolean; backgroundEnrichment?: boolean } = {}): Promise<Harness> {
   const clock = makeClock();
   const ops: Op[] = [];
   const holder: { engine?: VaultAiEngine } = {};
@@ -50,6 +50,8 @@ async function open(opts: { router?: AiRouter; localOnly?: boolean; candidateNot
     candidateNotes: opts.candidateNotes,
     pushOp: (op) => ops.push(op),
     disableTimers: true, // drive enrichNow() explicitly for determinism
+    allowAutomaticWrites: opts.allowAutomaticWrites ?? true,
+    backgroundEnrichment: opts.backgroundEnrichment ?? true,
   });
   holder.engine = engine;
   await engine.attach();
@@ -57,6 +59,17 @@ async function open(opts: { router?: AiRouter; localOnly?: boolean; candidateNot
 }
 
 describe('VaultAiEngine — enrichment + takeover', () => {
+  it('read-only mode returns suggestions without changing the note', async () => {
+    await backend.writeNote(root, 'Yen.md', '# Yen\nBOJ defended the yen; interest rates diverged.\n');
+    const { repo, engine } = await open({ allowAutomaticWrites: false, backgroundEnrichment: false });
+    const before = await repo.readNote('Yen.md');
+
+    await engine.enrichNow('Yen.md');
+
+    expect(await repo.readNote('Yen.md')).toBe(before);
+    expect(engine.suggestionsFor('Yen.md').every((a) => a.status === 'suggested')).toBe(true);
+  });
+
   it('seeds existing notes when a vault opens', async () => {
     await backend.writeNote(root, 'Existing.md', '# Existing\nBanking and interest rates.\n');
     const { repo, engine } = await open();
@@ -503,6 +516,7 @@ describe('VaultAiEngine — S23 dirty-buffer deferral (architect checkpoint B)',
       threshold: () => 0.75,
       isDirty: () => dirty,
       disableTimers: true,
+      allowAutomaticWrites: true,
     });
     holder.engine = engine;
     await engine.attach();
@@ -541,6 +555,7 @@ describe('VaultAiEngine — S28 consent gate (architect checkpoint B)', () => {
       threshold: () => 0.5, // low threshold so every mock note takes over
       onConsentNeeded: (n) => consentPrompts.push(n),
       disableTimers: true,
+      allowAutomaticWrites: true,
     });
     holder.engine = engine;
     await engine.attach();

@@ -58,6 +58,11 @@ export class EnrichmentQueue {
     this.jobs.delete(relPath);
   }
 
+  /** Drop persisted background work when the product is configured for on-demand AI. */
+  clear(): void {
+    this.jobs.clear();
+  }
+
   /** Park one job until an explicit backend retry wakes it. */
   park(relPath: string, error?: string): void {
     const job = this.jobs.get(relPath);

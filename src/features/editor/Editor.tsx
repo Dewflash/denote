@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { EditorState, Transaction, type Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { highlightSelectionMatches, search, searchKeymap, openSearchPanel } from '@codemirror/search';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { denoteEditorTheme } from './theme';
@@ -25,7 +26,7 @@ export function Editor() {
   const buffer = useVaultStore((s) => s.buffer);
   const repo = useVaultStore((s) => s.repo);
   const root = useVaultStore((s) => s.root);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
 
   // (Re)create the view whenever the OPEN NOTE changes. Infrequent — a full remount is simpler
@@ -34,7 +35,9 @@ export function Editor() {
     if (!containerRef.current || !buffer) return;
     const extensions: Extension[] = [
       history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      search(),
+      highlightSelectionMatches(),
+      keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       markdown(),
       syntaxHighlighting(defaultHighlightStyle),
       EditorView.lineWrapping,
@@ -57,7 +60,12 @@ export function Editor() {
     });
     view.dom.setAttribute(EDITOR_ROOT_ATTR, 'true');
     viewRef.current = view;
+    const onFindInNote = (): void => {
+      if (viewRef.current === view) openSearchPanel(view);
+    };
+    window.addEventListener('denote:find-in-note', onFindInNote);
     return () => {
+      window.removeEventListener('denote:find-in-note', onFindInNote);
       view.destroy();
       viewRef.current = null;
     };
@@ -97,7 +105,7 @@ export function Editor() {
     view.dispatch({ effects: setVaultContext.of(ctx) });
     // revision is the deliberate re-derive signal; repo/root/activeNotePath included so a note
     // switch or vault switch also refreshes context immediately (not just on the next write).
-  }, [repo, root, revision, activeNotePath]);
+  }, [repo, root, indexRevision, activeNotePath]);
 
   // Apply an external content change (silent reload while clean, or "take disk" conflict
   // resolution) as a remote transaction — excluded from CM's own typing history (S23 rule 1).

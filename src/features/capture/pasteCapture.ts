@@ -52,7 +52,7 @@ export function renameWithinFolder(oldRelPath: string, newBase: string): string 
   return `${dir ? `${dir}/` : ''}${newBase}.md`;
 }
 
-/** Paste with nothing focused (file tree / Today view) creates a note from the clipboard;
+/** Paste with nothing focused (file tree / capture surface) creates a note from the clipboard;
  *  title = first line, truncated. Always files into Inbox/ (a specific folder isn't implied by
  *  pasting into a list, unlike cmd-N which respects tree selection). */
 export async function captureFromClipboard(clipboardText: string): Promise<void> {

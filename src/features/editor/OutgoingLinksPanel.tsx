@@ -23,7 +23,7 @@ function PanelHint({ text }: { text: string }) {
 
 export function OutgoingLinksPanel() {
   const repo = useVaultStore((s) => s.repo);
-  const revision = useVaultStore((s) => s.revision);
+  const indexRevision = useVaultStore((s) => s.indexRevision);
   const activeNotePath = useVaultStore((s) => s.activeNotePath);
 
   const links = useMemo(() => {
@@ -39,7 +39,7 @@ export function OutgoingLinksPanel() {
       resolution: resolveLink(link.targetTitle, notes, repo.vaultId),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repo, activeNotePath, revision]);
+  }, [repo, activeNotePath, indexRevision]);
 
   if (!activeNotePath)
     return <EmptyState text="Open a note to see where it links to." />;

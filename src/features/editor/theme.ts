@@ -16,7 +16,7 @@ export const denoteEditorTheme = EditorView.theme(
       height: '100%',
     },
     '&.cm-focused': { outline: 'none' },
-    '.cm-content': { caretColor: 'var(--accent)', padding: '16px 20px', maxWidth: 'var(--editor-line-width)' },
+    '.cm-content': { caretColor: 'var(--accent)', padding: '16px 20px', width: '100%', maxWidth: 'var(--editor-line-width)', margin: '0 auto', boxSizing: 'border-box' },
     '.cm-gutters': { display: 'none' },
     '.cm-scroller': { fontFamily: 'var(--font-editor)', overflow: 'auto' },
     '.cm-line': { lineHeight: '1.6' },

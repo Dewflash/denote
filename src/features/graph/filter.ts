@@ -15,8 +15,8 @@ export interface LayerToggles {
 export const DEFAULT_LAYERS: LayerToggles = {
   wikilinks: true,
   tags: true,
-  topics: true,
-  aiSimilar: true,
+  topics: false,
+  aiSimilar: false,
 };
 
 function edgeLayer(type: GraphEdge['type']): keyof LayerToggles | null {

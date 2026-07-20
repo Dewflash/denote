@@ -47,30 +47,6 @@ export function CommandPalette() {
         run: () => useUiStore.getState().toggleViewMode(),
       },
       { id: 'open-settings', label: 'Open settings', run: () => useUiStore.getState().setSettingsOpen(true) },
-      {
-        id: 'organize-vault',
-        label: 'Organize vault (topics & clusters)',
-        run: () => useUiStore.getState().setOrganizeVaultOpen(true),
-      },
-      {
-        id: 'deep-organize',
-        label: 'Deep organize (cloud) — themes & budget',
-        run: () => useUiStore.getState().setDeepOrganizeOpen(true),
-      },
-      ...(activeNotePath
-        ? [
-            {
-              id: 'enrich-note',
-              label: 'Enrich this note now',
-              run: () => void useVaultStore.getState().enrichActiveNote(),
-            },
-            {
-              id: 'suggest-links',
-              label: 'Suggest links for this note',
-              run: () => void useVaultStore.getState().enrichActiveNote({ linksOnly: true }),
-            },
-          ]
-        : []),
     ],
     [activeNotePath],
   );
