@@ -1135,6 +1135,14 @@ sessions. Test suites remain necessary but are explicitly not sufficient to clos
   clusters with dimmed unlinked dots at the edges, and — if the map has no lines — a banner
   saying truthfully why, with `Organize vault…` and `Check AI status` one click away.
 
+- **2026-07-20 — ship artifact prepared.** `pnpm package` now builds the production Tauri app
+  and Apple Silicon DMG without a dev server. The validated artifacts from this session are
+  `src-tauri/target/release/bundle/macos/DeNote.app` and
+  `src-tauri/target/release/bundle/dmg/DeNote_0.1.0_aarch64.dmg`; the DMG checksum is valid,
+  and a read-only mount confirmed it contains the app plus an `Applications` link. This is an
+  ad-hoc/unsigned local build, not notarized for distribution; Developer ID signing and
+  notarization remain release-owner inputs. R-1/R-2/R-3/R-4 owner acceptance is unchanged.
+
 ## Post-1.0 candidates
 
 Condition 1's e2e smoke suite landed 2026-07-13; remaining pre-1.0 sign-off is owner manual
