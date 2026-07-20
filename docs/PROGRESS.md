@@ -723,7 +723,26 @@ what is needed and why, and continues with the rest of the pass if independent.
 
 ## Blocked
 
-(empty)
+- **2026-07-20 — PARITY vs normative S/D behavior requires architect ruling before any
+  phase can advance.** PARITY LAW 2 and P0/P7 require AI to be fully dormant until the
+  single ✨ engagement flow: no AI computation or writes before engagement, and AI
+  `ai:`-frontmatter takeover is additionally gated on `ready` plus auto-update ON.
+  Normative `S10` explicitly defines automatic takeover for a bare note when a suggestion
+  meets the threshold, while `D8` sanctions AI writes to `ai:` frontmatter and `_topics/*.md`
+  and `D9` describes takeover as the default path. `S18` also defines generated `_topics`
+  materialization. This is a direct conflict, not an implementation detail; the executor
+  must not choose which contract wins. PARITY P0-4 also deletes TodayView and frees ⌘T,
+  while `S21` still lists ⌘T for Today view, which is a second direct conflict.
+
+  The preceding P0 implementation was committed before this session contract was supplied
+  and follows PARITY's lazy/read-only interpretation; it is recorded here as unresolved,
+  not silently treated as a spec amendment. No P1/P2/P7 work may start until the architect
+  states whether PARITY supersedes/amends S10, S18, D8, D9, and S21, and the normative
+  documents are updated accordingly. Part 6 defaults were read and applied without asking:
+  single split = yes, Canvas = out, Note composer = out, TodayView = delete, graph tag
+  nodes = on, bookmark groups = out. Owner must see: the packaged app/DMG remains an
+  unsigned local artifact; P0 is not phase-closed because running-app owner confirmation
+  is still outstanding and this spec conflict blocks further execution.
 
 ## Follow-up Audit
 
